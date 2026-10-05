@@ -15,6 +15,7 @@ type TitleData = {
   watchSite: string | null;
   posterUrl: string | null;
   isCompleted: boolean;
+  isFavorite: boolean;
   kind: string;
   totalSeasons: number;
   totalEpisodes: number;
@@ -55,6 +56,19 @@ export default function TitlePage() {
     load();
   }
 
+  async function toggleFavorite() {
+    if (!t) return;
+    const r = await fetch(`/api/titles/${t.id}/favorite`, {
+      method: "PATCH",
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      alert(data.error || "Ошибка");
+      return;
+    }
+    load();
+  }
+
   async function remove() {
     if (!t || !confirm("Удалить тайтл?")) return;
     await fetch(`/api/titles/${t.id}`, { method: "DELETE" });
@@ -92,6 +106,7 @@ export default function TitlePage() {
           >
             ✏️ Редактировать
           </button>
+
           <button
             className={`btn w-full justify-center ${
               t.isCompleted ? "btn-secondary" : "btn-primary"
@@ -100,12 +115,23 @@ export default function TitlePage() {
           >
             {t.isCompleted ? "↩️ Снять отметку" : "✓ Отметить просмотренным"}
           </button>
+
+          <button
+            className={`btn w-full justify-center ${
+              t.isFavorite ? "btn-primary" : "btn-secondary"
+            }`}
+            onClick={toggleFavorite}
+          >
+            {t.isFavorite ? "★ В любимых" : "☆ Добавить в любимые"}
+          </button>
+
           <button
             className="btn btn-secondary w-full justify-center"
             onClick={() => setShowRating(true)}
           >
             ⭐ Поставить оценку
           </button>
+
           <button
             className="btn btn-danger w-full justify-center"
             onClick={remove}
@@ -115,7 +141,7 @@ export default function TitlePage() {
         </div>
       </aside>
 
-      {/* ---- ПРАВАЯ КОЛОНКА: инфо + серии ---- */}
+      {/* ---- ПРАВАЯ КОЛОНКА: инфо + серии + комментарии ---- */}
       <section className="space-y-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight leading-tight">
@@ -123,6 +149,11 @@ export default function TitlePage() {
             {t.isCompleted && (
               <span className="ml-3 inline-flex align-middle badge badge-green text-sm">
                 ✓ Просмотрено
+              </span>
+            )}
+            {t.isFavorite && (
+              <span className="ml-2 inline-flex align-middle badge badge-gold text-sm">
+                ★ Любимый
               </span>
             )}
           </h1>
@@ -183,7 +214,7 @@ export default function TitlePage() {
         {t.kind === "series" && t.episodes.length > 0 && (
           <EpisodeList titleId={t.id} episodes={t.episodes} onChanged={load} />
         )}
-        
+
         <CommentSection titleId={t.id} />
 
         {showRating && (

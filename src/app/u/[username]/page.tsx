@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import TitleCard, { TitleCardData } from "@/components/TitleCard";
 import Link from "next/link";
+import TitleCard, { TitleCardData } from "@/components/TitleCard";
 
 type UserPublic = {
   id: string;
@@ -31,6 +31,7 @@ type Collection = {
 type Data = {
   user: UserPublic;
   titles: TitleCardData[];
+  favorites: TitleCardData[];
   collections: Collection[];
   stats: Stats;
   friendshipStatus: "none" | "pending_out" | "pending_in" | "friends" | "self";
@@ -67,7 +68,7 @@ export default function UserProfilePage() {
 
   if (!data) return <p className="text-neutral-500">Загрузка...</p>;
 
-  const { user, titles, collections, stats } = data;
+  const { user, titles, favorites, collections, stats } = data;
 
   return (
     <div className="space-y-8">
@@ -140,6 +141,24 @@ export default function UserProfilePage() {
         </div>
       </div>
 
+      {/* ★ Любимые сериалы — компактные карточки */}
+      {favorites.length > 0 && (
+        <section>
+          <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
+            <span className="text-yellow-400">★</span>
+            Любимые сериалы
+            <span className="text-neutral-500 font-normal text-sm">
+              ({favorites.length}/5)
+            </span>
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {favorites.map((t) => (
+              <FavoriteCard key={t.id} t={t} />
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Коллекции */}
       {collections.length > 0 && (
         <section>
@@ -157,7 +176,7 @@ export default function UserProfilePage() {
         </section>
       )}
 
-      {/* Сериалы */}
+      {/* Все сериалы */}
       <section>
         <h2 className="text-lg font-bold mb-4">
           Сериалы и фильмы{" "}
@@ -251,5 +270,76 @@ function FriendButton({
     >
       {loading ? "Отправляю..." : "+ Добавить в друзья"}
     </button>
+  );
+}
+
+/* ---------- Компактная карточка "Любимый сериал" ---------- */
+function FavoriteCard({
+  t,
+}: {
+  t: {
+    id: number;
+    name: string;
+    posterUrl?: string | null;
+    avgRating?: number | null;
+    isCompleted?: boolean;
+    kind?: string;
+    watchedEpisodes?: number;
+    episodesCount?: number;
+  };
+}) {
+  const progress =
+    t.episodesCount && t.episodesCount > 0
+      ? Math.min(100, ((t.watchedEpisodes ?? 0) / t.episodesCount) * 100)
+      : 0;
+
+  return (
+    <Link
+      href={`/title/${t.id}`}
+      className="group block rounded-xl overflow-hidden border border-yellow-500/20 bg-neutral-900/40 hover:bg-neutral-900/80 hover:border-yellow-500/40 transition-all duration-300 hover:-translate-y-0.5"
+    >
+      <div className="relative aspect-[2/3] bg-neutral-900 overflow-hidden">
+        {t.posterUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={t.posterUrl}
+            alt={t.name}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-3xl text-neutral-700 bg-gradient-to-br from-neutral-900 to-neutral-800">
+            🎞️
+          </div>
+        )}
+
+        {/* Градиент снизу */}
+        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
+
+        {/* Оценка */}
+        {t.avgRating != null && (
+          <div className="absolute top-1.5 right-1.5 rounded-full bg-black/70 backdrop-blur px-1.5 py-0.5 text-[10px] font-semibold text-yellow-300">
+            ⭐ {t.avgRating.toFixed(1)}
+          </div>
+        )}
+
+        {/* Мини-прогресс */}
+        {t.kind === "series" && (t.episodesCount ?? 0) > 0 && (
+          <div className="absolute inset-x-0 bottom-0 h-0.5 bg-black/50">
+            <div
+              className="h-full bg-gradient-to-r from-yellow-400 to-yellow-600 transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="p-2">
+        <div className="text-xs font-medium line-clamp-2 leading-tight text-neutral-200 group-hover:text-yellow-300 transition-colors">
+          {t.name}
+        </div>
+      </div>
+    </Link>
   );
 }
