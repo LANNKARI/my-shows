@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import EpisodeList from "@/components/EpisodeList";
 import RatingModal from "@/components/RatingModal";
 import CollectionPicker from "@/components/CollectionPicker";
+import CommentSection from "@/components/CommentSection";
 
 type TitleData = {
   id: number;
@@ -182,6 +183,8 @@ export default function TitlePage() {
         {t.kind === "series" && t.episodes.length > 0 && (
           <EpisodeList titleId={t.id} episodes={t.episodes} onChanged={load} />
         )}
+        
+        <CommentSection titleId={t.id} />
 
         {showRating && (
           <RatingModal

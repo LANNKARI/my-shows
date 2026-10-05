@@ -30,6 +30,7 @@ model User {
   sessions  Session[]
   titles    Title[]
   collections Collection[]
+  comments  Comment[]
 
   // Поля для будущего (Yandex/VK)
   provider  String?  // "credentials" | "yandex" | "vk"
@@ -93,6 +94,7 @@ model Title {
   episodes    Episode[]
   ratings     Rating[]
   collections CollectionItem[]
+  comments    Comment[]
 }
 
 model Episode {
@@ -151,4 +153,18 @@ model Friendship {
   @@unique([requesterId, addresseeId])
   @@index([requesterId])
   @@index([addresseeId])
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  titleId   Int
+  userId    String
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+
+  title Title @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([titleId])
+  @@index([userId])
 }
