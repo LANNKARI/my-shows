@@ -49,11 +49,31 @@ export async function POST(req: NextRequest) {
     watchSite,
     totalSeasons,
     totalEpisodes,
+    episodesPerSeason, // ← новый массив: [10, 8, 12]
     posterUrl,
     kind,
   } = body;
 
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
+
+  const seasons = Math.max(1, Number(totalSeasons) || 1);
+  const finalKind = kind || "series";
+
+  // Если пришёл массив — используем его. Если нет — старое поведение.
+  let distribution: number[] = [];
+  if (Array.isArray(episodesPerSeason) && episodesPerSeason.length > 0) {
+    distribution = episodesPerSeason.slice(0, seasons).map((n) => Math.max(0, Number(n) || 0));
+    // Дополняем нулями, если меньше сезонов указано
+    while (distribution.length < seasons) distribution.push(0);
+  } else {
+    // Старое равномерное распределение (на случай, если массив не пришёл)
+    const total = Math.max(0, Number(totalEpisodes) || 0);
+    const base = Math.floor(total / seasons);
+    const extra = total % seasons;
+    distribution = Array.from({ length: seasons }, (_, i) => base + (i < extra ? 1 : 0));
+  }
+
+  const finalTotal = distribution.reduce((s, n) => s + n, 0);
 
   const title = await prisma.title.create({
     data: {
@@ -61,24 +81,22 @@ export async function POST(req: NextRequest) {
       originalName: originalName || null,
       dubbing: dubbing || null,
       watchSite: watchSite || null,
-      totalSeasons: Number(totalSeasons) || 1,
-      totalEpisodes: Number(totalEpisodes) || 0,
+      totalSeasons: seasons,
+      totalEpisodes: finalTotal,
       posterUrl: posterUrl || null,
-      kind: kind || "series",
+      kind: finalKind,
       userId: user.id,
     },
   });
 
-  if ((kind || "series") === "series" && Number(totalSeasons) > 0 && Number(totalEpisodes) > 0) {
-    const perSeason = Math.ceil(Number(totalEpisodes) / Number(totalSeasons));
+  // Создаём серии по распределению
+  if (finalKind === "series") {
     const eps: { titleId: number; season: number; episode: number }[] = [];
-    let remaining = Number(totalEpisodes);
-    for (let s = 1; s <= Number(totalSeasons); s++) {
-      const count = Math.min(perSeason, remaining);
+    for (let s = 1; s <= seasons; s++) {
+      const count = distribution[s - 1] || 0;
       for (let e = 1; e <= count; e++) {
         eps.push({ titleId: title.id, season: s, episode: e });
       }
-      remaining -= count;
     }
     if (eps.length) {
       await prisma.episode.createMany({ data: eps });

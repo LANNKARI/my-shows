@@ -12,10 +12,23 @@ export default function NewTitle() {
     originalName: "",
     dubbing: "",
     watchSite: "",
-    totalSeasons: 1,
-    totalEpisodes: 0,
     kind: "series" as "series" | "movie",
   });
+
+  // Сезоны: массив, где seasons[s] = количество серий в сезоне s+1
+  const [seasons, setSeasons] = useState<number[]>([10]);
+
+  function addSeason() {
+    setSeasons((prev) => [...prev, 10]);
+  }
+
+  function removeSeason(idx: number) {
+    setSeasons((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateSeason(idx: number, value: number) {
+    setSeasons((prev) => prev.map((v, i) => (i === idx ? Math.max(0, value) : v)));
+  }
 
   async function upload(file: File) {
     const fd = new FormData();
@@ -26,38 +39,37 @@ export default function NewTitle() {
   }
 
   async function submit(e: React.FormEvent) {
-  e.preventDefault();
-  setSaving(true);
-  try {
-    const payload = { ...form, posterUrl };
-    console.log("ОТПРАВЛЯЮ:", payload);
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const totalEpisodes = seasons.reduce((s, n) => s + n, 0);
 
-    const r = await fetch("/api/titles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+      const r = await fetch("/api/titles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          posterUrl,
+          totalSeasons: seasons.length,
+          totalEpisodes,
+          episodesPerSeason: seasons,
+        }),
+      });
 
-    const text = await r.text();
-    console.log("СТАТУС:", r.status, "ОТВЕТ:", text);
+      if (!r.ok) {
+        const text = await r.text();
+        alert(`Ошибка ${r.status}: ${text}`);
+        return;
+      }
 
-    if (!r.ok) {
-      alert(`Ошибка ${r.status}: ${text}`);
-      return;
+      const t = await r.json();
+      router.push(`/title/${t.id}`);
+    } finally {
+      setSaving(false);
     }
-
-    const t = JSON.parse(text);
-    if (!t.id) {
-      alert(`Нет ID в ответе: ${text}`);
-      return;
-    }
-    router.push(`/title/${t.id}`);
-  } catch (err) {
-    alert(`Ошибка: ${err}`);
-  } finally {
-    setSaving(false);
   }
-}
+
+  const totalEpisodes = seasons.reduce((s, n) => s + n, 0);
 
   return (
     <form onSubmit={submit} className="max-w-2xl space-y-4">
@@ -118,30 +130,47 @@ export default function NewTitle() {
       </div>
 
       {form.kind === "series" && (
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">Сезонов</label>
-            <input
-              type="number"
-              min={1}
-              className="input"
-              value={form.totalSeasons}
-              onChange={(e) => setForm({ ...form, totalSeasons: Number(e.target.value) })}
-            />
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="label mb-0">Сезоны и серии</label>
+            <div className="text-xs text-neutral-500">
+              Всего серий: <span className="text-white font-semibold">{totalEpisodes}</span>
+            </div>
           </div>
-          <div>
-            <label className="label">Всего серий</label>
-            <input
-              type="number"
-              min={0}
-              className="input"
-              value={form.totalEpisodes}
-              onChange={(e) => setForm({ ...form, totalEpisodes: Number(e.target.value) })}
-            />
-            <p className="text-xs text-neutral-500 mt-1">
-              Распределятся равномерно по сезонам.
-            </p>
+
+          <div className="space-y-2">
+            {seasons.map((count, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <div className="w-24 text-sm text-neutral-400 shrink-0">
+                  Сезон {idx + 1}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  className="input flex-1"
+                  value={count}
+                  onChange={(e) => updateSeason(idx, Number(e.target.value))}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSeason(idx)}
+                  disabled={seasons.length === 1}
+                  className="btn btn-danger shrink-0 disabled:opacity-30"
+                  title={seasons.length === 1 ? "Минимум один сезон" : "Удалить сезон"}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
           </div>
+
+          <button
+            type="button"
+            onClick={addSeason}
+            className="btn btn-secondary w-full justify-center"
+          >
+            + Добавить сезон
+          </button>
         </div>
       )}
 
@@ -160,10 +189,10 @@ export default function NewTitle() {
       </div>
 
       <div className="flex gap-2">
-        <button disabled={saving} className="btn-primary" type="submit">
+        <button disabled={saving} className="btn btn-primary" type="submit">
           {saving ? "Сохраняю..." : "Сохранить"}
         </button>
-        <button type="button" className="btn-secondary" onClick={() => router.back()}>
+        <button type="button" className="btn btn-secondary" onClick={() => router.back()}>
           Отмена
         </button>
       </div>
