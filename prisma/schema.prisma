@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Title {
+  id            Int              @id @default(autoincrement())
+  name          String
+  originalName  String?
+  dubbing       String?
+  watchSite     String?
+  totalSeasons  Int              @default(1)
+  totalEpisodes Int              @default(0)
+  posterUrl     String?
+  isCompleted   Boolean          @default(false)
+  kind          String           @default("series")
+  createdAt     DateTime         @default(now())
+  collections   CollectionItem[]
+  episodes      Episode[]
+  ratings       Rating[]
+}
+
+model Episode {
+  id        Int       @id @default(autoincrement())
+  titleId   Int
+  season    Int
+  episode   Int
+  watched   Boolean   @default(false)
+  stoppedAt String?
+  watchedAt DateTime?
+  title     Title     @relation(fields: [titleId], references: [id], onDelete: Cascade)
+
+  @@unique([titleId, season, episode])
+}
+
+model Rating {
+  id        Int      @id @default(autoincrement())
+  titleId   Int
+  episodeId Int?
+  score     Int
+  createdAt DateTime @default(now())
+  title     Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+}
+
+model Collection {
+  id    Int              @id @default(autoincrement())
+  name  String
+  items CollectionItem[]
+}
+
+model CollectionItem {
+  id           Int        @id @default(autoincrement())
+  collectionId Int
+  titleId      Int
+  title        Title      @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, titleId])
+}
