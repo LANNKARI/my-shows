@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import EpisodeList from "@/components/EpisodeList";
 import RatingModal from "@/components/RatingModal";
 import CollectionPicker from "@/components/CollectionPicker";
@@ -28,6 +29,13 @@ type TitleData = {
   }[];
   ratings: { id: number; score: number }[];
   collections: { collection: { id: number; name: string } }[];
+  isOwner: boolean;
+  user?: {
+    id: string;
+    username: string;
+    name: string | null;
+    avatarUrl: string | null;
+  } | null;
 };
 
 export default function TitlePage() {
@@ -86,8 +94,9 @@ export default function TitlePage() {
 
   return (
     <div className="grid md:grid-cols-[320px_1fr] gap-8 md:gap-10">
-      {/* ---- ЛЕВАЯ КОЛОНКА: постер + кнопки ---- */}
+      {/* ЛЕВАЯ КОЛОНКА */}
       <aside className="space-y-5">
+        {/* Постер */}
         <div className="rounded-2xl overflow-hidden border border-white/5 shadow-2xl shadow-black/50">
           {t.posterUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -99,50 +108,72 @@ export default function TitlePage() {
           )}
         </div>
 
+        {/* Кнопки (свои) / подпись (чужой) */}
         <div className="flex flex-col gap-2">
-          <button
-            className="btn btn-secondary w-full justify-center"
-            onClick={() => router.push(`/edit/${t.id}`)}
-          >
-            ✏️ Редактировать
-          </button>
+          {t.isOwner ? (
+            <>
+              <button
+                className="btn btn-secondary w-full justify-center"
+                onClick={() => router.push(`/edit/${t.id}`)}
+              >
+                ✏️ Редактировать
+              </button>
 
-          <button
-            className={`btn w-full justify-center ${
-              t.isCompleted ? "btn-secondary" : "btn-primary"
-            }`}
-            onClick={toggleCompleted}
-          >
-            {t.isCompleted ? "↩️ Снять отметку" : "✓ Отметить просмотренным"}
-          </button>
+              <button
+                className={`btn w-full justify-center ${
+                  t.isCompleted ? "btn-secondary" : "btn-primary"
+                }`}
+                onClick={toggleCompleted}
+              >
+                {t.isCompleted ? "↩️ Снять отметку" : "✓ Отметить просмотренным"}
+              </button>
 
-          <button
-            className={`btn w-full justify-center ${
-              t.isFavorite ? "btn-primary" : "btn-secondary"
-            }`}
-            onClick={toggleFavorite}
-          >
-            {t.isFavorite ? "★ В любимых" : "☆ Добавить в любимые"}
-          </button>
+              <button
+                className={`btn w-full justify-center ${
+                  t.isFavorite ? "btn-primary" : "btn-secondary"
+                }`}
+                onClick={toggleFavorite}
+              >
+                {t.isFavorite ? "★ В любимых" : "☆ Добавить в любимые"}
+              </button>
 
-          <button
-            className="btn btn-secondary w-full justify-center"
-            onClick={() => setShowRating(true)}
-          >
-            ⭐ Поставить оценку
-          </button>
+              <button
+                className="btn btn-secondary w-full justify-center"
+                onClick={() => setShowRating(true)}
+              >
+                ⭐ Поставить оценку
+              </button>
 
-          <button
-            className="btn btn-danger w-full justify-center"
-            onClick={remove}
-          >
-            🗑 Удалить
-          </button>
+              <button
+                className="btn btn-danger w-full justify-center"
+                onClick={remove}
+              >
+                🗑 Удалить
+              </button>
+            </>
+          ) : (
+            <div className="rounded-xl bg-neutral-900/40 border border-white/5 p-4 text-xs text-neutral-500 text-center">
+              Это сериал пользователя{" "}
+              {t.user ? (
+                <Link
+                  href={`/u/${t.user.username}`}
+                  className="text-red-400 hover:underline"
+                >
+                  @{t.user.username}
+                </Link>
+              ) : (
+                "другого пользователя"
+              )}
+              <br />
+              <span className="text-neutral-600">Только просмотр</span>
+            </div>
+          )}
         </div>
       </aside>
 
-      {/* ---- ПРАВАЯ КОЛОНКА: инфо + серии + комментарии ---- */}
+      {/* ПРАВАЯ КОЛОНКА */}
       <section className="space-y-6">
+        {/* Название */}
         <div>
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight leading-tight">
             {t.name}
@@ -162,7 +193,7 @@ export default function TitlePage() {
           )}
         </div>
 
-        {/* Чипы с метаданными */}
+        {/* Чипы метаданных */}
         <div className="flex flex-wrap gap-2">
           <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300">
             {t.kind === "series" ? "📺 Сериал" : "🎬 Фильм"}
@@ -191,7 +222,7 @@ export default function TitlePage() {
           )}
         </div>
 
-        {/* Прогресс-бар */}
+        {/* Прогресс */}
         {t.kind === "series" && t.episodes.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
@@ -231,7 +262,14 @@ export default function TitlePage() {
 
 /* ---------- Компонент-чип для сайта просмотра ---------- */
 function WatchSiteChip({ site }: { site: string }) {
-  const isUrl = /^https?:\/\//i.test(site);
+  const trimmed = site.trim();
+
+  const looksLikeDomain = /^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(trimmed);
+  const url = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : looksLikeDomain
+    ? `https://${trimmed}`
+    : null;
 
   function label(s: string): string {
     try {
@@ -243,21 +281,24 @@ function WatchSiteChip({ site }: { site: string }) {
   }
 
   const baseCls =
-    "badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300";
+    "badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5";
 
-  if (!isUrl) {
-    return <span className={baseCls}>🌐 {site}</span>;
+  if (!url) {
+    return (
+      <span className={`${baseCls} text-neutral-300`}>🌐 {trimmed}</span>
+    );
   }
 
   return (
     <a
-      href={site}
+      href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`${baseCls} hover:bg-white/10 hover:border-white/20 hover:text-white transition-colors`}
+      title={url}
+      className={`${baseCls} text-red-400 underline decoration-red-400/40 underline-offset-2 hover:text-red-300 hover:decoration-red-300 hover:bg-white/10 transition-colors cursor-pointer`}
     >
-      🌐 {label(site)}
-      <span className="text-[10px] opacity-60 ml-1">↗</span>
+      🌐 {label(url)}
+      <span className="text-[10px] opacity-70 ml-1">↗</span>
     </a>
   );
 }
