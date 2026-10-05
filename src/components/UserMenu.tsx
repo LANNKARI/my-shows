@@ -47,21 +47,34 @@ export default function UserMenu() {
 
       {open && (
         <>
+          {/* Клик вне меню — закрыть */}
           <div
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-white/10 bg-neutral-900 shadow-2xl overflow-hidden z-50">
+
+          <div className="absolute right-0 mt-2 w-48 rounded-xl border border-white/10 bg-neutral-900 shadow-2xl overflow-hidden z-50">
             <Link
               href={`/u/${user.username}`}
-              className="block px-4 py-2.5 text-sm text-neutral-300 hover:bg-white/5"
+              className="block px-4 py-2.5 text-sm text-neutral-300 hover:bg-white/5 transition"
               onClick={() => setOpen(false)}
             >
               👤 Мой профиль
             </Link>
+
+            <Link
+              href="/settings"
+              className="block px-4 py-2.5 text-sm text-neutral-300 hover:bg-white/5 transition"
+              onClick={() => setOpen(false)}
+            >
+              ⚙️ Настройки
+            </Link>
+
+            <div className="border-t border-white/5" />
+
             <button
               onClick={() => signOut({ callbackUrl: "/" })}
-              className="block w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5"
+              className="block w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 transition"
             >
               🚪 Выйти
             </button>
