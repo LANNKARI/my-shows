@@ -295,7 +295,7 @@ function WatchSiteChip({ site }: { site: string }) {
       target="_blank"
       rel="noopener noreferrer"
       title={url}
-      className={`${baseCls} text-red-400 underline decoration-red-400/40 underline-offset-2 hover:text-red-300 hover:decoration-red-300 hover:bg-white/10 transition-colors cursor-pointer`}
+      className={`${baseCls} text-neutral-300 hover:text-red-400 hover:bg-white/10 hover:border-white/20 transition-colors cursor-pointer`}
     >
       🌐 {label(url)}
       <span className="text-[10px] opacity-70 ml-1">↗</span>
