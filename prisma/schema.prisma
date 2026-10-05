@@ -23,6 +23,8 @@ model User {
   avatarUrl     String?
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
+  sentRequests     Friendship[] @relation("FriendshipRequester")
+  receivedRequests Friendship[] @relation("FriendshipAddressee")
 
   accounts  Account[]
   sessions  Session[]
@@ -133,4 +135,20 @@ model CollectionItem {
   title        Title      @relation(fields: [titleId], references: [id], onDelete: Cascade)
 
   @@unique([collectionId, titleId])
+}
+
+model Friendship {
+  id          Int      @id @default(autoincrement())
+  requesterId String
+  addresseeId String
+  status      String   @default("pending") // "pending" | "accepted"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([requesterId])
+  @@index([addresseeId])
 }

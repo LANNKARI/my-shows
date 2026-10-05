@@ -33,6 +33,8 @@ type Data = {
   titles: TitleCardData[];
   collections: Collection[];
   stats: Stats;
+  friendshipStatus: "none" | "pending_out" | "pending_in" | "friends" | "self";
+  friendshipId: number | null;
 };
 
 export default function UserProfilePage() {
@@ -94,6 +96,16 @@ export default function UserProfilePage() {
               {user.name || user.username}
             </h1>
             <p className="text-neutral-500 text-sm mt-1">@{user.username}</p>
+
+            {/* Кнопка дружбы — только если это не свой профиль */}
+            {data.friendshipStatus !== "self" && (
+              <div className="mt-4">
+                <FriendButton
+                  userId={user.id}
+                  initialStatus={data.friendshipStatus}
+                />
+              </div>
+            )}
 
             {user.bio && (
               <p className="text-neutral-300 text-sm mt-4 whitespace-pre-wrap">
@@ -173,5 +185,71 @@ export default function UserProfilePage() {
         )}
       </section>
     </div>
+  );
+}
+
+/* ---------- Кнопка дружбы на чужом профиле ---------- */
+function FriendButton({
+  userId,
+  initialStatus,
+}: {
+  userId: string;
+  initialStatus: "none" | "pending_out" | "pending_in" | "friends";
+}) {
+  const [status, setStatus] = useState(initialStatus);
+  const [loading, setLoading] = useState(false);
+
+  async function sendRequest() {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/friendships", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (r.ok) {
+        setStatus("pending_out");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (status === "friends") {
+    return (
+      <span className="badge badge-green px-3 py-1.5 text-sm">
+        ✓ В друзьях
+      </span>
+    );
+  }
+
+  if (status === "pending_out") {
+    return (
+      <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-sm text-neutral-300">
+        Заявка отправлена
+      </span>
+    );
+  }
+
+  if (status === "pending_in") {
+    return (
+      <Link
+        href="/friends"
+        className="badge badge-gold px-3 py-1.5 text-sm hover:opacity-90 transition"
+      >
+        Входящая заявка — перейти в «Друзья»
+      </Link>
+    );
+  }
+
+  return (
+    <button
+      onClick={sendRequest}
+      disabled={loading}
+      className="btn btn-primary"
+      type="button"
+    >
+      {loading ? "Отправляю..." : "+ Добавить в друзья"}
+    </button>
   );
 }
