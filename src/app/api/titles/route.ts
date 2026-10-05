@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/current-user";
 
 export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const titles = await prisma.title.findMany({
+    where: { userId: user.id },
     orderBy: { createdAt: "desc" },
     include: {
       ratings: true,
@@ -32,6 +37,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const body = await req.json();
 
   const {
@@ -57,6 +65,7 @@ export async function POST(req: NextRequest) {
       totalEpisodes: Number(totalEpisodes) || 0,
       posterUrl: posterUrl || null,
       kind: kind || "series",
+      userId: user.id,
     },
   });
 

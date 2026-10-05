@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/current-user";
+
+async function findOwnedTitle(id: number, userId: string) {
+  return prisma.title.findFirst({ where: { id, userId } });
+}
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const title = await prisma.title.findUnique({
-    where: { id },
+
+  const title = await prisma.title.findFirst({
+    where: { id, userId: user.id },
     include: {
       episodes: { orderBy: [{ season: "asc" }, { episode: "asc" }] },
       ratings: true,
@@ -17,10 +26,16 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id: idStr } = await params;
   const id = Number(idStr);
-  const body = await req.json();
 
+  const owned = await findOwnedTitle(id, user.id);
+  if (!owned) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  const body = await req.json();
   const data: any = {};
   for (const k of ["name", "originalName", "dubbing", "watchSite", "posterUrl", "kind"]) {
     if (k in body) data[k] = body[k] || null;
@@ -34,8 +49,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const { id: idStr } = await params;
   const id = Number(idStr);
+
+  const owned = await findOwnedTitle(id, user.id);
+  if (!owned) return NextResponse.json({ error: "not found" }, { status: 404 });
+
   await prisma.title.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

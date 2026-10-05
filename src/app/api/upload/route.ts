@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,9 @@ cloudinary.config({
 });
 
 export async function POST(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   try {
     const form = await req.formData();
     const file = form.get("file") as File | null;

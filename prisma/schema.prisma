@@ -1,3 +1,6 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
@@ -8,21 +11,86 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==================== ПОЛЬЗОВАТЕЛИ ====================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  passwordHash  String?
+  name          String?
+  bio           String?
+  avatarUrl     String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+
+  accounts  Account[]
+  sessions  Session[]
+  titles    Title[]
+  collections Collection[]
+
+  // Поля для будущего (Yandex/VK)
+  provider  String?  // "credentials" | "yandex" | "vk"
+  providerId String? // ID из внешнего провайдера
+}
+
+// Стандартные модели NextAuth — не изменять без необходимости
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ==================== СЕРИАЛЫ ====================
+
 model Title {
-  id            Int              @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   name          String
   originalName  String?
   dubbing       String?
   watchSite     String?
-  totalSeasons  Int              @default(1)
-  totalEpisodes Int              @default(0)
+  totalSeasons  Int      @default(1)
+  totalEpisodes Int      @default(0)
   posterUrl     String?
-  isCompleted   Boolean          @default(false)
-  kind          String           @default("series")
-  createdAt     DateTime         @default(now())
-  collections   CollectionItem[]
-  episodes      Episode[]
-  ratings       Rating[]
+  isCompleted   Boolean  @default(false)
+  kind          String   @default("series")
+  createdAt     DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  episodes    Episode[]
+  ratings     Rating[]
+  collections CollectionItem[]
 }
 
 model Episode {
@@ -48,8 +116,12 @@ model Rating {
 }
 
 model Collection {
-  id    Int              @id @default(autoincrement())
+  id    Int    @id @default(autoincrement())
   name  String
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   items CollectionItem[]
 }
 
@@ -57,8 +129,8 @@ model CollectionItem {
   id           Int        @id @default(autoincrement())
   collectionId Int
   titleId      Int
-  title        Title      @relation(fields: [titleId], references: [id], onDelete: Cascade)
   collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  title        Title      @relation(fields: [titleId], references: [id], onDelete: Cascade)
 
   @@unique([collectionId, titleId])
 }
