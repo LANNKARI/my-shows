@@ -85,6 +85,7 @@ model Title {
   totalEpisodes Int      @default(0)
   posterUrl     String?
   isCompleted   Boolean  @default(false)
+  isFavorite    Boolean @default(false)
   kind          String   @default("series")
   createdAt     DateTime @default(now())
 

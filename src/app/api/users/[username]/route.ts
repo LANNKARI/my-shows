@@ -25,7 +25,7 @@ export async function GET(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  // Сериалы пользователя
+  // Все сериалы пользователя
   const titles = await prisma.title.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
@@ -42,6 +42,7 @@ export async function GET(
     orderBy: { id: "desc" },
   });
 
+  // Обычные карточки для сетки
   const titlesResult = titles.map((t) => ({
     id: t.id,
     name: t.name,
@@ -56,6 +57,23 @@ export async function GET(
     watchedEpisodes: t.episodes.filter((e) => e.watched).length,
     episodesCount: t.episodes.length,
   }));
+
+  // Любимые сериалы (isFavorite = true), максимум 5
+  const favorites = titles
+    .filter((t) => t.isFavorite)
+    .slice(0, 5)
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      posterUrl: t.posterUrl,
+      kind: t.kind,
+      avgRating: t.ratings.length
+        ? t.ratings.reduce((s, r) => s + r.score, 0) / t.ratings.length
+        : null,
+      isCompleted: t.isCompleted,
+      watchedEpisodes: t.episodes.filter((e) => e.watched).length,
+      episodesCount: t.episodes.length,
+    }));
 
   // Статистика
   const allRatings = titles.flatMap((t) => t.ratings);
@@ -100,6 +118,7 @@ export async function GET(
   return NextResponse.json({
     user,
     titles: titlesResult,
+    favorites,
     collections,
     stats,
     friendshipStatus,
