@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import TitleCard, { TitleCardData } from "@/components/TitleCard";
+import AchievementBadges, { BadgeData } from "@/components/AchievementBadges";
 
 type UserPublic = {
   id: string;
@@ -34,6 +35,7 @@ type Data = {
   favorites: TitleCardData[];
   collections: Collection[];
   stats: Stats;
+  achievements?: BadgeData[];
   friendshipStatus: "none" | "pending_out" | "pending_in" | "friends" | "self";
   friendshipId: number | null;
 };
@@ -42,18 +44,27 @@ export default function UserProfilePage() {
   const { username } = useParams<{ username: string }>();
   const [data, setData] = useState<Data | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [achievements, setAchievements] = useState<BadgeData[]>([]);
 
   useEffect(() => {
-    fetch(`/api/users/${username}`)
-      .then(async (r) => {
-        if (r.status === 404) {
-          setNotFound(true);
-          return;
-        }
-        setData(await r.json());
-      })
-      .catch(() => setNotFound(true));
-  }, [username]);
+  fetch(`/api/users/${username}`)
+    .then(async (r) => {
+      if (r.status === 404) {
+        setNotFound(true);
+        return;
+      }
+      setData(await r.json());
+    })
+    .catch(() => setNotFound(true));
+
+  // Отдельно — достижения
+  fetch(`/api/users/${username}/achievements`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (d?.unlocked) setAchievements(d.unlocked);
+    })
+    .catch(() => {});
+}, [username]);
 
   if (notFound) {
     return (
@@ -93,10 +104,20 @@ export default function UserProfilePage() {
 
           {/* Инфа */}
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-              {user.name || user.username}
-            </h1>
-            <p className="text-neutral-500 text-sm mt-1">@{user.username}</p>
+            <div className="flex items-center gap-3 flex-wrap">
+  <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+    {user.name || user.username}
+  </h1>
+  {achievements.length > 0 && (
+    <AchievementBadges
+      badges={achievements}
+      max={3}
+      username={user.username}
+      size="md"
+    />
+  )}
+</div>
+<p className="text-neutral-500 text-sm mt-1">@{user.username}</p>
 
             {/* Кнопка дружбы — только если это не свой профиль */}
             {data.friendshipStatus !== "self" && (

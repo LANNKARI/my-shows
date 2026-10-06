@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import AchievementBadges from "@/components/AchievementBadges";
 
 type Comment = {
   id: number;
@@ -15,6 +16,13 @@ type Comment = {
     avatarUrl: string | null;
   };
   isOwn: boolean;
+  topBadge?: {
+    id: string;
+    name: string;
+    icon: string;
+    tier: "bronze" | "silver" | "gold" | "legendary";
+    description: string;
+  } | null;
 };
 
 function timeAgo(iso: string): string {
@@ -157,25 +165,28 @@ export default function CommentSection({ titleId }: { titleId: number }) {
                 {/* Тело */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 flex-wrap">
-                    <Link
-                      href={`/u/${c.user.username}`}
-                      className="text-sm font-medium hover:text-red-400 transition"
-                    >
-                      {c.user.name || c.user.username}
-                    </Link>
-                    <span className="text-xs text-neutral-600">
-                      {timeAgo(c.createdAt)}
-                    </span>
-                    {c.isOwn && (
-                      <button
-                        onClick={() => remove(c.id)}
-                        className="text-xs text-red-400 hover:text-red-300 ml-auto transition"
-                        type="button"
-                      >
-                        Удалить
-                      </button>
-                    )}
-                  </div>
+  <Link
+    href={`/u/${c.user.username}`}
+    className="text-sm font-medium hover:text-red-400 transition"
+  >
+    {c.user.name || c.user.username}
+  </Link>
+  {c.topBadge && (
+    <AchievementBadges badges={[c.topBadge]} max={1} size="sm" />
+  )}
+  <span className="text-xs text-neutral-600">
+    {timeAgo(c.createdAt)}
+  </span>
+  {c.isOwn && (
+    <button
+      onClick={() => remove(c.id)}
+      className="text-xs text-red-400 hover:text-red-300 ml-auto transition"
+      type="button"
+    >
+      Удалить
+    </button>
+  )}
+</div>
                   <p className="text-sm text-neutral-200 mt-1 whitespace-pre-wrap break-words">
                     {c.text}
                   </p>
