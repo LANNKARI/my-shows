@@ -82,6 +82,10 @@ export default function SettingsPage() {
     router.refresh();
   }
 
+  function downloadBackup() {
+  window.location.href = "/api/export";
+}
+
   if (loading) return <p className="text-neutral-500">Загрузка...</p>;
 
   return (
@@ -89,6 +93,22 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold mb-6">Настройки профиля</h1>
 
       <form onSubmit={submit} className="space-y-6">
+        <div className="card p-5">
+  <h3 className="text-sm uppercase tracking-widest text-neutral-500 font-semibold mb-3">
+    💾 Экспорт данных
+  </h3>
+  <p className="text-sm text-neutral-400 mb-4">
+    Скачайте бэкап своей библиотеки в формате JSON. Файл содержит все ваши сериалы,
+    прогресс, оценки, коллекции и комментарии.
+  </p>
+  <button
+    type="button"
+    onClick={downloadBackup}
+    className="btn btn-secondary"
+  >
+    ⬇️ Скачать бэкап
+  </button>
+</div>
         {/* Аватарка */}
         <div className="card p-5">
           <label className="label">Аватарка</label>
