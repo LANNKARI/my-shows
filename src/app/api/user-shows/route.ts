@@ -44,8 +44,8 @@ export async function GET() {
   const userShows = await prisma.userShow.findMany({
     where: {
       userId: me.id,
-      // Главная показывает "Смотрю" + "Просмотрено", без wishlist
-      status: { in: ["watching", "completed"] },
+      // Главная показывает только "Смотрю". "Просмотрено" — в профиле. Wishlist — в /wishlist
+      status: "watching",
     },
     orderBy: { updatedAt: "desc" },
     include: {

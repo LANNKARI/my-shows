@@ -32,6 +32,7 @@ type UserShowData = {
   totalEpisodes: number;
   isCompleted: boolean;
   isFavorite: boolean;
+  status: string; // ← новое
   dubbing: string | null;
   watchSite: string | null;
   show: {
@@ -66,6 +67,7 @@ export default function LibraryPage() {
   const [editDubbing, setEditDubbing] = useState("");
   const [editWatchSite, setEditWatchSite] = useState("");
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
 
   // Модалка оценки
   const [showRating, setShowRating] = useState(false);
@@ -103,6 +105,25 @@ export default function LibraryPage() {
     }
     setAutoOpened(true);
   }, [data, autoOpened]);
+
+  async function changeStatus(newStatus: "wishlist" | "watching" | "completed") {
+    if (!data) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/user-shows/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!r.ok) {
+        alert("Ошибка смены статуса");
+        return;
+      }
+      load();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function toggleEpisode(progress: EpisodeProgress) {
     await fetch(`/api/user-shows/${id}/episodes/${progress.id}`, {
@@ -157,16 +178,6 @@ export default function LibraryPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isFavorite: !data.isFavorite }),
-    });
-    load();
-  }
-
-  async function toggleCompleted() {
-    if (!data) return;
-    await fetch(`/api/user-shows/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isCompleted: !data.isCompleted }),
     });
     load();
   }
@@ -234,6 +245,45 @@ export default function LibraryPage() {
             📖 Каталог
           </Link>
 
+          {/* ── Переключатель статуса ── */}
+          <div className="rounded-xl bg-neutral-900/60 border border-white/5 p-3 space-y-2">
+            <p className="text-xs uppercase tracking-widest text-neutral-500 font-semibold mb-1">
+              Статус
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => changeStatus("wishlist")}
+                disabled={busy}
+                className={`btn text-xs w-full justify-start ${
+                  data.status === "wishlist" ? "btn-primary" : "btn-secondary"
+                }`}
+              >
+                👀 Хочу посмотреть
+              </button>
+              <button
+                type="button"
+                onClick={() => changeStatus("watching")}
+                disabled={busy}
+                className={`btn text-xs w-full justify-start ${
+                  data.status === "watching" ? "btn-primary" : "btn-secondary"
+                }`}
+              >
+                📺 Смотрю
+              </button>
+              <button
+                type="button"
+                onClick={() => changeStatus("completed")}
+                disabled={busy}
+                className={`btn text-xs w-full justify-start ${
+                  data.status === "completed" ? "btn-primary" : "btn-secondary"
+                }`}
+              >
+                ✅ Просмотрено
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={openEdit}
@@ -248,16 +298,6 @@ export default function LibraryPage() {
             className="btn btn-secondary w-full justify-center"
           >
             ⭐ Поставить оценку
-          </button>
-
-          <button
-            className={`btn w-full justify-center ${
-              data.isCompleted ? "btn-secondary" : "btn-primary"
-            }`}
-            onClick={toggleCompleted}
-            type="button"
-          >
-            {data.isCompleted ? "↩️ Снять отметку" : "✓ Отметить просмотренным"}
           </button>
 
           <button
@@ -285,7 +325,17 @@ export default function LibraryPage() {
         <div>
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
             {data.show.name}
-            {data.isCompleted && (
+            {data.status === "wishlist" && (
+              <span className="ml-3 inline-flex align-middle badge badge-dark bg-white/5 border border-white/5 text-sm text-neutral-300">
+                👀 В планах
+              </span>
+            )}
+            {data.status === "watching" && (
+              <span className="ml-3 inline-flex align-middle badge badge-dark bg-white/5 border border-white/5 text-sm text-neutral-300">
+                📺 Смотрю
+              </span>
+            )}
+            {data.status === "completed" && (
               <span className="ml-3 inline-flex align-middle badge badge-green text-sm">
                 ✓ Просмотрено
               </span>
