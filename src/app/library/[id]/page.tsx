@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import WatchSiteChip from "@/components/WatchSiteChip";
+import RatingModal from "@/components/RatingModal";
 
 type EpisodeProgress = {
   id: number;
@@ -15,6 +16,12 @@ type EpisodeProgress = {
     season: number;
     episode: number;
   };
+};
+
+type RatingItem = {
+  id: number;
+  score: number;
+  episodeId: number | null;
 };
 
 type UserShowData = {
@@ -35,8 +42,19 @@ type UserShowData = {
     kind: string;
   };
   progress: EpisodeProgress[];
-  ratings: { id: number; score: number }[];
+  ratings: RatingItem[];
 };
+
+// ────────────────────────────────────────────────
+// Хелпер вне компонента — не зависит от data
+// ────────────────────────────────────────────────
+function getEpisodeRating(
+  ratings: RatingItem[],
+  episodeId: number
+): number | null {
+  const rating = ratings.find((r) => r.episodeId === episodeId);
+  return rating ? rating.score : null;
+}
 
 export default function LibraryPage() {
   const { id } = useParams<{ id: string }>();
@@ -48,6 +66,10 @@ export default function LibraryPage() {
   const [editDubbing, setEditDubbing] = useState("");
   const [editWatchSite, setEditWatchSite] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Модалка оценки
+  const [showRating, setShowRating] = useState(false);
+  const [ratingForEpisode, setRatingForEpisode] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -155,6 +177,11 @@ export default function LibraryPage() {
     router.push("/");
   }
 
+  function openRatingModal(episodeId: number | null) {
+    setRatingForEpisode(episodeId);
+    setShowRating(true);
+  }
+
   if (loading) return <p className="text-neutral-500">Загрузка...</p>;
   if (!data) return <p className="text-neutral-500">Не найдено</p>;
 
@@ -165,6 +192,20 @@ export default function LibraryPage() {
   const seasons = Array.from(
     new Set(data.progress.map((p) => p.episode.season))
   ).sort((a, b) => a - b);
+
+  // Средняя оценка по тайтлу (без episodeId)
+  const wholeRatings = data.ratings.filter((r) => r.episodeId === null);
+  const avgRating = wholeRatings.length
+    ? wholeRatings.reduce((s, r) => s + r.score, 0) / wholeRatings.length
+    : null;
+
+  // Значение для предзаполнения модалки
+  const initialScore = (() => {
+    if (ratingForEpisode != null) {
+      return getEpisodeRating(data.ratings, ratingForEpisode);
+    }
+    return wholeRatings[0]?.score ?? null;
+  })();
 
   return (
     <div className="grid md:grid-cols-[320px_1fr] gap-8 md:gap-10">
@@ -199,6 +240,14 @@ export default function LibraryPage() {
             className="btn btn-secondary w-full justify-center"
           >
             ✏️ Редактировать
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openRatingModal(null)}
+            className="btn btn-secondary w-full justify-center"
+          >
+            ⭐ Поставить оценку
           </button>
 
           <button
@@ -254,7 +303,8 @@ export default function LibraryPage() {
             </p>
           )}
 
-          {(data.dubbing || data.watchSite) && (
+          {/* Чипы: озвучка, сайт, средняя оценка */}
+          {(data.dubbing || data.watchSite || avgRating != null) && (
             <div className="flex flex-wrap gap-2 mt-3">
               {data.dubbing && (
                 <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300">
@@ -262,6 +312,14 @@ export default function LibraryPage() {
                 </span>
               )}
               {data.watchSite && <WatchSiteChip site={data.watchSite} />}
+              {avgRating != null && (
+                <span className="badge badge-gold px-3 py-1.5 text-sm">
+                  ⭐ {avgRating.toFixed(1)}
+                  <span className="opacity-70 ml-1 font-normal">
+                    ({wholeRatings.length})
+                  </span>
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -369,48 +427,71 @@ export default function LibraryPage() {
                 >
                   <div className="overflow-hidden">
                     <div className="px-3 pb-3 pt-3 border-t border-white/5 space-y-2">
-                      {seasonProgress.map((p) => (
-                        <div
-                          key={p.id}
-                          className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 border transition-all ${
-                            p.watched
-                              ? "bg-emerald-950/20 border-emerald-900/40"
-                              : "bg-neutral-900/60 border-white/5 hover:border-white/10"
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => toggleEpisode(p)}
-                            className={`shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-xs font-bold transition-all ${
+                      {seasonProgress.map((p) => {
+                        const epRating = getEpisodeRating(
+                          data.ratings,
+                          p.episode.id
+                        );
+                        return (
+                          <div
+                            key={p.id}
+                            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 border transition-all ${
                               p.watched
-                                ? "bg-gradient-to-b from-emerald-500 to-emerald-600 border-emerald-500 text-white shadow-lg"
-                                : "border-white/15 hover:border-white/40 text-transparent hover:text-white/40"
+                                ? "bg-emerald-950/20 border-emerald-900/40"
+                                : "bg-neutral-900/60 border-white/5 hover:border-white/10"
                             }`}
                           >
-                            ✓
-                          </button>
-
-                          <div className="flex-1 min-w-0">
-                            <div
-                              className={`text-sm font-medium ${
+                            <button
+                              type="button"
+                              onClick={() => toggleEpisode(p)}
+                              className={`shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-xs font-bold transition-all ${
                                 p.watched
-                                  ? "text-neutral-400 line-through"
-                                  : "text-neutral-100"
+                                  ? "bg-gradient-to-b from-emerald-500 to-emerald-600 border-emerald-500 text-white shadow-lg"
+                                  : "border-white/15 hover:border-white/40 text-transparent hover:text-white/40"
                               }`}
                             >
-                              S{String(p.episode.season).padStart(2, "0")}E
-                              {String(p.episode.episode).padStart(2, "0")}
-                            </div>
-                          </div>
+                              ✓
+                            </button>
 
-                          <input
-                            className="input max-w-[140px] text-xs py-1.5"
-                            placeholder="00:34:12"
-                            value={p.stoppedAt ?? ""}
-                            onChange={(e) => updateStoppedAt(p, e.target.value)}
-                          />
-                        </div>
-                      ))}
+                            <div className="flex-1 min-w-0">
+                              <div
+                                className={`text-sm font-medium ${
+                                  p.watched
+                                    ? "text-neutral-400 line-through"
+                                    : "text-neutral-100"
+                                }`}
+                              >
+                                S{String(p.episode.season).padStart(2, "0")}E
+                                {String(p.episode.episode).padStart(2, "0")}
+                              </div>
+                            </div>
+
+                            {epRating != null && (
+                              <span className="badge badge-gold text-[10px] px-2 py-0.5 shrink-0">
+                                ⭐ {epRating}
+                              </span>
+                            )}
+
+                            <input
+                              className="input max-w-[130px] text-xs py-1.5"
+                              placeholder="00:34:12"
+                              value={p.stoppedAt ?? ""}
+                              onChange={(e) =>
+                                updateStoppedAt(p, e.target.value)
+                              }
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => openRatingModal(p.episode.id)}
+                              className="btn btn-secondary text-xs shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Оценить серию"
+                            >
+                              ⭐
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -472,6 +553,17 @@ export default function LibraryPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* МОДАЛКА оценки */}
+      {showRating && (
+        <RatingModal
+          userShowId={data.id}
+          episodeId={ratingForEpisode}
+          initialScore={initialScore}
+          onClose={() => setShowRating(false)}
+          onSaved={load}
+        />
       )}
     </div>
   );

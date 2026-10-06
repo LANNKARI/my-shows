@@ -45,9 +45,12 @@ function metricFor(u: UserRow, cat: Category): { value: number; label: string } 
 }
 
 function positionStyle(pos: number): string {
-  if (pos === 1) return "bg-gradient-to-br from-yellow-400 to-yellow-600 text-black";
-  if (pos === 2) return "bg-gradient-to-br from-neutral-300 to-neutral-500 text-black";
-  if (pos === 3) return "bg-gradient-to-br from-amber-600 to-amber-800 text-white";
+  if (pos === 1)
+    return "bg-gradient-to-br from-yellow-400 to-yellow-600 text-black";
+  if (pos === 2)
+    return "bg-gradient-to-br from-neutral-300 to-neutral-500 text-black";
+  if (pos === 3)
+    return "bg-gradient-to-br from-amber-600 to-amber-800 text-white";
   return "bg-neutral-800 text-neutral-400";
 }
 
@@ -118,7 +121,6 @@ export default function TopPage() {
                     : "border-white/5 bg-neutral-900/40 hover:border-white/10"
                 }`}
               >
-                {/* Позиция */}
                 <div
                   className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-black ${positionStyle(
                     pos
@@ -127,7 +129,6 @@ export default function TopPage() {
                   {pos}
                 </div>
 
-                {/* Аватарка */}
                 <div className="shrink-0">
                   {u.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -143,13 +144,12 @@ export default function TopPage() {
                   )}
                 </div>
 
-                {/* Имя и бейджи */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold truncate">
                       {u.name || u.username}
                     </span>
-                    {u.badges.length > 0 && (
+                    {u.badges && u.badges.length > 0 && (
                       <AchievementBadges
                         badges={u.badges}
                         max={3}
@@ -162,7 +162,6 @@ export default function TopPage() {
                   </div>
                 </div>
 
-                {/* Метрика */}
                 <div className="shrink-0 text-right">
                   <div className="text-lg font-bold tabular-nums">
                     {metric.value}

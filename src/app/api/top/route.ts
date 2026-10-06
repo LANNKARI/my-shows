@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   const category =
     new URL(req.url).searchParams.get("category") || "active";
 
-  // Собираем всех пользователей
+  // ── Собираем всех пользователей ──
   const users = await prisma.user.findMany({
     select: {
       id: true,
@@ -17,25 +17,30 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  // Для каждого — считаем метрики
+  // ── Для каждого — считаем метрики по НОВОЙ схеме ──
   const enriched = await Promise.all(
     users.map(async (u) => {
       const [
-        titlesCount,
-        ratingsCount,
-        commentsCount,
-        watchedEpisodes,
-        completedCount,
-        friendsCount,
+        userShowsCount,   // сериалов в библиотеке
+        completedCount,   // просмотренных полностью
+        ratingsCount,     // оценок поставлено
+        commentsCount,    // комментариев
+        watchedEpisodes,  // серий просмотрено
+        friendsCount,     // друзей
       ] = await Promise.all([
-        prisma.title.count({ where: { userId: u.id } }),
-        prisma.rating.count({ where: { title: { userId: u.id } } }),
-        prisma.comment.count({ where: { userId: u.id } }),
-        prisma.episode.count({
-          where: { title: { userId: u.id }, watched: true },
-        }),
-        prisma.title.count({
+        prisma.userShow.count({ where: { userId: u.id } }),
+        prisma.userShow.count({
           where: { userId: u.id, isCompleted: true },
+        }),
+        prisma.rating.count({
+          where: { userShow: { userId: u.id } },
+        }),
+        prisma.comment.count({ where: { userId: u.id } }),
+        prisma.episodeProgress.count({
+          where: {
+            userShow: { userId: u.id },
+            watched: true,
+          },
         }),
         prisma.friendship.count({
           where: {
@@ -46,7 +51,7 @@ export async function GET(req: NextRequest) {
       ]);
 
       const score =
-        titlesCount * 3 +
+        userShowsCount * 3 +
         ratingsCount * 2 +
         commentsCount * 5 +
         completedCount * 4;
@@ -56,7 +61,7 @@ export async function GET(req: NextRequest) {
       );
 
       const badges = calculateAchievements({
-        totalTitles: titlesCount,
+        totalTitles: userShowsCount,
         completedTitles: completedCount,
         totalWatchedEpisodes: watchedEpisodes,
         totalRatings: ratingsCount,
@@ -83,7 +88,7 @@ export async function GET(req: NextRequest) {
         avatarUrl: u.avatarUrl,
         createdAt: u.createdAt,
         metrics: {
-          titles: titlesCount,
+          titles: userShowsCount,
           ratings: ratingsCount,
           comments: commentsCount,
           watchedEpisodes,
@@ -96,15 +101,16 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  // Сортировка по категории
+  // ── Сортировка по категории ──
   const sorted = [...enriched].sort((a, b) => {
     if (category === "titles") return b.metrics.titles - a.metrics.titles;
     if (category === "ratings") return b.metrics.ratings - a.metrics.ratings;
-    if (category === "comments") return b.metrics.comments - a.metrics.comments;
+    if (category === "comments")
+      return b.metrics.comments - a.metrics.comments;
     return b.metrics.score - a.metrics.score; // "active"
   });
 
-  // Топ-50, скрываем тех, у кого 0 по категории
+  // ── Топ-50, скрываем тех, у кого 0 по категории ──
   const filtered = sorted
     .filter((u) => {
       if (category === "titles") return u.metrics.titles > 0;
