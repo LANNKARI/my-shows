@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 
+// Утилита: превращает BigInt в Number
+function serializeShow(show: any) {
+  if (!show) return show;
+  return {
+    ...show,
+    budget: show.budget != null ? Number(show.budget) : null,
+    revenue: show.revenue != null ? Number(show.revenue) : null,
+  };
+}
+
 export async function GET(
   _: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -17,16 +27,22 @@ export async function GET(
     where: { id },
     include: {
       episodes: { orderBy: [{ season: "asc" }, { episode: "asc" }] },
-      createdBy: { select: { id: true, username: true, name: true, avatarUrl: true } },
+      createdBy: {
+        select: { id: true, username: true, name: true, avatarUrl: true },
+      },
       comments: {
         orderBy: { createdAt: "desc" },
         include: {
-          user: { select: { id: true, username: true, name: true, avatarUrl: true } },
+          user: {
+            select: { id: true, username: true, name: true, avatarUrl: true },
+          },
         },
       },
       userShows: {
         include: {
-          user: { select: { id: true, username: true, name: true, avatarUrl: true } },
+          user: {
+            select: { id: true, username: true, name: true, avatarUrl: true },
+          },
           ratings: true,
         },
       },
@@ -86,6 +102,7 @@ export async function GET(
       user: us.user,
       isFavorite: us.isFavorite,
       isCompleted: us.isCompleted,
+      status: us.status, // ← новое
     })),
     avgRating,
     ratingsCount: allRatings.length,
@@ -96,6 +113,7 @@ export async function GET(
           totalEpisodes: myUserShow.totalEpisodes,
           isCompleted: myUserShow.isCompleted,
           isFavorite: myUserShow.isFavorite,
+          status: myUserShow.status, // ← новое
           dubbing: myUserShow.dubbing,
           watchSite: myUserShow.watchSite,
         }
@@ -132,12 +150,15 @@ export async function PATCH(
   ]) {
     if (k in body) data[k] = body[k] || null;
   }
-  if ("genres" in body) data.genres = Array.isArray(body.genres) ? body.genres : [];
-  if ("countries" in body) data.countries = Array.isArray(body.countries) ? body.countries : [];
-  if ("studios" in body) data.studios = Array.isArray(body.studios) ? body.studios : [];
+  if ("genres" in body)
+    data.genres = Array.isArray(body.genres) ? body.genres : [];
+  if ("countries" in body)
+    data.countries = Array.isArray(body.countries) ? body.countries : [];
+  if ("studios" in body)
+    data.studios = Array.isArray(body.studios) ? body.studios : [];
 
   const updated = await prisma.show.update({ where: { id }, data });
-  return NextResponse.json(updated);
+  return NextResponse.json(serializeShow(updated));
 }
 
 export async function DELETE(
