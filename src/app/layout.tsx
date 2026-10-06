@@ -41,6 +41,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   Коллекции
                 </Link>
                 <Link
+  href="/random"
+  className="px-3 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-white/5 transition"
+>
+  🎲 Что посмотреть
+</Link>
+                <Link
   href="/wishlist"
   className="px-3 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-white/5 transition"
 >
