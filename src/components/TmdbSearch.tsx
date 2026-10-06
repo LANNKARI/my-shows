@@ -11,9 +11,23 @@ export type TmdbResult = {
   posterPath: string | null;
   year: string;
   rating: number | null;
+  // Расширенные поля
   numberOfSeasons?: number | null;
   numberOfEpisodes?: number | null;
   episodesPerSeason?: number[] | null;
+  description?: string | null;
+  releaseDate?: string | null;
+  runtime?: number | null;
+  budget?: number | null;
+  revenue?: number | null;
+  countries?: string[];
+  studios?: string[];
+  genres?: string[];
+  director?: string | null;
+  creators?: string[];
+  cast?: any;
+  tmdbRating?: number | null;
+  tmdbVotes?: number | null;
 };
 
 export default function TmdbSearch({
@@ -53,61 +67,69 @@ export default function TmdbSearch({
   }
 
   async function handlePick(result: TmdbResult) {
-  setPicked(result.tmdbId);
+    setPicked(result.tmdbId);
 
-  let cloudinaryUrl: string | null = result.posterPath;
-  let numberOfSeasons: number | null = null;
-  let numberOfEpisodes: number | null = null;
-  let episodesPerSeason: number[] | null = null;
+    let cloudinaryUrl: string | null = result.posterPath;
+    let details: any = null;
 
-  // 1. Импортируем постер в Cloudinary
-  if (result.posterPath) {
-    try {
-      const r = await fetch("/api/tmdb/import-poster", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: result.posterPath }),
-      });
-      if (r.ok) {
-        const { url } = await r.json();
-        cloudinaryUrl = url;
+    // 1. Импорт постера в Cloudinary
+    if (result.posterPath) {
+      try {
+        const r = await fetch("/api/tmdb/import-poster", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: result.posterPath }),
+        });
+        if (r.ok) {
+          const { url } = await r.json();
+          cloudinaryUrl = url;
+        }
+      } catch {
+        cloudinaryUrl = result.posterPath;
       }
-    } catch {
-      cloudinaryUrl = result.posterPath;
     }
-  }
 
-  // 2. Получаем детали (сезоны, серии)
-  if (result.kind === "series") {
+    // 2. Детали из TMDB (для всех: и для сериалов, и для фильмов)
     try {
       const r = await fetch(
-        `/api/tmdb/details?id=${result.tmdbId}&kind=series`
+        `/api/tmdb/details?id=${result.tmdbId}&kind=${result.kind}`
       );
       if (r.ok) {
-        const d = await r.json();
-        numberOfSeasons = d.numberOfSeasons || null;
-        numberOfEpisodes = d.numberOfEpisodes || null;
-        episodesPerSeason = d.episodesPerSeason || null;
+        details = await r.json();
       }
     } catch {
-      // если не получилось — оставляем пустым
+      // игнорируем — вернём только базовые данные
     }
+
+    // 3. Передаём результат наверх
+    onPick({
+      ...result,
+      posterPath: cloudinaryUrl,
+      description: details?.description || null,
+      numberOfSeasons: details?.numberOfSeasons || null,
+      numberOfEpisodes: details?.numberOfEpisodes || null,
+      episodesPerSeason: details?.episodesPerSeason || null,
+      releaseDate: details?.releaseDate || null,
+      runtime: details?.runtime || null,
+      budget: details?.budget || null,
+      revenue: details?.revenue || null,
+      countries: details?.countries || [],
+      studios: details?.studios || [],
+      genres: details?.genres || [],
+      director: details?.director || null,
+      creators: details?.creators || [],
+      cast: details?.cast || null,
+      tmdbRating: details?.tmdbRating || null,
+      tmdbVotes: details?.tmdbVotes || null,
+    });
+
+    // 4. Сбрасываем состояние
+    setOpen(false);
+    setQuery("");
+    setResults([]);
+    setSearched(false);
+    setPicked(null);
   }
-
-  onPick({
-    ...result,
-    posterPath: cloudinaryUrl,
-    numberOfSeasons,
-    numberOfEpisodes,
-    episodesPerSeason,
-  });
-
-  setOpen(false);
-  setQuery("");
-  setResults([]);
-  setSearched(false);
-  setPicked(null);
-}
 
   return (
     <>
@@ -128,6 +150,7 @@ export default function TmdbSearch({
             className="card w-full max-w-2xl bg-neutral-900 border border-white/10 shadow-2xl max-h-[85vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Шапка */}
             <div className="p-4 border-b border-white/5 flex items-center justify-between">
               <h3 className="font-bold">🔍 Поиск в TMDB</h3>
               <button
@@ -139,6 +162,7 @@ export default function TmdbSearch({
               </button>
             </div>
 
+            {/* Поле поиска */}
             <div className="p-4 border-b border-white/5">
               <div className="flex gap-2">
                 <input
@@ -166,6 +190,7 @@ export default function TmdbSearch({
               {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
             </div>
 
+            {/* Результаты */}
             <div className="overflow-y-auto p-2">
               {loading && (
                 <p className="text-center text-neutral-500 py-6">Поиск...</p>

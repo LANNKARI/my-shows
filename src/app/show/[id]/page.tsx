@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import CommentSection from "@/components/CommentSection";
+import CastList from "@/components/CastList";
+import ShowDetails from "@/components/ShowDetails";
+import { translateGenres } from "@/lib/genres";
 
 type ShowData = {
   show: {
@@ -25,6 +28,9 @@ type ShowData = {
     budget: number | null;
     revenue: number | null;
     runtime: number | null;
+    releaseDate: string | null;
+    tmdbId: number | null;
+    createdAt: string;
     createdBy: any;
   };
   episodes: { id: number; season: number; episode: number }[];
@@ -151,14 +157,14 @@ export default function ShowPage() {
               📅 {show.year}
             </span>
           )}
-          {show.genres.map((g) => (
-            <span
-              key={g}
-              className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300"
-            >
-              🎭 {g}
-            </span>
-          ))}
+          {translateGenres(show.genres).map((g) => (
+  <span
+    key={g}
+    className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300"
+  >
+    🎭 {g}
+  </span>
+))}
           {avgRating != null && (
             <span className="badge badge-green px-3 py-1.5 text-sm">
               ⭐ {avgRating.toFixed(1)} ({ratingsCount})
@@ -177,6 +183,24 @@ export default function ShowPage() {
             {show.description}
           </p>
         )}
+
+        {/* Детали — бюджет, страны, студии, рейтинг TMDB */}
+<ShowDetails
+  budget={show.budget}
+  revenue={show.revenue}
+  countries={show.countries}
+  studios={show.studios}
+  runtime={show.runtime}
+  releaseDate={show.releaseDate}
+  director={show.director}
+  creators={show.creators}
+  tmdbRating={show.tmdbRating}
+  tmdbVotes={show.tmdbVotes}
+  kind={show.kind}
+/>
+
+{/* Актёры */}
+<CastList cast={show.cast} />
 
         {/* Сколько пользователей смотрят */}
         {userShowsCount > 0 && (
