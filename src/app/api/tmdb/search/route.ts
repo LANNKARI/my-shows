@@ -21,19 +21,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    console.log("[TMDB] Ключ загружен:", apiKey.slice(0, 6) + "...");
-    console.log("[TMDB] Запрос:", q);
-
     const url =
       `${TMDB_BASE}/search/multi?api_key=${apiKey}` +
       `&language=ru-RU&query=${encodeURIComponent(q)}&include_adult=false`;
 
-    console.log("[TMDB] Делаю fetch...");
-    const res = await fetch(url, {
-      cache: "no-store",
-    });
-
-    console.log("[TMDB] Статус ответа:", res.status);
+    const res = await fetch(url, { cache: "no-store" });
 
     if (!res.ok) {
       const text = await res.text();
@@ -42,7 +34,6 @@ export async function GET(req: NextRequest) {
     }
 
     const data = await res.json();
-    console.log("[TMDB] Получено результатов:", data.results?.length || 0);
 
     const results = (data.results || [])
       .filter((r: any) => r.media_type === "tv" || r.media_type === "movie")
@@ -58,6 +49,10 @@ export async function GET(req: NextRequest) {
         rating: r.vote_average
           ? Math.round(r.vote_average * 10) / 10
           : null,
+        numberOfSeasons:
+          r.media_type === "tv" ? r.number_of_seasons || null : null,
+        numberOfEpisodes:
+          r.media_type === "tv" ? r.number_of_episodes || null : null,
       }));
 
     return NextResponse.json(results);

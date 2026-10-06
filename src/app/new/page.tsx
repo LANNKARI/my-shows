@@ -46,6 +46,17 @@ export default function NewTitle() {
     watchSite: form.watchSite,
     kind: r.kind,
   });
+
+  // Автозаполнение сезонов и серий
+  if (r.kind === "series" && r.episodesPerSeason && r.episodesPerSeason.length > 0) {
+    setSeasons(r.episodesPerSeason);
+  } else if (r.kind === "series" && r.numberOfSeasons) {
+    // Если массив не пришёл — заполняем равномерно
+    const base = Math.floor((r.numberOfEpisodes || 0) / r.numberOfSeasons);
+    const arr = Array.from({ length: r.numberOfSeasons }, () => base);
+    setSeasons(arr);
+  }
+
   if (r.posterPath) {
     setPosterUrl(r.posterPath);
   }

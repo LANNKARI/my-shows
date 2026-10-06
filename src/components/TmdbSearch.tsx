@@ -11,6 +11,9 @@ export type TmdbResult = {
   posterPath: string | null;
   year: string;
   rating: number | null;
+  numberOfSeasons?: number | null;
+  numberOfEpisodes?: number | null;
+  episodesPerSeason?: number[] | null;
 };
 
 export default function TmdbSearch({
@@ -50,32 +53,61 @@ export default function TmdbSearch({
   }
 
   async function handlePick(result: TmdbResult) {
-    setPicked(result.tmdbId);
-    let cloudinaryUrl: string | null = result.posterPath;
+  setPicked(result.tmdbId);
 
-    if (result.posterPath) {
-      try {
-        const r = await fetch("/api/tmdb/import-poster", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: result.posterPath }),
-        });
-        if (r.ok) {
-          const { url } = await r.json();
-          cloudinaryUrl = url;
-        }
-      } catch {
-        cloudinaryUrl = result.posterPath;
+  let cloudinaryUrl: string | null = result.posterPath;
+  let numberOfSeasons: number | null = null;
+  let numberOfEpisodes: number | null = null;
+  let episodesPerSeason: number[] | null = null;
+
+  // 1. Импортируем постер в Cloudinary
+  if (result.posterPath) {
+    try {
+      const r = await fetch("/api/tmdb/import-poster", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: result.posterPath }),
+      });
+      if (r.ok) {
+        const { url } = await r.json();
+        cloudinaryUrl = url;
       }
+    } catch {
+      cloudinaryUrl = result.posterPath;
     }
-
-    onPick({ ...result, posterPath: cloudinaryUrl });
-    setOpen(false);
-    setQuery("");
-    setResults([]);
-    setSearched(false);
-    setPicked(null);
   }
+
+  // 2. Получаем детали (сезоны, серии)
+  if (result.kind === "series") {
+    try {
+      const r = await fetch(
+        `/api/tmdb/details?id=${result.tmdbId}&kind=series`
+      );
+      if (r.ok) {
+        const d = await r.json();
+        numberOfSeasons = d.numberOfSeasons || null;
+        numberOfEpisodes = d.numberOfEpisodes || null;
+        episodesPerSeason = d.episodesPerSeason || null;
+      }
+    } catch {
+      // если не получилось — оставляем пустым
+    }
+  }
+
+  onPick({
+    ...result,
+    posterPath: cloudinaryUrl,
+    numberOfSeasons,
+    numberOfEpisodes,
+    episodesPerSeason,
+  });
+
+  setOpen(false);
+  setQuery("");
+  setResults([]);
+  setSearched(false);
+  setPicked(null);
+}
 
   return (
     <>
