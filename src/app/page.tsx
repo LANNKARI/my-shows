@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import TitleCard, { TitleCardData } from "@/components/TitleCard";
+import FriendsActivity from "@/components/FriendsActivity";
 
 export default function Home() {
   const [items, setItems] = useState<TitleCardData[]>([]);
@@ -48,6 +49,8 @@ export default function Home() {
           </p>
         </div>
       </div>
+
+      <FriendsActivity />
 
       {/* Поиск + фильтры */}
       <div className="flex flex-col md:flex-row gap-3 md:items-center">
