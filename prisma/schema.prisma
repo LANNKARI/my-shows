@@ -35,6 +35,8 @@ model User {
   // Поля для будущего (Yandex/VK)
   provider  String?  // "credentials" | "yandex" | "vk"
   providerId String? // ID из внешнего провайдера
+  createdShows Show[]        @relation("ShowCreatedBy")
+  userShows    UserShow[]
 }
 
 // Стандартные модели NextAuth — не изменять без необходимости
@@ -100,24 +102,40 @@ model Title {
 
 model Episode {
   id        Int       @id @default(autoincrement())
-  titleId   Int
+  showId    Int?
   season    Int
   episode   Int
+
+  // ── Старые поля — оставляем для миграции, потом удалим ──
+  titleId   Int?
   watched   Boolean   @default(false)
   stoppedAt String?
   watchedAt DateTime?
-  title     Title     @relation(fields: [titleId], references: [id], onDelete: Cascade)
 
-  @@unique([titleId, season, episode])
+  show      Show?     @relation(fields: [showId], references: [id], onDelete: Cascade)
+  title     Title?    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  progress  EpisodeProgress[]
+
+  @@unique([showId, season, episode])
+  @@index([showId])
+  @@index([titleId])
 }
 
 model Rating {
-  id        Int      @id @default(autoincrement())
-  titleId   Int
-  episodeId Int?
-  score     Int
-  createdAt DateTime @default(now())
-  title     Title    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  id          Int      @id @default(autoincrement())
+  userShowId  Int?
+  episodeId   Int?
+  score       Int
+  createdAt   DateTime @default(now())
+
+  // ── Старое — для миграции ──
+  titleId     Int?
+
+  userShow UserShow? @relation(fields: [userShowId], references: [id], onDelete: Cascade)
+  title    Title?   @relation(fields: [titleId], references: [id], onDelete: Cascade)
+
+  @@index([userShowId])
+  @@index([titleId])
 }
 
 model Collection {
@@ -133,11 +151,19 @@ model Collection {
 model CollectionItem {
   id           Int        @id @default(autoincrement())
   collectionId Int
-  titleId      Int
+
+  // ── Старое — для миграции ──
+  titleId      Int?
+  title        Title?     @relation(fields: [titleId], references: [id], onDelete: Cascade)
+
+  // ── Новое ──
+  showId       Int?
+  show         Show?      @relation(fields: [showId], references: [id], onDelete: Cascade)
+
   collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  title        Title      @relation(fields: [titleId], references: [id], onDelete: Cascade)
 
   @@unique([collectionId, titleId])
+  @@index([showId])
 }
 
 model Friendship {
@@ -158,14 +184,107 @@ model Friendship {
 
 model Comment {
   id        Int      @id @default(autoincrement())
-  titleId   Int
+  showId    Int?
   userId    String
   text      String   @db.Text
   createdAt DateTime @default(now())
 
-  title Title @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  // ── Старое — для миграции ──
+  titleId   Int?
+
+  show  Show? @relation(fields: [showId], references: [id], onDelete: Cascade)
+  title Title? @relation(fields: [titleId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([titleId])
+  @@index([showId])
   @@index([userId])
+}
+
+// ==================== ОБЩИЙ КАТАЛОГ ====================
+
+model Show {
+  id            Int      @id @default(autoincrement())
+  name          String
+  originalName  String?
+  description   String?  @db.Text
+  posterUrl     String?
+  kind          String   @default("series") // "series" | "movie"
+
+  // ── Расширенные поля из TMDB (для Части B) ──
+  tmdbId        Int?
+  year          String?
+  releaseDate   DateTime?
+  runtime       Int?
+  budget        BigInt?
+  revenue       BigInt?
+  countries     String[]
+  studios       String[]
+  genres        String[]
+  director      String?
+  creators      String[]
+  cast          Json?
+  tmdbRating    Float?
+  tmdbVotes     Int?
+
+  // ── Кто первым добавил каноническую карточку ──
+  createdById String?
+  createdBy   User?   @relation("ShowCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  episodes         Episode[]
+  comments         Comment[]
+  userShows        UserShow[]
+  collectionItems  CollectionItem[]
+
+  @@index([name])
+  @@index([tmdbId])
+  @@unique([tmdbId, kind])
+}
+
+model UserShow {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  showId    Int
+  kind      String   @default("series")
+  totalSeasons  Int   @default(1)
+  totalEpisodes Int   @default(0)
+  isCompleted   Boolean @default(false)
+  isFavorite    Boolean @default(false)
+
+  // ── Личные поля ──
+  dubbing   String?
+  watchSite String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show     Show              @relation(fields: [showId], references: [id], onDelete: Cascade)
+  progress EpisodeProgress[]
+  ratings  Rating[]
+
+  @@unique([userId, showId])
+  @@index([userId])
+  @@index([showId])
+}
+
+model EpisodeProgress {
+  id          Int      @id @default(autoincrement())
+  userShowId  Int
+  episodeId   Int
+  watched     Boolean  @default(false)
+  stoppedAt   String?
+  watchedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userShow UserShow @relation(fields: [userShowId], references: [id], onDelete: Cascade)
+  episode  Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([userShowId, episodeId])
+  @@index([userShowId])
+  @@index([episodeId])
 }
