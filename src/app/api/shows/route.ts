@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 
+// Утилита: превращает BigInt в Number для JSON
+function serializeShow(show: any) {
+  if (!show) return show;
+  return {
+    ...show,
+    budget: show.budget != null ? Number(show.budget) : null,
+    revenue: show.revenue != null ? Number(show.revenue) : null,
+  };
+}
+
 // GET — список каталога
 export async function GET(req: NextRequest) {
   const me = await getCurrentUser();
@@ -84,7 +94,7 @@ export async function POST(req: NextRequest) {
       where: { tmdbId: Number(tmdbId), kind: kind || "series" },
     });
     if (existing) {
-      return NextResponse.json(existing);
+      return NextResponse.json(serializeShow(existing));
     }
   }
 
@@ -99,7 +109,7 @@ export async function POST(req: NextRequest) {
     },
   });
   if (existingByName) {
-    return NextResponse.json(existingByName);
+    return NextResponse.json(serializeShow(existingByName));
   }
 
   // 3. Создаём новый Show
@@ -112,21 +122,44 @@ export async function POST(req: NextRequest) {
       description: description || null,
       tmdbId: tmdbId ? Number(tmdbId) : null,
       year: year || null,
-      releaseDate: releaseDate ? new Date(releaseDate) : null,
+      releaseDate:
+        releaseDate && !isNaN(new Date(releaseDate).getTime())
+          ? new Date(releaseDate)
+          : null,
       runtime: runtime ? Number(runtime) : null,
-      budget: budget ? BigInt(budget) : null,
-      revenue: revenue ? BigInt(revenue) : null,
-      countries: Array.isArray(countries) ? countries : [],
-      studios: Array.isArray(studios) ? studios : [],
-      genres: Array.isArray(genres) ? genres : [],
+      budget:
+        budget != null && !isNaN(Number(budget))
+          ? BigInt(Math.round(Number(budget)))
+          : null,
+      revenue:
+        revenue != null && !isNaN(Number(revenue))
+          ? BigInt(Math.round(Number(revenue)))
+          : null,
+      countries: Array.isArray(countries)
+        ? countries.filter((c: any) => typeof c === "string")
+        : [],
+      studios: Array.isArray(studios)
+        ? studios.filter((s: any) => typeof s === "string")
+        : [],
+      genres: Array.isArray(genres)
+        ? genres.filter((g: any) => typeof g === "string")
+        : [],
       director: director || null,
-      creators: Array.isArray(creators) ? creators : [],
-      cast: cast || null,
-      tmdbRating: tmdbRating ? Number(tmdbRating) : null,
-      tmdbVotes: tmdbVotes ? Number(tmdbVotes) : null,
+      creators: Array.isArray(creators)
+        ? creators.filter((c: any) => typeof c === "string")
+        : [],
+      cast: cast ? JSON.parse(JSON.stringify(cast)) : null,
+      tmdbRating:
+        tmdbRating != null && !isNaN(Number(tmdbRating))
+          ? Number(tmdbRating)
+          : null,
+      tmdbVotes:
+        tmdbVotes != null && !isNaN(Number(tmdbVotes))
+          ? Number(tmdbVotes)
+          : null,
       createdById: me.id,
     },
   });
 
-  return NextResponse.json(show, { status: 201 });
+  return NextResponse.json(serializeShow(show), { status: 201 });
 }
