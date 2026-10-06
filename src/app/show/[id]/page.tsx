@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import CommentSection from "@/components/CommentSection";
 
 type ShowData = {
   show: {
@@ -185,34 +186,7 @@ export default function ShowPage() {
         )}
 
         {/* Комментарии */}
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold">Комментарии ({comments.length})</h2>
-          {comments.length === 0 ? (
-            <p className="text-neutral-500 text-sm">Пока нет комментариев</p>
-          ) : (
-            comments.map((c) => (
-              <div
-                key={c.id}
-                className="rounded-xl bg-neutral-900/40 border border-white/5 p-4"
-              >
-                <div className="flex items-center gap-2 text-sm">
-                  <Link
-                    href={`/u/${c.user.username}`}
-                    className="font-medium hover:text-red-400"
-                  >
-                    {c.user.name || c.user.username}
-                  </Link>
-                  <span className="text-neutral-600 text-xs">
-                    {new Date(c.createdAt).toLocaleString("ru-RU")}
-                  </span>
-                </div>
-                <p className="text-sm text-neutral-200 mt-2 whitespace-pre-wrap">
-                  {c.text}
-                </p>
-              </div>
-            ))
-          )}
-        </section>
+        <CommentSection titleId={show.id} />
       </section>
     </div>
   );

@@ -36,6 +36,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function CommentSection({ titleId }: { titleId: number }) {
+  // titleId фактически = showId (переименование не делаем, чтобы не плодить правки)
   const { data: session } = useSession();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +46,7 @@ export default function CommentSection({ titleId }: { titleId: number }) {
 
   async function load() {
     setLoading(true);
-    const r = await fetch(`/api/titles/${titleId}/comments`);
+    const r = await fetch(`/api/shows/${titleId}/comments`);
     if (r.ok) setComments(await r.json());
     setLoading(false);
   }
@@ -61,8 +62,8 @@ export default function CommentSection({ titleId }: { titleId: number }) {
     setSending(true);
     setError(null);
 
-    const r = await fetch(`/api/titles/${titleId}/comments`, {
-      method: "POST",
+    const r = await fetch(`/api/shows/${titleId}/comments`, {
+  method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
