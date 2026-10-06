@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import TmdbSearch, { TmdbResult } from "@/components/TmdbSearch";
 
 export default function NewTitle() {
   const router = useRouter();
@@ -37,6 +38,18 @@ export default function NewTitle() {
     const data = await r.json();
     setPosterUrl(data.url);
   }
+  function handleTmdbPick(r: TmdbResult) {
+  setForm({
+    name: r.name,
+    originalName: r.originalName || "",
+    dubbing: form.dubbing,
+    watchSite: form.watchSite,
+    kind: r.kind,
+  });
+  if (r.posterPath) {
+    setPosterUrl(r.posterPath);
+  }
+}
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -90,6 +103,13 @@ export default function NewTitle() {
           ))}
         </div>
       </div>
+
+      <div className="rounded-xl bg-neutral-900/40 border border-white/5 p-3">
+  <p className="text-xs text-neutral-500 mb-2">
+    ✨ Автозаполнение из TMDB
+  </p>
+  <TmdbSearch onPick={handleTmdbPick} />
+</div>
 
       <div>
         <label className="label">Название</label>
