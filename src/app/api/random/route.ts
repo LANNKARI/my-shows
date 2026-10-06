@@ -88,17 +88,26 @@ async function fetchDiscover(
   ratingFrom: number,
   page: number,
   useRussian: boolean = true
-): Promise<{ results: any[]; total: number; page: number }> {
+): Promise<{ results: any[]; total: number; page: number; sort: string }> {
   const endpoint = kind === "movie" ? "movie" : "tv";
+
+  // ── Случайная сортировка ──
+  const sortOptions = [
+    "popularity.desc",
+    "vote_average.desc",
+    "primary_release_date.desc",
+  ];
+  const randomSort =
+    sortOptions[Math.floor(Math.random() * sortOptions.length)];
 
   const query = new URLSearchParams();
   query.set("api_key", apiKey);
   if (useRussian) {
     query.set("language", "ru-RU");
   }
-  query.set("sort_by", "popularity.desc");
+  query.set("sort_by", randomSort);
   query.set("include_adult", "false");
-  query.set("vote_count.gte", "5"); // снижено с 10 → больше результатов
+  query.set("vote_count.gte", "50"); // чтобы не было мусора
   query.set("page", String(page));
 
   if (ratingFrom > 0) {
@@ -120,14 +129,15 @@ async function fetchDiscover(
 
   const url = `${TMDB_BASE}/discover/${endpoint}?${query.toString()}`;
   console.log("[random] URL:", url.replace(apiKey, "***"));
+  console.log("[random] sort_by:", randomSort, "| lang:", useRussian ? "ru" : "en");
 
   const res = await fetch(url, { cache: "no-store" });
-  console.log("[random] status:", res.status, "lang:", useRussian ? "ru" : "en");
+  console.log("[random] status:", res.status);
 
   if (!res.ok) {
     const text = await res.text();
     console.error("[random] error body:", text.slice(0, 300));
-    return { results: [], total: 0, page };
+    return { results: [], total: 0, page, sort: randomSort };
   }
 
   const data = await res.json();
@@ -139,6 +149,7 @@ async function fetchDiscover(
     results: data.results || [],
     total,
     page,
+    sort: randomSort,
   };
 }
 
@@ -197,8 +208,10 @@ export async function GET(req: NextRequest) {
     true
   );
 
-  // Попытка 2: если пусто — page=1
-  if (data.results.length === 0 && randomPage !== 1) {
+  const MIN_THRESHOLD = 5;
+
+  // Попытка 2: если мало — page=1
+  if (data.total < MIN_THRESHOLD && randomPage !== 1) {
     console.log("[random] fallback: page=1");
     data = await fetchDiscover(
       apiKey,
@@ -212,29 +225,29 @@ export async function GET(req: NextRequest) {
     fallbackUsed = "page";
   }
 
-  // Попытка 3: без рейтинга
-  if (data.results.length === 0 && ratingFrom > 0) {
+  // Попытка 3: если мало — без рейтинга
+  if (data.total < MIN_THRESHOLD && ratingFrom > 0) {
     console.log("[random] fallback: без рейтинга");
     data = await fetchDiscover(apiKey, finalKind, genreIds, yearFrom, 0, 1, true);
     fallbackUsed = "rating";
   }
 
-  // Попытка 4: без года
-  if (data.results.length === 0 && yearFrom > 0) {
+  // Попытка 4: если мало — без года
+  if (data.total < MIN_THRESHOLD && yearFrom > 0) {
     console.log("[random] fallback: без года");
     data = await fetchDiscover(apiKey, finalKind, genreIds, 0, 0, 1, true);
     fallbackUsed = "year";
   }
 
-  // Попытка 5: без русского языка
-  if (data.results.length === 0) {
+  // Попытка 5: если мало — без языка
+  if (data.total < MIN_THRESHOLD) {
     console.log("[random] fallback: без language=ru-RU");
     data = await fetchDiscover(apiKey, finalKind, genreIds, 0, 0, 1, false);
     fallbackUsed = "language";
   }
 
-  // Попытка 6: без жанров
-  if (data.results.length === 0) {
+  // Попытка 6: если всё ещё мало — без жанров
+  if (data.total < MIN_THRESHOLD) {
     console.log("[random] fallback: без жанров");
     data = await fetchDiscover(apiKey, finalKind, [], 0, 0, 1, false);
     fallbackUsed = "all";
@@ -268,5 +281,6 @@ export async function GET(req: NextRequest) {
     tmdbVotes: item.vote_count || null,
     totalMatching: data.total,
     fallbackUsed,
+    sortBy: data.sort,
   });
 }
