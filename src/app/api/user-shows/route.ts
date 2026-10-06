@@ -20,6 +20,18 @@ function serializeUserShow(us: any) {
   return result;
 }
 
+// Разрешённые статусы
+const ALLOWED_STATUSES = ["wishlist", "watching", "completed"] as const;
+type UserShowStatus = (typeof ALLOWED_STATUSES)[number];
+
+function normalizeStatus(value: any): UserShowStatus {
+  const s = String(value);
+  if (ALLOWED_STATUSES.includes(s as UserShowStatus)) {
+    return s as UserShowStatus;
+  }
+  return "watching";
+}
+
 // ────────────────────────────────────────────────
 // GET — моя библиотека
 // ────────────────────────────────────────────────
@@ -52,6 +64,7 @@ export async function GET() {
     totalEpisodes: us.totalEpisodes,
     isCompleted: us.isCompleted,
     isFavorite: us.isFavorite,
+    status: us.status, // ← новое
     dubbing: us.dubbing,
     watchSite: us.watchSite,
     watchedEpisodes: us.progress.filter((p) => p.watched).length,
@@ -75,7 +88,14 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { showId, totalSeasons, totalEpisodes, dubbing, watchSite } = body;
+    const {
+      showId,
+      totalSeasons,
+      totalEpisodes,
+      dubbing,
+      watchSite,
+      status, // ← новое
+    } = body;
 
     console.log("[user-shows POST] body:", body);
 
@@ -95,10 +115,24 @@ export async function POST(req: NextRequest) {
     // Проверяем, нет ли уже UserShow
     const existing = await prisma.userShow.findFirst({
       where: { userId: me.id, showId: Number(showId) },
+      include: { show: true },
     });
     console.log("[user-shows POST] existing:", !!existing);
 
     if (existing) {
+      // Если уже есть — можно обновить статус, если пришёл
+      if (status) {
+        const newStatus = normalizeStatus(status);
+        const updated = await prisma.userShow.update({
+          where: { id: existing.id },
+          data: {
+            status: newStatus,
+            isCompleted: newStatus === "completed" ? true : existing.isCompleted,
+          },
+          include: { show: true },
+        });
+        return NextResponse.json(serializeUserShow(updated));
+      }
       return NextResponse.json(serializeUserShow(existing));
     }
 
@@ -112,6 +146,7 @@ export async function POST(req: NextRequest) {
         totalEpisodes: Number(totalEpisodes) || 0,
         dubbing: dubbing || null,
         watchSite: watchSite || null,
+        status: normalizeStatus(status), // ← новое
       },
       include: { show: true },
     });

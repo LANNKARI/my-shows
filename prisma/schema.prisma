@@ -252,6 +252,7 @@ model UserShow {
   totalEpisodes Int   @default(0)
   isCompleted   Boolean @default(false)
   isFavorite    Boolean @default(false)
+  status String @default("watching")
 
   // ── Личные поля ──
   dubbing   String?

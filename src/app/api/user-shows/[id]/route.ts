@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 
+// ────────────────────────────────────────────────
 // Утилита: превращает BigInt в Number для JSON
+// ────────────────────────────────────────────────
 function serializeUserShow(us: any) {
   if (!us) return us;
   const result: any = { ...us };
@@ -16,6 +18,21 @@ function serializeUserShow(us: any) {
   return result;
 }
 
+// Разрешённые статусы
+const ALLOWED_STATUSES = ["wishlist", "watching", "completed"] as const;
+type UserShowStatus = (typeof ALLOWED_STATUSES)[number];
+
+function normalizeStatus(value: any): UserShowStatus {
+  const s = String(value);
+  if (ALLOWED_STATUSES.includes(s as UserShowStatus)) {
+    return s as UserShowStatus;
+  }
+  return "watching";
+}
+
+// ────────────────────────────────────────────────
+// GET — получить один UserShow с прогрессом
+// ────────────────────────────────────────────────
 export async function GET(
   _: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -48,6 +65,9 @@ export async function GET(
   return NextResponse.json(serializeUserShow(userShow));
 }
 
+// ────────────────────────────────────────────────
+// PATCH — обновить UserShow
+// ────────────────────────────────────────────────
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -67,6 +87,7 @@ export async function PATCH(
 
   const body = await req.json();
   const data: any = {};
+
   for (const k of ["dubbing", "watchSite"]) {
     if (k in body) data[k] = body[k] || null;
   }
@@ -75,10 +96,31 @@ export async function PATCH(
   if ("totalSeasons" in body) data.totalSeasons = Number(body.totalSeasons) || 1;
   if ("totalEpisodes" in body) data.totalEpisodes = Number(body.totalEpisodes) || 0;
 
-  const updated = await prisma.userShow.update({ where: { id }, data });
+  // ── Обработка status ──
+  if ("status" in body) {
+    const newStatus = normalizeStatus(body.status);
+    data.status = newStatus;
+
+    // Автосинхронизация isCompleted
+    if (newStatus === "completed") {
+      data.isCompleted = true;
+    } else if (newStatus === "watching" || newStatus === "wishlist") {
+      data.isCompleted = false;
+    }
+  }
+
+  const updated = await prisma.userShow.update({
+    where: { id },
+    data,
+    include: { show: true },
+  });
+
   return NextResponse.json(serializeUserShow(updated));
 }
 
+// ────────────────────────────────────────────────
+// DELETE — удалить из библиотеки
+// ────────────────────────────────────────────────
 export async function DELETE(
   _: NextRequest,
   { params }: { params: Promise<{ id: string }> }
