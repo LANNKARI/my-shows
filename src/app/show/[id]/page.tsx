@@ -6,6 +6,7 @@ import Link from "next/link";
 import CommentSection from "@/components/CommentSection";
 import CastList from "@/components/CastList";
 import ShowDetails from "@/components/ShowDetails";
+import WatchSiteChip from "@/components/WatchSiteChip";
 import { translateGenres } from "@/lib/genres";
 
 type ShowData = {
@@ -29,8 +30,6 @@ type ShowData = {
     revenue: number | null;
     runtime: number | null;
     releaseDate: string | null;
-    tmdbId: number | null;
-    createdAt: string;
     createdBy: any;
   };
   episodes: { id: number; season: number; episode: number }[];
@@ -45,6 +44,7 @@ type ShowData = {
     totalEpisodes: number;
     isCompleted: boolean;
     isFavorite: boolean;
+    status: string;
     dubbing: string | null;
     watchSite: string | null;
   } | null;
@@ -72,7 +72,7 @@ export default function ShowPage() {
     load();
   }, [load]);
 
-  async function addToLibrary() {
+  async function addToLibraryWithStatus(newStatus: "wishlist" | "watching") {
     if (!data) return;
     setAdding(true);
     try {
@@ -83,6 +83,7 @@ export default function ShowPage() {
           showId: data.show.id,
           totalSeasons: 1,
           totalEpisodes: data.episodes.length,
+          status: newStatus,
         }),
       });
       if (r.ok) {
@@ -98,7 +99,8 @@ export default function ShowPage() {
   if (loading) return <p className="text-neutral-500">Загрузка...</p>;
   if (!data) return <p className="text-neutral-500">Не найдено</p>;
 
-  const { show, myUserShow, avgRating, ratingsCount, userShowsCount, comments } = data;
+  const { show, myUserShow, avgRating, ratingsCount, userShowsCount, comments } =
+    data;
 
   return (
     <div className="grid md:grid-cols-[320px_1fr] gap-8 md:gap-10">
@@ -122,32 +124,85 @@ export default function ShowPage() {
               className="btn btn-primary w-full justify-center"
             >
               📚 Моя библиотека
+              {myUserShow.status === "wishlist" && " (в планах)"}
             </Link>
           ) : (
-            <button
-              type="button"
-              onClick={addToLibrary}
-              disabled={adding}
-              className="btn btn-primary w-full justify-center"
-            >
-              {adding ? "Добавляю..." : "+ Добавить к себе"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => addToLibraryWithStatus("watching")}
+                disabled={adding}
+                className="btn btn-primary w-full justify-center"
+              >
+                {adding ? "Добавляю..." : "📚 Смотрю"}
+              </button>
+              <button
+                type="button"
+                onClick={() => addToLibraryWithStatus("wishlist")}
+                disabled={adding}
+                className="btn btn-secondary w-full justify-center"
+              >
+                {adding ? "..." : "👀 Хочу посмотреть"}
+              </button>
+            </>
           )}
         </div>
       </aside>
 
       {/* ПРАВАЯ КОЛОНКА */}
       <section className="space-y-6">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-            {show.name}
-          </h1>
-          {show.originalName && (
-            <p className="text-neutral-500 text-base mt-1">{show.originalName}</p>
+        {/* Заголовок + кнопки справа */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight leading-tight">
+              {show.name}
+              {myUserShow?.isCompleted && (
+                <span className="ml-3 inline-flex align-middle badge badge-green text-sm">
+                  ✓ Просмотрено
+                </span>
+              )}
+              {myUserShow?.isFavorite && (
+                <span className="ml-2 inline-flex align-middle badge badge-gold text-sm">
+                  ★ Любимый
+                </span>
+              )}
+              {myUserShow?.status === "wishlist" && (
+                <span className="ml-2 inline-flex align-middle badge badge-dark bg-white/5 border border-white/5 text-sm text-neutral-300">
+                  👀 В планах
+                </span>
+              )}
+            </h1>
+            {show.originalName && (
+              <p className="text-neutral-500 text-base mt-1">
+                {show.originalName}
+              </p>
+            )}
+          </div>
+
+          {/* Кнопки справа — только если не в библиотеке */}
+          {!myUserShow && (
+            <div className="flex gap-2 shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => addToLibraryWithStatus("wishlist")}
+                disabled={adding}
+                className="btn btn-secondary text-sm"
+              >
+                {adding ? "..." : "👀 Хочу посмотреть"}
+              </button>
+              <button
+                type="button"
+                onClick={() => addToLibraryWithStatus("watching")}
+                disabled={adding}
+                className="btn btn-primary text-sm"
+              >
+                {adding ? "..." : "📚 Смотрю"}
+              </button>
+            </div>
           )}
         </div>
 
-        {/* Чипы */}
+        {/* Чипы метаданных */}
         <div className="flex flex-wrap gap-2">
           <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300">
             {show.kind === "series" ? "📺 Сериал" : "🎬 Фильм"}
@@ -158,13 +213,13 @@ export default function ShowPage() {
             </span>
           )}
           {translateGenres(show.genres).map((g) => (
-  <span
-    key={g}
-    className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300"
-  >
-    🎭 {g}
-  </span>
-))}
+            <span
+              key={g}
+              className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300"
+            >
+              🎭 {g}
+            </span>
+          ))}
           {avgRating != null && (
             <span className="badge badge-green px-3 py-1.5 text-sm">
               ⭐ {avgRating.toFixed(1)} ({ratingsCount})
@@ -184,28 +239,32 @@ export default function ShowPage() {
           </p>
         )}
 
-        {/* Детали — бюджет, страны, студии, рейтинг TMDB */}
-<ShowDetails
-  budget={show.budget}
-  revenue={show.revenue}
-  countries={show.countries}
-  studios={show.studios}
-  runtime={show.runtime}
-  releaseDate={show.releaseDate}
-  director={show.director}
-  creators={show.creators}
-  tmdbRating={show.tmdbRating}
-  tmdbVotes={show.tmdbVotes}
-  kind={show.kind}
-/>
+        {/* Детали из TMDB */}
+        <ShowDetails
+          budget={show.budget}
+          revenue={show.revenue}
+          countries={show.countries}
+          studios={show.studios}
+          runtime={show.runtime}
+          releaseDate={show.releaseDate}
+          director={show.director}
+          creators={show.creators}
+          tmdbRating={show.tmdbRating}
+          tmdbVotes={show.tmdbVotes}
+          kind={show.kind}
+        />
 
-{/* Актёры */}
-<CastList cast={show.cast} />
+        {/* Актёры */}
+        <CastList cast={show.cast} />
 
         {/* Сколько пользователей смотрят */}
         {userShowsCount > 0 && (
           <p className="text-sm text-neutral-500">
-            👥 Смотрят: <span className="text-white font-semibold">{userShowsCount}</span> пользователей
+            👥 Смотрят:{" "}
+            <span className="text-white font-semibold">
+              {userShowsCount}
+            </span>{" "}
+            пользователей
           </p>
         )}
 

@@ -34,13 +34,19 @@ function normalizeStatus(value: any): UserShowStatus {
 
 // ────────────────────────────────────────────────
 // GET — моя библиотека
+// ВАЖНО: показывает только "watching" и "completed".
+// Wishlist отображается на отдельной странице /wishlist
 // ────────────────────────────────────────────────
 export async function GET() {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const userShows = await prisma.userShow.findMany({
-    where: { userId: me.id },
+    where: {
+      userId: me.id,
+      // Главная показывает "Смотрю" + "Просмотрено", без wishlist
+      status: { in: ["watching", "completed"] },
+    },
     orderBy: { updatedAt: "desc" },
     include: {
       show: true,
@@ -64,7 +70,7 @@ export async function GET() {
     totalEpisodes: us.totalEpisodes,
     isCompleted: us.isCompleted,
     isFavorite: us.isFavorite,
-    status: us.status, // ← новое
+    status: us.status,
     dubbing: us.dubbing,
     watchSite: us.watchSite,
     watchedEpisodes: us.progress.filter((p) => p.watched).length,
@@ -94,7 +100,7 @@ export async function POST(req: NextRequest) {
       totalEpisodes,
       dubbing,
       watchSite,
-      status, // ← новое
+      status,
     } = body;
 
     console.log("[user-shows POST] body:", body);
@@ -120,14 +126,15 @@ export async function POST(req: NextRequest) {
     console.log("[user-shows POST] existing:", !!existing);
 
     if (existing) {
-      // Если уже есть — можно обновить статус, если пришёл
+      // Если уже есть — обновляем статус, если пришёл
       if (status) {
         const newStatus = normalizeStatus(status);
         const updated = await prisma.userShow.update({
           where: { id: existing.id },
           data: {
             status: newStatus,
-            isCompleted: newStatus === "completed" ? true : existing.isCompleted,
+            isCompleted:
+              newStatus === "completed" ? true : existing.isCompleted,
           },
           include: { show: true },
         });
@@ -146,7 +153,7 @@ export async function POST(req: NextRequest) {
         totalEpisodes: Number(totalEpisodes) || 0,
         dubbing: dubbing || null,
         watchSite: watchSite || null,
-        status: normalizeStatus(status), // ← новое
+        status: normalizeStatus(status),
       },
       include: { show: true },
     });
