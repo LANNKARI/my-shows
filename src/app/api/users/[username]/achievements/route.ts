@@ -15,32 +15,54 @@ export async function GET(
 
   if (!user) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  // Считаем статистику
-  const [titlesCount, completedCount, ratingsCount, commentsCount] =
-    await Promise.all([
-      prisma.title.count({ where: { userId: user.id } }),
-      prisma.title.count({ where: { userId: user.id, isCompleted: true } }),
-      prisma.rating.count({ where: { title: { userId: user.id } } }),
-      prisma.comment.count({ where: { userId: user.id } }),
-    ]);
+  // ── Статистика по НОВОЙ схеме ──
+  const [
+    userShowsCount,
+    completedCount,
+    ratingsCount,
+    commentsCount,
+    watchedEpisodes,
+    friendsCount,
+  ] = await Promise.all([
+    // Сколько сериалов в библиотеке (UserShow)
+    prisma.userShow.count({ where: { userId: user.id } }),
 
-  const watchedEpisodes = await prisma.episode.count({
-    where: { title: { userId: user.id }, watched: true },
-  });
+    // Сколько просмотрено полностью
+    prisma.userShow.count({
+      where: { userId: user.id, isCompleted: true },
+    }),
 
-  const friendsCount = await prisma.friendship.count({
-    where: {
-      status: "accepted",
-      OR: [{ requesterId: user.id }, { addresseeId: user.id }],
-    },
-  });
+    // Сколько оценок поставлено — через UserShow
+    prisma.rating.count({
+      where: { userShow: { userId: user.id } },
+    }),
+
+    // Сколько комментариев
+    prisma.comment.count({ where: { userId: user.id } }),
+
+    // Сколько серий просмотрено — личный прогресс
+    prisma.episodeProgress.count({
+      where: {
+        userShow: { userId: user.id },
+        watched: true,
+      },
+    }),
+
+    // Сколько друзей
+    prisma.friendship.count({
+      where: {
+        status: "accepted",
+        OR: [{ requesterId: user.id }, { addresseeId: user.id }],
+      },
+    }),
+  ]);
 
   const accountAgeDays = Math.floor(
     (Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24)
   );
 
   const achievements = calculateAchievements({
-    totalTitles: titlesCount,
+    totalTitles: userShowsCount,
     completedTitles: completedCount,
     totalWatchedEpisodes: watchedEpisodes,
     totalRatings: ratingsCount,
@@ -59,7 +81,7 @@ export async function GET(
     unlocked,
     inProgress,
     stats: {
-      totalTitles: titlesCount,
+      totalTitles: userShowsCount,
       completedTitles: completedCount,
       totalWatchedEpisodes: watchedEpisodes,
       totalRatings: ratingsCount,

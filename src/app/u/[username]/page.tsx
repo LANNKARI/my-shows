@@ -35,7 +35,6 @@ type Data = {
   favorites: TitleCardData[];
   collections: Collection[];
   stats: Stats;
-  achievements?: BadgeData[];
   friendshipStatus: "none" | "pending_out" | "pending_in" | "friends" | "self";
   friendshipId: number | null;
 };
@@ -47,24 +46,24 @@ export default function UserProfilePage() {
   const [achievements, setAchievements] = useState<BadgeData[]>([]);
 
   useEffect(() => {
-  fetch(`/api/users/${username}`)
-    .then(async (r) => {
-      if (r.status === 404) {
-        setNotFound(true);
-        return;
-      }
-      setData(await r.json());
-    })
-    .catch(() => setNotFound(true));
+    fetch(`/api/users/${username}`)
+      .then(async (r) => {
+        if (r.status === 404) {
+          setNotFound(true);
+          return;
+        }
+        setData(await r.json());
+      })
+      .catch(() => setNotFound(true));
 
-  // Отдельно — достижения
-  fetch(`/api/users/${username}/achievements`)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((d) => {
-      if (d?.unlocked) setAchievements(d.unlocked);
-    })
-    .catch(() => {});
-}, [username]);
+    // Отдельно — достижения
+    fetch(`/api/users/${username}/achievements`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.unlocked) setAchievements(d.unlocked);
+      })
+      .catch(() => {});
+  }, [username]);
 
   if (notFound) {
     return (
@@ -79,7 +78,13 @@ export default function UserProfilePage() {
 
   if (!data) return <p className="text-neutral-500">Загрузка...</p>;
 
-  const { user, titles, favorites, collections, stats } = data;
+  // Защита от неполных данных
+  const user = data.user;
+  if (!user) {
+    return <p className="text-neutral-500">Ошибка загрузки профиля</p>;
+  }
+
+  const { titles = [], favorites = [], collections = [], stats } = data;
 
   return (
     <div className="space-y-8">
@@ -105,19 +110,19 @@ export default function UserProfilePage() {
           {/* Инфа */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-  <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-    {user.name || user.username}
-  </h1>
-  {achievements.length > 0 && (
-    <AchievementBadges
-      badges={achievements}
-      max={3}
-      username={user.username}
-      size="md"
-    />
-  )}
-</div>
-<p className="text-neutral-500 text-sm mt-1">@{user.username}</p>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+                {user.name || user.username}
+              </h1>
+              {achievements.length > 0 && (
+                <AchievementBadges
+                  badges={achievements}
+                  max={3}
+                  username={user.username}
+                  size="md"
+                />
+              )}
+            </div>
+            <p className="text-neutral-500 text-sm mt-1">@{user.username}</p>
 
             {/* Кнопка дружбы — только если это не свой профиль */}
             {data.friendshipStatus !== "self" && (
@@ -136,28 +141,30 @@ export default function UserProfilePage() {
             )}
 
             {/* Статистика */}
-            <div className="flex flex-wrap gap-4 mt-5 text-sm">
-              <div>
-                <span className="text-neutral-500">Сериалов: </span>
-                <span className="font-semibold">{stats.totalSeries}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500">Фильмов: </span>
-                <span className="font-semibold">{stats.totalMovies}</span>
-              </div>
-              <div>
-                <span className="text-neutral-500">Просмотрено: </span>
-                <span className="font-semibold">{stats.completedTitles}</span>
-              </div>
-              {stats.avgRating != null && (
+            {stats && (
+              <div className="flex flex-wrap gap-4 mt-5 text-sm">
                 <div>
-                  <span className="text-neutral-500">Средняя оценка: </span>
-                  <span className="font-semibold">
-                    ⭐ {stats.avgRating.toFixed(1)}
-                  </span>
+                  <span className="text-neutral-500">Сериалов: </span>
+                  <span className="font-semibold">{stats.totalSeries}</span>
                 </div>
-              )}
-            </div>
+                <div>
+                  <span className="text-neutral-500">Фильмов: </span>
+                  <span className="font-semibold">{stats.totalMovies}</span>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Просмотрено: </span>
+                  <span className="font-semibold">{stats.completedTitles}</span>
+                </div>
+                {stats.avgRating != null && (
+                  <div>
+                    <span className="text-neutral-500">Средняя оценка: </span>
+                    <span className="font-semibold">
+                      ⭐ {stats.avgRating.toFixed(1)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -316,7 +323,7 @@ function FavoriteCard({
 
   return (
     <Link
-      href={`/title/${t.id}`}
+      href={`/show/${t.id}`}
       className="group block rounded-xl overflow-hidden border border-yellow-500/20 bg-neutral-900/40 hover:bg-neutral-900/80 hover:border-yellow-500/40 transition-all duration-300 hover:-translate-y-0.5"
     >
       <div className="relative aspect-[2/3] bg-neutral-900 overflow-hidden">
@@ -335,17 +342,14 @@ function FavoriteCard({
           </div>
         )}
 
-        {/* Градиент снизу */}
         <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
 
-        {/* Оценка */}
         {t.avgRating != null && (
           <div className="absolute top-1.5 right-1.5 rounded-full bg-black/70 backdrop-blur px-1.5 py-0.5 text-[10px] font-semibold text-yellow-300">
             ⭐ {t.avgRating.toFixed(1)}
           </div>
         )}
 
-        {/* Мини-прогресс */}
         {t.kind === "series" && (t.episodesCount ?? 0) > 0 && (
           <div className="absolute inset-x-0 bottom-0 h-0.5 bg-black/50">
             <div
