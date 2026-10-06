@@ -63,35 +63,78 @@ export default function NewTitle() {
 }
 
   async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const totalEpisodes = seasons.reduce((s, n) => s + n, 0);
+  e.preventDefault();
+  setSaving(true);
+  try {
+    // 1. Создаём (или находим) Show в каталоге
+    const showRes = await fetch("/api/shows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: form.name,
+        originalName: form.originalName,
+        posterUrl,
+        kind: form.kind,
+        // Расширенные поля (если пришли из TMDB)
+        description: (form as any).description || null,
+        tmdbId: (form as any).tmdbId || null,
+        year: (form as any).year || null,
+        releaseDate: (form as any).releaseDate || null,
+        runtime: (form as any).runtime || null,
+        genres: (form as any).genres || [],
+        countries: (form as any).countries || [],
+        studios: (form as any).studios || [],
+        director: (form as any).director || null,
+        creators: (form as any).creators || [],
+        cast: (form as any).cast || null,
+        tmdbRating: (form as any).tmdbRating || null,
+        tmdbVotes: (form as any).tmdbVotes || null,
+      }),
+    });
 
-      const r = await fetch("/api/titles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          posterUrl,
-          totalSeasons: seasons.length,
-          totalEpisodes,
-          episodesPerSeason: seasons,
-        }),
-      });
-
-      if (!r.ok) {
-        const text = await r.text();
-        alert(`Ошибка ${r.status}: ${text}`);
-        return;
-      }
-
-      const t = await r.json();
-      router.push(`/title/${t.id}`);
-    } finally {
-      setSaving(false);
+    if (!showRes.ok) {
+      const text = await showRes.text();
+      alert(`Ошибка создания каталога ${showRes.status}: ${text}`);
+      return;
     }
+
+    const show = await showRes.json();
+
+    // 2. Создаём эпизоды каталога (если их ещё нет)
+    //    Используем seasons — массив количества серий по сезонам
+    await fetch(`/api/shows/${show.id}/episodes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ episodesPerSeason: seasons }),
+    });
+
+    // 3. Добавляем Show в мою библиотеку (создаём UserShow + EpisodeProgress)
+    const us = await fetch("/api/user-shows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        showId: show.id,
+        totalSeasons: seasons.length,
+        totalEpisodes: seasons.reduce((s, n) => s + n, 0),
+        dubbing: form.dubbing,
+        watchSite: form.watchSite,
+      }),
+    });
+
+    if (!us.ok) {
+      const text = await us.text();
+      alert(`Ошибка добавления в библиотеку ${us.status}: ${text}`);
+      return;
+    }
+
+    // 4. Переходим на страницу сериала (каталога)
+    router.push(`/show/${show.id}`);
+  } catch (err: any) {
+    alert(`Ошибка: ${err.message}`);
+  } finally {
+    setSaving(false);
   }
+}
 
   const totalEpisodes = seasons.reduce((s, n) => s + n, 0);
 

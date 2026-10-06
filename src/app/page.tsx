@@ -14,12 +14,29 @@ export default function Home() {
   >("all");
 
   useEffect(() => {
-    fetch("/api/titles")
-      .then((r) => r.json())
-      .then((data) => setItems(Array.isArray(data) ? data : []))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, []);
+  fetch("/api/user-shows")
+    .then((r) => r.json())
+    .then((data) => {
+      if (!Array.isArray(data)) {
+        setItems([]);
+        return;
+      }
+      // Преобразуем UserShow → TitleCardData
+      const mapped: TitleCardData[] = data.map((us: any) => ({
+        id: us.show.id,
+        name: us.show.name,
+        posterUrl: us.show.posterUrl,
+        avgRating: us.avgRating,
+        isCompleted: us.isCompleted,
+        watchedEpisodes: us.watchedEpisodes,
+        episodesCount: us.episodesCount,
+        kind: us.show.kind,
+      }));
+      setItems(mapped);
+    })
+    .catch(() => setItems([]))
+    .finally(() => setLoading(false));
+}, []);
 
   const filtered = items.filter((t) => {
     if (q && !t.name.toLowerCase().includes(q.toLowerCase())) return false;

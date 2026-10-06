@@ -26,8 +26,7 @@ export default function TitleCard({ t }: { t: TitleCardData }) {
       : 0;
 
   return (
-    <Link
-      href={`/title/${t.id}`}
+    <Link href={`/show/${t.id}`}
       className="group block rounded-2xl overflow-hidden border border-white/5 bg-neutral-900/40 hover:bg-neutral-900/80 hover:border-white/10 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-red-900/20"
     >
       <div className="relative aspect-[2/3] bg-neutral-900 overflow-hidden">
