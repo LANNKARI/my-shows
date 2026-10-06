@@ -20,7 +20,6 @@ type RandomShow = {
 };
 
 const GENRE_OPTIONS = [
-  { value: "", label: "Все жанры" },
   { value: "боевик", label: "Боевик" },
   { value: "комедия", label: "Комедия" },
   { value: "драма", label: "Драма" },
@@ -44,7 +43,7 @@ export default function RandomPage() {
 
   // Фильтры
   const [kind, setKind] = useState<"all" | "series" | "movie">("all");
-  const [genre, setGenre] = useState("");
+  const [genres, setGenres] = useState<string[]>([]);
   const [yearFrom, setYearFrom] = useState<number>(0);
   const [ratingFrom, setRatingFrom] = useState<number>(0);
 
@@ -64,7 +63,7 @@ export default function RandomPage() {
     try {
       const params = new URLSearchParams();
       if (kind !== "all") params.set("kind", kind);
-      if (genre) params.set("genre", genre);
+      if (genres.length > 0) params.set("genre", genres.join(","));
       if (yearFrom > 0) params.set("yearFrom", String(yearFrom));
       if (ratingFrom > 0) params.set("ratingFrom", String(ratingFrom));
 
@@ -85,17 +84,24 @@ export default function RandomPage() {
     } finally {
       setLoading(false);
     }
-  }, [kind, genre, yearFrom, ratingFrom]);
+  }, [kind, genres, yearFrom, ratingFrom]);
 
   useEffect(() => {
     if (status === "authenticated") load();
   }, [status, load]);
 
+  function toggleGenre(value: string) {
+    setGenres((prev) =>
+      prev.includes(value)
+        ? prev.filter((g) => g !== value)
+        : [...prev, value]
+    );
+  }
+
   async function addToWishlist() {
     if (!show) return;
     setBusy(true);
     try {
-      // Импортируем из TMDB сразу со статусом wishlist
       const r = await fetch("/api/tmdb/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -108,7 +114,6 @@ export default function RandomPage() {
       if (r.ok) {
         setToast("✅ Добавлено в «Хочу посмотреть»!");
         setTimeout(() => setToast(null), 2500);
-        // Загружаем следующий
         setTimeout(() => load(), 700);
       } else {
         const text = await r.text();
@@ -140,8 +145,9 @@ export default function RandomPage() {
       </div>
 
       {/* Фильтры */}
-      <div className="card p-4 space-y-3 bg-neutral-900/40">
-        <div className="flex flex-wrap gap-3">
+      <div className="card p-4 space-y-4 bg-neutral-900/40">
+        {/* Тип + Год + Рейтинг */}
+        <div className="flex flex-wrap gap-3 items-end">
           {/* Тип */}
           <div>
             <label className="label">Тип</label>
@@ -167,22 +173,6 @@ export default function RandomPage() {
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* Жанр */}
-          <div className="min-w-[160px]">
-            <label className="label">Жанр</label>
-            <select
-              className="input text-sm"
-              value={genre}
-              onChange={(e) => setGenre(e.target.value)}
-            >
-              {GENRE_OPTIONS.map((g) => (
-                <option key={g.value} value={g.value}>
-                  {g.label}
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* Год от */}
@@ -220,7 +210,7 @@ export default function RandomPage() {
               type="button"
               onClick={() => {
                 setKind("all");
-                setGenre("");
+                setGenres([]);
                 setYearFrom(0);
                 setRatingFrom(0);
               }}
@@ -236,6 +226,48 @@ export default function RandomPage() {
             >
               {loading ? "..." : "🎲 Найти"}
             </button>
+          </div>
+        </div>
+
+        {/* Жанры — чекбоксы */}
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <label className="label mb-0">Жанры</label>
+            {genres.length > 0 && (
+              <span className="text-xs text-neutral-500">
+                выбрано: {genres.length}
+              </span>
+            )}
+            {genres.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setGenres([])}
+                className="text-xs text-neutral-500 hover:text-white transition"
+              >
+                очистить
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {GENRE_OPTIONS.map((g) => {
+              const active = genres.includes(g.value);
+              return (
+                <button
+                  key={g.value}
+                  type="button"
+                  onClick={() => toggleGenre(g.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition border ${
+                    active
+                      ? "bg-gradient-to-b from-red-500 to-red-600 text-white border-red-500 shadow-lg shadow-red-900/30"
+                      : "bg-neutral-800/60 text-neutral-400 border-white/5 hover:text-white hover:border-white/20"
+                  }`}
+                >
+                  {active && "✓ "}
+                  {g.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -280,7 +312,6 @@ export default function RandomPage() {
                 )}
               </div>
 
-              {/* Мета-чипы */}
               <div className="flex flex-wrap gap-2">
                 <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300">
                   {show.kind === "series" ? "📺 Сериал" : "🎬 Фильм"}
@@ -302,7 +333,6 @@ export default function RandomPage() {
                 )}
               </div>
 
-              {/* Жанры */}
               {show.genres.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {translateGenres(show.genres).map((g) => (
@@ -316,19 +346,16 @@ export default function RandomPage() {
                 </div>
               )}
 
-              {/* Описание */}
               {show.description && (
                 <p className="text-neutral-300 text-sm leading-relaxed line-clamp-6">
                   {show.description}
                 </p>
               )}
 
-              {/* Счётчик */}
               <div className="text-xs text-neutral-600">
                 Найдено подходящих: {show.totalMatching.toLocaleString("ru-RU")}
               </div>
 
-              {/* Кнопки */}
               <div className="flex flex-wrap gap-2 pt-2">
                 <button
                   type="button"
@@ -356,7 +383,6 @@ export default function RandomPage() {
         </p>
       )}
 
-      {/* Тост */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-2 rounded-xl shadow-2xl z-50 animate-in">
           {toast}

@@ -91,9 +91,15 @@ export async function GET(req: NextRequest) {
 
   const params = new URL(req.url).searchParams;
   let kind = params.get("kind") || "all";
-  const genre = (params.get("genre") || "").toLowerCase().trim();
+  const genreParam = (params.get("genre") || "").trim();
   const yearFrom = Number(params.get("yearFrom")) || 0;
   const ratingFrom = Number(params.get("ratingFrom")) || 0;
+
+  // Разбираем список жанров
+  const selectedGenres = genreParam
+    .split(",")
+    .map((g) => g.trim().toLowerCase())
+    .filter(Boolean);
 
   // Если "all" — случайно выбираем сериал или фильм
   if (kind === "all") {
@@ -109,7 +115,7 @@ export async function GET(req: NextRequest) {
   query.set("language", "ru-RU");
   query.set("sort_by", "popularity.desc");
   query.set("include_adult", "false");
-  query.set("vote_count.gte", "100"); // чтобы не показывать мусор
+  query.set("vote_count.gte", "100");
 
   if (ratingFrom > 0) {
     query.set("vote_average.gte", String(ratingFrom));
@@ -123,15 +129,20 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (genre) {
+  // Мультивыбор жанров — через "," (OR-логика в TMDB)
+  if (selectedGenres.length > 0) {
     const genreMap = isMovie ? MOVIE_GENRE_IDS : TV_GENRE_IDS;
-    const genreId = genreMap[genre];
-    if (genreId) {
-      query.set("with_genres", String(genreId));
+    const genreIds = selectedGenres
+      .map((g) => genreMap[g])
+      .filter((id): id is number => typeof id === "number");
+
+    if (genreIds.length > 0) {
+      // OR: "28,35" → фильм хотя бы с одним из этих жанров
+      query.set("with_genres", genreIds.join(","));
     }
   }
 
-  // Случайная страница (1–20) — TMDB отдаёт до 500 страниц
+  // Случайная страница (1–20)
   const randomPage = Math.floor(Math.random() * 20) + 1;
   query.set("page", String(randomPage));
 
@@ -151,13 +162,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "no_shows" }, { status: 404 });
     }
 
-    // Берём случайный из первой страницы
     const item = results[Math.floor(Math.random() * results.length)];
 
     const genres = Array.isArray(item.genre_ids)
-      ? item.genre_ids
-          .map((id: number) => GENRE_ID_TO_EN[id])
-          .filter(Boolean)
+      ? item.genre_ids.map((id: number) => GENRE_ID_TO_EN[id]).filter(Boolean)
       : [];
 
     const year = (item.release_date || item.first_air_date || "").slice(0, 4);
