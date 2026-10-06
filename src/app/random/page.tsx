@@ -3,28 +3,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import WatchSiteChip from "@/components/WatchSiteChip";
 import { translateGenres } from "@/lib/genres";
 
 type RandomShow = {
-  id: number;
+  tmdbId: number;
+  kind: "series" | "movie";
   name: string;
   originalName: string | null;
   description: string | null;
   posterUrl: string | null;
-  kind: string;
   year: string | null;
   genres: string[];
-  countries: string[];
-  studios: string[];
-  director: string | null;
-  creators: string[];
-  cast: any;
   tmdbRating: number | null;
   tmdbVotes: number | null;
-  runtime: number | null;
-  releaseDate: string | null;
   totalMatching: number;
 };
 
@@ -104,23 +95,24 @@ export default function RandomPage() {
     if (!show) return;
     setBusy(true);
     try {
-      const r = await fetch("/api/user-shows", {
+      // Импортируем из TMDB сразу со статусом wishlist
+      const r = await fetch("/api/tmdb/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          showId: show.id,
+          tmdbId: show.tmdbId,
+          kind: show.kind,
           status: "wishlist",
-          totalSeasons: 1,
-          totalEpisodes: 0,
         }),
       });
       if (r.ok) {
-        setToast("✅ Добавлено в планы!");
-        setTimeout(() => setToast(null), 2000);
-        // Сразу грузим следующий
-        setTimeout(() => load(), 500);
+        setToast("✅ Добавлено в «Хочу посмотреть»!");
+        setTimeout(() => setToast(null), 2500);
+        // Загружаем следующий
+        setTimeout(() => load(), 700);
       } else {
-        alert("Ошибка добавления");
+        const text = await r.text();
+        alert(`Ошибка импорта: ${text}`);
       }
     } finally {
       setBusy(false);
@@ -143,7 +135,7 @@ export default function RandomPage() {
           🎲 Что посмотреть?
         </h1>
         <p className="text-neutral-500 text-sm mt-1">
-          Случайный фильм или сериал по вашим фильтрам
+          Случайный фильм или сериал из TMDB — по вашим фильтрам
         </p>
       </div>
 
@@ -308,11 +300,6 @@ export default function RandomPage() {
                     )}
                   </span>
                 )}
-                {show.runtime && (
-                  <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300">
-                    ⏱ {show.runtime} мин
-                  </span>
-                )}
               </div>
 
               {/* Жанры */}
@@ -336,20 +323,9 @@ export default function RandomPage() {
                 </p>
               )}
 
-              {/* Режиссёр / создатели */}
-              {(show.director || show.creators.length > 0) && (
-                <div className="text-xs text-neutral-500">
-                  {show.director && <span>🎬 {show.director}</span>}
-                  {show.director && show.creators.length > 0 && " · "}
-                  {show.creators.length > 0 && (
-                    <span>🎥 {show.creators.join(", ")}</span>
-                  )}
-                </div>
-              )}
-
-              {/* Ссылка на каталог + счётчик */}
+              {/* Счётчик */}
               <div className="text-xs text-neutral-600">
-                Найдено подходящих: {show.totalMatching}
+                Найдено подходящих: {show.totalMatching.toLocaleString("ru-RU")}
               </div>
 
               {/* Кнопки */}
@@ -360,7 +336,7 @@ export default function RandomPage() {
                   disabled={busy}
                   className="btn btn-primary"
                 >
-                  {busy ? "..." : "👀 Хочу посмотреть"}
+                  {busy ? "Импортирую..." : "👀 Хочу посмотреть"}
                 </button>
                 <button
                   type="button"
@@ -370,9 +346,6 @@ export default function RandomPage() {
                 >
                   ⏭ Следующий
                 </button>
-                <Link href={`/show/${show.id}`} className="btn btn-secondary">
-                  📖 Подробнее
-                </Link>
               </div>
             </div>
           </div>
