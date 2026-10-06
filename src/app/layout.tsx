@@ -42,6 +42,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/friends" className="px-3 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-white/5 transition">
   Друзья
 </Link>
+<Link
+  href="/top"
+  className="px-3 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-white/5 transition"
+>
+  🥇 Топ
+</Link>
               </nav>
 
               <div className="ml-auto flex items-center gap-3">
