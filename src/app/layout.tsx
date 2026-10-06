@@ -4,6 +4,7 @@ import Link from "next/link";
 import "./globals.css";
 import Providers from "./providers";
 import UserMenu from "@/components/UserMenu";
+import SearchBar from "@/components/SearchBar";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -49,6 +50,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   🥇 Топ
 </Link>
               </nav>
+              
+{/* Поиск */}
+              <div className="hidden md:flex flex-1 max-w-md mx-4">
+  <SearchBar />
+</div>
 
               <div className="ml-auto flex items-center gap-3">
                 <Link href="/new" className="btn btn-primary">
