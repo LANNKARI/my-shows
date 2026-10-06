@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import WatchSiteChip from "@/components/WatchSiteChip";
 
 type EpisodeProgress = {
   id: number;
@@ -41,6 +42,11 @@ export default function LibraryPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<UserShowData | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [openSeasons, setOpenSeasons] = useState<Set<number>>(new Set());
+  const [autoOpened, setAutoOpened] = useState(false);
+  const [editDubbing, setEditDubbing] = useState("");
+  const [editWatchSite, setEditWatchSite] = useState("");
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -58,6 +64,24 @@ export default function LibraryPage() {
     load();
   }, [load]);
 
+  // Автооткрытие первого незавершённого сезона — ТОЛЬКО ПРИ ПЕРВОЙ ЗАГРУЗКЕ
+  useEffect(() => {
+    if (autoOpened || !data) return;
+    const seasonsList = Array.from(
+      new Set(data.progress.map((p) => p.episode.season))
+    ).sort((a, b) => a - b);
+    const firstIncomplete = seasonsList.find((s) =>
+      data.progress
+        .filter((p) => p.episode.season === s)
+        .some((p) => !p.watched)
+    );
+    const toOpen = firstIncomplete ?? seasonsList[0];
+    if (toOpen != null) {
+      setOpenSeasons(new Set([toOpen]));
+    }
+    setAutoOpened(true);
+  }, [data, autoOpened]);
+
   async function toggleEpisode(progress: EpisodeProgress) {
     await fetch(`/api/user-shows/${id}/episodes/${progress.id}`, {
       method: "PATCH",
@@ -65,6 +89,35 @@ export default function LibraryPage() {
       body: JSON.stringify({ watched: !progress.watched }),
     });
     load();
+  }
+
+  function openEdit() {
+    if (!data) return;
+    setEditDubbing(data.dubbing || "");
+    setEditWatchSite(data.watchSite || "");
+    setEditOpen(true);
+  }
+
+  async function saveEdit() {
+    await fetch(`/api/user-shows/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dubbing: editDubbing,
+        watchSite: editWatchSite,
+      }),
+    });
+    setEditOpen(false);
+    load();
+  }
+
+  function toggleSeason(s: number) {
+    setOpenSeasons((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
   }
 
   async function updateStoppedAt(progress: EpisodeProgress, value: string) {
@@ -109,7 +162,6 @@ export default function LibraryPage() {
   const progress =
     data.progress.length > 0 ? (watchedCount / data.progress.length) * 100 : 0;
 
-  // Группировка серий по сезонам
   const seasons = Array.from(
     new Set(data.progress.map((p) => p.episode.season))
   ).sort((a, b) => a - b);
@@ -140,6 +192,14 @@ export default function LibraryPage() {
           >
             📖 Каталог
           </Link>
+
+          <button
+            type="button"
+            onClick={openEdit}
+            className="btn btn-secondary w-full justify-center"
+          >
+            ✏️ Редактировать
+          </button>
 
           <button
             className={`btn w-full justify-center ${
@@ -187,10 +247,22 @@ export default function LibraryPage() {
               </span>
             )}
           </h1>
+
           {data.show.originalName && (
             <p className="text-neutral-500 text-base mt-1">
               {data.show.originalName}
             </p>
+          )}
+
+          {(data.dubbing || data.watchSite) && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {data.dubbing && (
+                <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300">
+                  🎙 {data.dubbing}
+                </span>
+              )}
+              {data.watchSite && <WatchSiteChip site={data.watchSite} />}
+            </div>
           )}
         </div>
 
@@ -212,73 +284,195 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {/* Серии */}
-        <div className="space-y-4">
+        {/* Кнопки управления сезонами */}
+        {seasons.length > 1 && (
+          <div className="flex justify-end gap-3 text-xs">
+            <button
+              type="button"
+              onClick={() => setOpenSeasons(new Set(seasons))}
+              className="text-neutral-500 hover:text-white transition"
+            >
+              Развернуть все
+            </button>
+            <span className="text-neutral-700">·</span>
+            <button
+              type="button"
+              onClick={() => setOpenSeasons(new Set())}
+              className="text-neutral-500 hover:text-white transition"
+            >
+              Свернуть все
+            </button>
+          </div>
+        )}
+
+        {/* Серии — аккордеон по сезонам */}
+        <div className="space-y-3">
           {seasons.map((s) => {
             const seasonProgress = data.progress.filter(
               (p) => p.episode.season === s
             );
             const seasonWatched = seasonProgress.filter((p) => p.watched).length;
+            const isOpen = openSeasons.has(s);
+            const allWatched = seasonWatched === seasonProgress.length;
+            const percent =
+              seasonProgress.length > 0
+                ? (seasonWatched / seasonProgress.length) * 100
+                : 0;
 
             return (
-              <div key={s}>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs uppercase tracking-widest text-neutral-500 font-semibold">
-                    Сезон {s}
-                  </h3>
-                  <span className="text-xs text-neutral-600">
-                    {seasonWatched} / {seasonProgress.length}
+              <div
+                key={s}
+                className="rounded-xl border border-white/5 bg-neutral-900/40 overflow-hidden transition-colors hover:border-white/10"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleSeason(s)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left"
+                >
+                  <span
+                    className={`text-neutral-500 transition-transform duration-200 shrink-0 ${
+                      isOpen ? "rotate-90" : "rotate-0"
+                    }`}
+                  >
+                    ▶
                   </span>
-                </div>
-                <div className="space-y-2">
-                  {seasonProgress.map((p) => (
-                    <div
-                      key={p.id}
-                      className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 border transition-all ${
-                        p.watched
-                          ? "bg-emerald-950/20 border-emerald-900/40"
-                          : "bg-neutral-900/40 border-white/5 hover:border-white/10"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleEpisode(p)}
-                        className={`shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-xs font-bold transition-all ${
-                          p.watched
-                            ? "bg-gradient-to-b from-emerald-500 to-emerald-600 border-emerald-500 text-white shadow-lg"
-                            : "border-white/15 hover:border-white/40 text-transparent hover:text-white/40"
-                        }`}
-                      >
-                        ✓
-                      </button>
 
-                      <div className="flex-1 min-w-0">
-                        <div
-                          className={`text-sm font-medium ${
-                            p.watched
-                              ? "text-neutral-400 line-through"
-                              : "text-neutral-100"
-                          }`}
-                        >
-                          S{String(p.episode.season).padStart(2, "0")}E
-                          {String(p.episode.episode).padStart(2, "0")}
-                        </div>
-                      </div>
+                  <span className="text-sm font-semibold tracking-wide">
+                    Сезон {s}
+                  </span>
 
-                      <input
-                        className="input max-w-[140px] text-xs py-1.5"
-                        placeholder="00:34:12"
-                        value={p.stoppedAt ?? ""}
-                        onChange={(e) => updateStoppedAt(p, e.target.value)}
+                  {allWatched && (
+                    <span className="badge badge-green text-[10px] px-2 py-0.5">
+                      ✓ Завершён
+                    </span>
+                  )}
+
+                  <div className="ml-auto flex items-center gap-3">
+                    <div className="hidden sm:block w-24 h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-red-500 to-red-600 transition-all duration-500"
+                        style={{ width: `${percent}%` }}
                       />
                     </div>
-                  ))}
+                    <span className="text-xs text-neutral-500 tabular-nums shrink-0">
+                      {seasonWatched} / {seasonProgress.length}
+                    </span>
+                  </div>
+                </button>
+
+                <div
+                  className={`grid transition-all duration-300 ease-in-out ${
+                    isOpen
+                      ? "grid-rows-[1fr] opacity-100"
+                      : "grid-rows-[0fr] opacity-0"
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <div className="px-3 pb-3 pt-3 border-t border-white/5 space-y-2">
+                      {seasonProgress.map((p) => (
+                        <div
+                          key={p.id}
+                          className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 border transition-all ${
+                            p.watched
+                              ? "bg-emerald-950/20 border-emerald-900/40"
+                              : "bg-neutral-900/60 border-white/5 hover:border-white/10"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleEpisode(p)}
+                            className={`shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-xs font-bold transition-all ${
+                              p.watched
+                                ? "bg-gradient-to-b from-emerald-500 to-emerald-600 border-emerald-500 text-white shadow-lg"
+                                : "border-white/15 hover:border-white/40 text-transparent hover:text-white/40"
+                            }`}
+                          >
+                            ✓
+                          </button>
+
+                          <div className="flex-1 min-w-0">
+                            <div
+                              className={`text-sm font-medium ${
+                                p.watched
+                                  ? "text-neutral-400 line-through"
+                                  : "text-neutral-100"
+                              }`}
+                            >
+                              S{String(p.episode.season).padStart(2, "0")}E
+                              {String(p.episode.episode).padStart(2, "0")}
+                            </div>
+                          </div>
+
+                          <input
+                            className="input max-w-[140px] text-xs py-1.5"
+                            placeholder="00:34:12"
+                            value={p.stoppedAt ?? ""}
+                            onChange={(e) => updateStoppedAt(p, e.target.value)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
       </section>
+
+      {/* МОДАЛКА редактирования */}
+      {editOpen && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setEditOpen(false)}
+        >
+          <div
+            className="card w-full max-w-md bg-neutral-900 border border-white/10 shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-4">✏️ Редактировать запись</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="label">Озвучка</label>
+                <input
+                  className="input"
+                  value={editDubbing}
+                  onChange={(e) => setEditDubbing(e.target.value)}
+                  placeholder="Например: LostFilm"
+                />
+              </div>
+
+              <div>
+                <label className="label">Сайт просмотра</label>
+                <input
+                  className="input"
+                  value={editWatchSite}
+                  onChange={(e) => setEditWatchSite(e.target.value)}
+                  placeholder="Например: https://example.com"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6 justify-end">
+              <button
+                type="button"
+                onClick={() => setEditOpen(false)}
+                className="btn btn-secondary"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                className="btn btn-primary"
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

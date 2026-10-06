@@ -63,6 +63,14 @@ export default function UserMenu() {
             </Link>
 
             <Link
+  href={`/u/${user.username}/achievements`}
+  className="block px-4 py-2.5 text-sm text-neutral-300 hover:bg-white/5 transition"
+  onClick={() => setOpen(false)}
+>
+  🏆 Достижения
+</Link>
+
+            <Link
               href="/settings"
               className="block px-4 py-2.5 text-sm text-neutral-300 hover:bg-white/5 transition"
               onClick={() => setOpen(false)}
