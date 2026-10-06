@@ -6,7 +6,6 @@ import Link from "next/link";
 import CommentSection from "@/components/CommentSection";
 import CastList from "@/components/CastList";
 import ShowDetails from "@/components/ShowDetails";
-import WatchSiteChip from "@/components/WatchSiteChip";
 import { translateGenres } from "@/lib/genres";
 
 type ShowData = {
@@ -179,7 +178,7 @@ export default function ShowPage() {
             )}
           </div>
 
-          {/* Кнопки справа — только если не в библиотеке */}
+          {/* Кнопки справа — только если НЕ в библиотеке */}
           {!myUserShow && (
             <div className="flex gap-2 shrink-0 flex-wrap">
               <button
