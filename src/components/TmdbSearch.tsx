@@ -24,19 +24,26 @@ export default function TmdbSearch({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
+  const [searched, setSearched] = useState(false);
 
-  async function search(e: React.FormEvent) {
-    e.preventDefault();
-    if (query.trim().length < 2) return;
+  async function runSearch() {
+    const q = query.trim();
+    if (q.length < 2) return;
+
     setLoading(true);
     setError(null);
+    setSearched(true);
+
     try {
-      const r = await fetch(`/api/tmdb/search?q=${encodeURIComponent(query)}`);
+      const r = await fetch(`/api/tmdb/search?q=${encodeURIComponent(q)}`);
       if (!r.ok) {
         setError("Ошибка поиска");
         return;
       }
-      setResults(await r.json());
+      const data = await r.json();
+      setResults(Array.isArray(data) ? data : []);
+    } catch {
+      setError("Ошибка сети");
     } finally {
       setLoading(false);
     }
@@ -44,7 +51,7 @@ export default function TmdbSearch({
 
   async function handlePick(result: TmdbResult) {
     setPicked(result.tmdbId);
-    let cloudinaryUrl: string | null = null;
+    let cloudinaryUrl: string | null = result.posterPath;
 
     if (result.posterPath) {
       try {
@@ -66,6 +73,7 @@ export default function TmdbSearch({
     setOpen(false);
     setQuery("");
     setResults([]);
+    setSearched(false);
     setPicked(null);
   }
 
@@ -81,35 +89,42 @@ export default function TmdbSearch({
 
       {open && (
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setOpen(false)}
         >
           <div
-            className="card w-full max-w-2xl bg-neutral-900 border border-white/10 shadow-2xl max-h-[85vh] flex flex-col animate-scale"
+            className="card w-full max-w-2xl bg-neutral-900 border border-white/10 shadow-2xl max-h-[85vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-4 border-b border-white/5 flex items-center justify-between">
               <h3 className="font-bold">🔍 Поиск в TMDB</h3>
               <button
+                type="button"
                 onClick={() => setOpen(false)}
                 className="text-neutral-500 hover:text-white text-xl leading-none"
-                type="button"
               >
                 ✕
               </button>
             </div>
 
-            <div onSubmit={search} className="p-4 border-b border-white/5">
+            <div className="p-4 border-b border-white/5">
               <div className="flex gap-2">
                 <input
                   className="input flex-1"
                   placeholder="Введите название (мин. 2 символа)"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      runSearch();
+                    }
+                  }}
                   autoFocus
                 />
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={runSearch}
                   disabled={loading || query.trim().length < 2}
                   className="btn btn-primary"
                 >
@@ -124,15 +139,15 @@ export default function TmdbSearch({
                 <p className="text-center text-neutral-500 py-6">Поиск...</p>
               )}
 
-              {!loading && results.length === 0 && query.length >= 2 && (
+              {!loading && searched && results.length === 0 && (
                 <p className="text-center text-neutral-500 py-6">
                   Ничего не найдено
                 </p>
               )}
 
-              {!loading && results.length === 0 && query.length < 2 && (
+              {!loading && !searched && (
                 <p className="text-center text-neutral-500 py-6 text-sm">
-                  Введите название сериала или фильма
+                  Введите название и нажмите «Найти»
                 </p>
               )}
 
@@ -150,13 +165,13 @@ export default function TmdbSearch({
                       <img
                         src={r.posterPath}
                         alt=""
-                        className="w-10 rounded object-cover shrink-0"
-                        style={{ height: "60px" }}
+                        className="rounded object-cover shrink-0"
+                        style={{ width: "40px", height: "60px" }}
                       />
                     ) : (
                       <div
-                        className="w-10 rounded bg-neutral-800 shrink-0 flex items-center justify-center"
-                        style={{ height: "60px" }}
+                        className="rounded bg-neutral-800 shrink-0 flex items-center justify-center"
+                        style={{ width: "40px", height: "60px" }}
                       >
                         🎞️
                       </div>
