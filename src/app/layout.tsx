@@ -22,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru" className={inter.variable}>
       <body>
         <Providers>
-          <header className="sticky top-0 z-40 backdrop-blur-xl bg-black/60 border-b border-white/5">
+          <header className="sticky top-0 z-40 bg-black/80 border-b border-white/5">
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center gap-8">
               <Link href="/" className="flex items-center gap-2 group">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-900/40 group-hover:scale-105 transition">
