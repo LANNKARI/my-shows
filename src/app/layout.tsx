@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link href="/" className="px-3 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-white/5 transition">
                   Главная
                 </Link>
-              
+            
                 <Link
   href="/random"
   className="px-3 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-white/5 transition"
@@ -50,15 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 >
   👀 Хочу посмотреть
 </Link>
-                <Link href="/friends" className="px-3 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-white/5 transition">
-  Друзья
-</Link>
-<Link
-  href="/top"
-  className="px-3 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-white/5 transition"
->
-  🥇 Топ
-</Link>
+                
               </nav>
               
 {/* Поиск */}
