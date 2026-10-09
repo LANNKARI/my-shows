@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'popularity.desc';
     const mode = (searchParams.get('mode') || 'roulette') as 'roulette' | 'list';
     const requestedPage = parseInt(searchParams.get('page') || '1', 10);
+    const excludeAnimation = searchParams.get('excludeAnimation') === 'true';
 
     const genreKeys = genresParam
       ? genresParam.split(/[,|]/).map((s) => s.trim()).filter(Boolean)
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     const { movieIds, tvIds } = resolveGenreIds(genreKeys, type);
 
-    // Определяем порог количества голосов, чтобы не отсекать фильмы с высокой оценкой (9.0+)
+    // Адаптивный порог голосов
     let voteCountGte = 50;
     if (minRating >= 9.0) {
       voteCountGte = 10;
@@ -64,7 +65,6 @@ export async function GET(request: NextRequest) {
       voteCountGte = 30;
     }
 
-    // Собираем параметры для TMDB
     const buildTmdbParams = (mediaType: 'movie' | 'tv', pageNumber: number) => {
       const params = new URLSearchParams({
         language: 'ru-RU',
@@ -73,9 +73,7 @@ export async function GET(request: NextRequest) {
         sort_by: sortBy,
       });
 
-      if (apiKey.startsWith('eyJ')) {
-        // Bearer Token будет в headers
-      } else {
+      if (!apiKey.startsWith('eyJ')) {
         params.set('api_key', apiKey);
       }
 
@@ -85,14 +83,19 @@ export async function GET(request: NextRequest) {
 
       params.set('vote_count.gte', voteCountGte.toString());
 
-      // ВАЖНО: Разделение через '|' обеспечивает логику OR (любой из выбранных жанров)
+      // Логика OR для жанров
       if (mediaType === 'movie' && movieIds.length > 0) {
         params.set('with_genres', movieIds.join('|'));
       } else if (mediaType === 'tv' && tvIds.length > 0) {
         params.set('with_genres', tvIds.join('|'));
       }
 
-      // Даты выхода для фильмов и сериалов
+      // Исключение аниме и мультиков (жанр 16 - Animation)
+      if (excludeAnimation) {
+        params.set('without_genres', '16');
+      }
+
+      // Даты выхода
       if (mediaType === 'movie') {
         if (yearFrom > 0) params.set('primary_release_date.gte', `${yearFrom}-01-01`);
         if (yearTo > 0) params.set('primary_release_date.lte', `${yearTo}-12-31`);
@@ -123,7 +126,6 @@ export async function GET(request: NextRequest) {
       return res.json();
     };
 
-    // Нормализация элементов для фронтенда
     const normalize = (item: TmdbRawItem, mediaType: 'movie' | 'tv') => {
       const rawDate = item.release_date || item.first_air_date || '';
       const year = rawDate ? rawDate.split('-')[0] : '—';
@@ -153,7 +155,7 @@ export async function GET(request: NextRequest) {
       };
     };
 
-    // 1. РЕЖИМ РУЛЕТКИ (Случайный тайтл на вечер)
+    // 1. РЕЖИМ РУЛЕТКИ
     if (mode === 'roulette') {
       const targetType: 'movie' | 'tv' =
         type === 'all' ? (Math.random() > 0.5 ? 'movie' : 'tv') : type;
@@ -162,7 +164,6 @@ export async function GET(request: NextRequest) {
       const totalPages = Math.min(firstPageData.total_pages || 1, 20);
       let results: TmdbRawItem[] = firstPageData.results || [];
 
-      // Если страниц больше одной — выбираем случайную страницу для максимального разнообразия
       if (totalPages > 1) {
         const randomPage = Math.floor(Math.random() * totalPages) + 1;
         if (randomPage !== 1) {
@@ -172,16 +173,23 @@ export async function GET(request: NextRequest) {
               results = pageData.results;
             }
           } catch {
-            // Фолбэк на результаты 1-й страницы
+            // Фолбэк на результаты первой страницы
           }
         }
       }
 
-      // Если в выбранном типе ничего не нашлось, а был режим "all" — пробуем второй тип
+      // Дополнительная клиентская фильтрация от мультиков/аниме (если TMDB вернул тег 16)
+      if (excludeAnimation) {
+        results = results.filter((item) => !item.genre_ids?.includes(16));
+      }
+
       if (results.length === 0 && type === 'all') {
         const fallbackType = targetType === 'movie' ? 'tv' : 'movie';
         const fallbackData = await fetchFromTmdb(fallbackType, 1);
         results = fallbackData.results || [];
+        if (excludeAnimation) {
+          results = results.filter((item) => !item.genre_ids?.includes(16));
+        }
         if (results.length > 0) {
           const randomItem = results[Math.floor(Math.random() * results.length)];
           return NextResponse.json({
@@ -197,11 +205,11 @@ export async function GET(request: NextRequest) {
           success: true,
           randomItem: null,
           totalResults: 0,
-          message: 'По выбранным фильтрам ничего не найдено. Попробуйте снизить планку рейтинга или выбрать меньше ограничений.',
+          message:
+            'По выбранным фильтрам ничего не найдено. Попробуйте немного смягчить параметры поиска.',
         });
       }
 
-      // Отбираем случайный фильм из выборки
       const randomItem = results[Math.floor(Math.random() * results.length)];
 
       return NextResponse.json({
@@ -211,7 +219,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. РЕЖИМ ПОДБОРКИ (Список карточек)
+    // 2. РЕЖИМ ПОДБОРКИ (СПИСОК)
     let combinedItems: ReturnType<typeof normalize>[] = [];
     let totalResults = 0;
 
@@ -221,11 +229,15 @@ export async function GET(request: NextRequest) {
         fetchFromTmdb('tv', requestedPage),
       ]);
 
-      const normMovies = (moviesData.results || []).map((m: TmdbRawItem) => normalize(m, 'movie'));
-      const normTv = (tvData.results || []).map((t: TmdbRawItem) => normalize(t, 'tv'));
+      let normMovies = (moviesData.results || []).map((m: TmdbRawItem) => normalize(m, 'movie'));
+      let normTv = (tvData.results || []).map((t: TmdbRawItem) => normalize(t, 'tv'));
+
+      if (excludeAnimation) {
+        normMovies = normMovies.filter((item: ReturnType<typeof normalize>) => !item.genreIds.includes(16));
+        normTv = normTv.filter((item: ReturnType<typeof normalize>) => !item.genreIds.includes(16));
+      }
 
       combinedItems = [...normMovies, ...normTv];
-      // Сортировка по популярности или оценке
       if (sortBy.includes('vote_average')) {
         combinedItems.sort((a, b) => b.voteAverage - a.voteAverage);
       } else {
@@ -234,7 +246,11 @@ export async function GET(request: NextRequest) {
       totalResults = (moviesData.total_results || 0) + (tvData.total_results || 0);
     } else {
       const data = await fetchFromTmdb(type, requestedPage);
-      combinedItems = (data.results || []).map((item: TmdbRawItem) => normalize(item, type));
+      let results: TmdbRawItem[] = data.results || [];
+      if (excludeAnimation) {
+        results = results.filter((item) => !item.genre_ids?.includes(16));
+      }
+      combinedItems = results.map((item) => normalize(item, type));
       totalResults = data.total_results || 0;
     }
 
