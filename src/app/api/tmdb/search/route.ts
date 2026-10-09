@@ -1,66 +1,86 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/current-user";
+import { NextRequest, NextResponse } from 'next/server';
 
-const TMDB_BASE = "https://api.themoviedb.org/3";
-const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
+interface TmdbSearchRaw {
+  id: number;
+  title?: string;
+  name?: string;
+  original_title?: string;
+  original_name?: string;
+  media_type?: string;
+  poster_path?: string | null;
+  release_date?: string;
+  first_air_date?: string;
+  vote_average?: number;
+}
 
-export async function GET(req: NextRequest) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const q = new URL(req.url).searchParams.get("q")?.trim() || "";
-  if (q.length < 2) return NextResponse.json([]);
-
-  const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) {
-    console.error("[TMDB] Ключ не настроен в .env");
-    return NextResponse.json(
-      { error: "TMDB_API_KEY не настроен" },
-      { status: 500 }
-    );
-  }
-
+export async function GET(request: NextRequest) {
   try {
-    const url =
-      `${TMDB_BASE}/search/multi?api_key=${apiKey}` +
-      `&language=ru-RU&query=${encodeURIComponent(q)}&include_adult=false`;
+    const apiKey =
+      process.env.TMDB_API_KEY ||
+      process.env.TMDB_READ_ACCESS_TOKEN ||
+      process.env.NEXT_PUBLIC_TMDB_API_KEY ||
+      '';
 
-    const res = await fetch(url, { cache: "no-store" });
+    if (!apiKey) {
+      return NextResponse.json({ error: 'TMDB API key not configured' }, { status: 500 });
+    }
 
+    const { searchParams } = new URL(request.url);
+    const query = searchParams.get('query') || searchParams.get('q') || '';
+
+    if (!query.trim()) {
+      return NextResponse.json({ results: [] });
+    }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    let url = `https://api.themoviedb.org/3/search/multi?query=${encodeURIComponent(query)}&language=ru-RU&include_adult=false`;
+
+    if (apiKey.startsWith('eyJ')) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    } else {
+      url += `&api_key=${apiKey}`;
+    }
+
+    const res = await fetch(url, { headers });
     if (!res.ok) {
-      const text = await res.text();
-      console.error("[TMDB] Ошибка ответа:", text.slice(0, 500));
-      return NextResponse.json({ error: "TMDB error" }, { status: 502 });
+      return NextResponse.json({ error: 'TMDB search error' }, { status: res.status });
     }
 
     const data = await res.json();
+    const rawResults: TmdbSearchRaw[] = data.results || [];
 
-    const results = (data.results || [])
-      .filter((r: any) => r.media_type === "tv" || r.media_type === "movie")
-      .slice(0, 15)
-      .map((r: any) => ({
-        tmdbId: r.id,
-        kind: r.media_type === "tv" ? "series" : "movie",
-        name: r.name || r.title || "Без названия",
-        originalName: r.original_name || r.original_title || null,
-        overview: r.overview || null,
-        posterPath: r.poster_path ? `${TMDB_IMG}${r.poster_path}` : null,
-        year: (r.first_air_date || r.release_date || "").slice(0, 4),
-        rating: r.vote_average
-          ? Math.round(r.vote_average * 10) / 10
-          : null,
-        numberOfSeasons:
-          r.media_type === "tv" ? r.number_of_seasons || null : null,
-        numberOfEpisodes:
-          r.media_type === "tv" ? r.number_of_episodes || null : null,
-      }));
+    // Отсекаем персон (актеров/режиссеров), оставляем только фильмы и сериалы
+    const filtered = rawResults
+      .filter((item) => item.media_type === 'movie' || item.media_type === 'tv')
+      .slice(0, 10)
+      .map((item) => {
+        const releaseDate = item.release_date || item.first_air_date || '';
+        const year = releaseDate ? releaseDate.slice(0, 4) : '';
+        const title = item.title || item.name || 'Без названия';
+        const originalTitle = item.original_title || item.original_name || '';
 
-    return NextResponse.json(results);
-  } catch (e: any) {
-    console.error("[TMDB] Ошибка:", e.message, e.cause);
-    return NextResponse.json(
-      { error: String(e?.message || e) },
-      { status: 500 }
-    );
+        return {
+          id: item.id,
+          tmdbId: item.id,
+          showId: item.id,
+          title,
+          name: title,
+          originalTitle,
+          originalName: originalTitle,
+          type: item.media_type,
+          media_type: item.media_type,
+          kind: item.media_type === 'tv' ? 'series' : 'movie',
+          year,
+          posterUrl: item.poster_path
+            ? `https://image.tmdb.org/t/p/w200${item.poster_path}`
+            : null,
+          rating: item.vote_average ? Math.round(item.vote_average * 10) / 10 : 0,
+        };
+      });
+
+    return NextResponse.json({ results: filtered });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

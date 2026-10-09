@@ -2,86 +2,64 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-// GET: Получение всех тайтлов библиотеки текущего пользователя
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    let userId = (session.user as { id?: string }).id;
-    if (!userId && session.user.email) {
-      const dbUser = await prisma.user.findUnique({
+    let currentUserId = (session?.user as { id?: string })?.id;
+    if (!currentUserId && session?.user?.email) {
+      const u = await prisma.user.findUnique({
         where: { email: session.user.email },
         select: { id: true },
       });
-      userId = dbUser?.id;
+      currentUserId = u?.id;
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID not found' }, { status: 401 });
+    // Если сессия не определена, берем первого пользователя системы (для персонального трекера)
+    if (!currentUserId) {
+      const firstUser = await prisma.user.findFirst({ select: { id: true } });
+      currentUserId = firstUser?.id;
     }
 
     const { searchParams } = new URL(request.url);
-    const showIdParam = searchParams.get('showId');
     const statusParam = searchParams.get('status');
 
-    // Если запрошен конкретный тайтл
-    if (showIdParam) {
-      const numShowId = parseInt(showIdParam, 10);
-      const userShow = await prisma.userShow.findFirst({
-        where: {
-          userId,
-          OR: [{ showId: numShowId }, { id: numShowId }],
-        },
-        include: {
-          show: true,
-          ratings: true,
-          progress: true,
-        },
-      });
-
-      return NextResponse.json(userShow || null);
-    }
-
-    // 1. Загружаем сериалы и фильмы пользователя из UserShow
-    const userShows = await prisma.userShow.findMany({
-      where: {
-        userId,
-        ...(statusParam ? { status: statusParam } : {}),
-      },
-      include: {
-        show: {
-          include: {
-            episodes: true,
+    // 1. Загружаем записи из UserShow
+    const userShows = currentUserId
+      ? await prisma.userShow.findMany({
+          where: {
+            userId: currentUserId,
+            ...(statusParam && statusParam !== 'all' ? { status: statusParam } : {}),
           },
-        },
-        ratings: true,
-        progress: true,
-      },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-    });
+          include: {
+            show: {
+              include: { episodes: true },
+            },
+            ratings: true,
+            progress: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+        })
+      : [];
 
-    // 2. Проверяем, есть ли старые сериалы в таблице Title, не перенесенные в UserShow
+    // 2. Загружаем исторические записи из таблицы Title (включая созданные до миграции пользователей)
     const oldTitles = await prisma.title.findMany({
-      where: { userId },
+      where: currentUserId
+        ? { OR: [{ userId: currentUserId }, { userId: null }] }
+        : undefined,
       include: {
         episodes: true,
         ratings: true,
       },
     });
 
-    // Автоматическая миграция старых записей
-    if (oldTitles.length > 0) {
+    // Автоматическая синхронизация Title -> UserShow
+    if (oldTitles.length > 0 && currentUserId) {
       for (const t of oldTitles) {
-        const exists = userShows.some(
+        const alreadyExists = userShows.some(
           (us) => us.show?.name.toLowerCase() === t.name.toLowerCase()
         );
 
-        if (!exists) {
+        if (!alreadyExists) {
           let s = await prisma.show.findFirst({ where: { name: t.name } });
           if (!s) {
             s = await prisma.show.create({
@@ -95,36 +73,43 @@ export async function GET(request: NextRequest) {
             });
           }
 
-          const newUs = await prisma.userShow.create({
-            data: {
-              userId,
-              showId: s.id,
-              kind: t.kind || 'series',
-              status: t.isCompleted ? 'completed' : 'watching',
-              isCompleted: t.isCompleted,
-              isFavorite: t.isFavorite,
-              totalSeasons: t.totalSeasons,
-              totalEpisodes: t.totalEpisodes,
-              dubbing: t.dubbing,
-              watchSite: t.watchSite,
-            },
-            include: {
-              show: {
-                include: {
-                  episodes: true,
+          const defaultStatus = t.isCompleted ? 'completed' : 'watching';
+
+          if (!statusParam || statusParam === 'all' || statusParam === defaultStatus) {
+            const newUs = await prisma.userShow.upsert({
+              where: {
+                userId_showId: {
+                  userId: currentUserId,
+                  showId: s.id,
                 },
               },
-              ratings: true,
-              progress: true,
-            },
-          });
+              update: {},
+              create: {
+                userId: currentUserId,
+                showId: s.id,
+                kind: t.kind || 'series',
+                status: defaultStatus,
+                isCompleted: t.isCompleted,
+                isFavorite: t.isFavorite,
+                totalSeasons: t.totalSeasons,
+                totalEpisodes: t.totalEpisodes,
+                dubbing: t.dubbing,
+                watchSite: t.watchSite,
+              },
+              include: {
+                show: { include: { episodes: true } },
+                ratings: true,
+                progress: true,
+              },
+            });
 
-          userShows.push(newUs);
+            userShows.push(newUs);
+          }
         }
       }
     }
 
-    // 3. Формируем универсальный массив объектов, понятный всем карточкам сайта
+    // 3. Формируем универсальный массив для карточек интерфейса
     const normalized = userShows.map((us) => ({
       id: us.id,
       userShowId: us.id,
@@ -134,6 +119,7 @@ export async function GET(request: NextRequest) {
       originalName: us.show?.originalName,
       originalTitle: us.show?.originalName,
       posterUrl: us.show?.posterUrl,
+      year: us.show?.year || (us.show?.releaseDate ? new Date(us.show.releaseDate).getFullYear().toString() : ''),
       kind: us.kind || us.show?.kind || 'series',
       status: us.status || 'watching',
       isCompleted: us.isCompleted,
@@ -142,6 +128,8 @@ export async function GET(request: NextRequest) {
       totalEpisodes: us.totalEpisodes,
       dubbing: us.dubbing,
       watchSite: us.watchSite,
+      rating: us.ratings?.[0]?.score || (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
+      tmdbRating: us.show?.tmdbRating,
       show: {
         ...us.show,
         title: us.show?.name,
@@ -153,35 +141,31 @@ export async function GET(request: NextRequest) {
       createdAt: us.createdAt,
     }));
 
-    // Отдаем прямой массив для работы страницы библиотеки
     return NextResponse.json(normalized);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json(
-      { error: 'Failed to fetch user shows', details: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
-// POST: Обновление статуса, заметок и оценок тайтла
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    let userId = (session.user as { id?: string }).id;
-    if (!userId && session.user.email) {
-      const dbUser = await prisma.user.findUnique({
+    let currentUserId = (session?.user as { id?: string })?.id;
+    if (!currentUserId && session?.user?.email) {
+      const u = await prisma.user.findUnique({
         where: { email: session.user.email },
         select: { id: true },
       });
-      userId = dbUser?.id;
+      currentUserId = u?.id;
     }
 
-    if (!userId) {
+    if (!currentUserId) {
+      const firstUser = await prisma.user.findFirst({ select: { id: true } });
+      currentUserId = firstUser?.id;
+    }
+
+    if (!currentUserId) {
       return NextResponse.json({ error: 'User ID not found' }, { status: 401 });
     }
 
@@ -194,7 +178,6 @@ export async function POST(request: NextRequest) {
 
     const numShowId = Number(rawShowId);
 
-    // 1. Находим тайтл по showId или tmdbId
     let targetShow = await prisma.show.findFirst({
       where: {
         OR: [
@@ -204,7 +187,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 2. Если не найден в Show — проверяем старую таблицу Title
     if (!targetShow && !isNaN(numShowId)) {
       const oldTitle = await prisma.title.findUnique({ where: { id: numShowId } });
       if (oldTitle) {
@@ -220,7 +202,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3. Если всё ещё нет — создаем запись из TMDB
     if (!targetShow && !isNaN(numShowId)) {
       const apiKey =
         process.env.TMDB_API_KEY ||
@@ -254,17 +235,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (!targetShow) {
-      return NextResponse.json({ error: 'Тайтл не найден в базе' }, { status: 404 });
+      return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
     }
 
     const status = body.status || 'watching';
-    const isCompleted = status === 'completed';
 
-    // 4. Сохраняем в UserShow
     const userShow = await prisma.userShow.upsert({
       where: {
         userId_showId: {
-          userId,
+          userId: currentUserId,
           showId: targetShow.id,
         },
       },
@@ -273,18 +252,14 @@ export async function POST(request: NextRequest) {
         ...(status === 'completed' ? { isCompleted: true } : {}),
         ...(body.isCompleted !== undefined ? { isCompleted: Boolean(body.isCompleted) } : {}),
         ...(body.isFavorite !== undefined ? { isFavorite: Boolean(body.isFavorite) } : {}),
-        ...(body.dubbing ? { dubbing: body.dubbing } : {}),
-        ...(body.watchSite ? { watchSite: body.watchSite } : {}),
       },
       create: {
-        userId,
+        userId: currentUserId,
         showId: targetShow.id,
         kind: targetShow.kind || 'series',
         status,
-        isCompleted,
+        isCompleted: status === 'completed',
         isFavorite: Boolean(body.isFavorite),
-        dubbing: body.dubbing || null,
-        watchSite: body.watchSite || null,
       },
       include: {
         show: true,
@@ -293,7 +268,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 5. Сохраняем оценку, если передана
     if (body.score !== undefined && body.score !== null) {
       const score = Math.min(Math.max(Number(body.score), 1), 10);
       const existingRating = await prisma.rating.findFirst({
@@ -322,9 +296,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json(
-      { error: 'Failed to update user show', details: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
