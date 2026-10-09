@@ -158,14 +158,13 @@ export default function ShowPage({ params }: ShowPageProps) {
                     src={show.posterUrl}
                     alt={title}
                     className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
                   />
-                ) : null}
-                <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-600 pointer-events-none -z-0">
-                  Нет постера
-                </div>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
+                    Нет постера
+                  </div>
+                )}
+
                 <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-bold uppercase text-white border border-white/10">
                   {show.kind === 'movie' ? 'Фильм' : 'Сериал'}
                 </div>
@@ -213,7 +212,7 @@ export default function ShowPage({ params }: ShowPageProps) {
                 </div>
               )}
 
-              {/* Блок управления в библиотеке */}
+              {/* Блок «Моя библиотека» */}
               <div className="p-4 sm:p-5 rounded-2xl bg-neutral-900/90 border border-neutral-800 mb-6 shadow-inner">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                   <div className="flex items-center gap-2">
@@ -229,7 +228,6 @@ export default function ShowPage({ params }: ShowPageProps) {
                   </Link>
                 </div>
 
-                {/* 4 статуса */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {[
                     { key: 'watching', label: '👀 Смотрю' },
@@ -252,7 +250,6 @@ export default function ShowPage({ params }: ShowPageProps) {
                   ))}
                 </div>
 
-                {/* Личная оценка */}
                 <div className="flex items-center gap-2 pt-3 border-t border-neutral-800/80 text-xs">
                   <span className="text-neutral-400">Моя оценка:</span>
                   <div className="flex items-center gap-1">

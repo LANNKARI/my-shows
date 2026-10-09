@@ -138,15 +138,12 @@ export default function HomePage() {
                         alt={displayTitle}
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
                       />
-                    ) : null}
-
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-xs text-neutral-600 pointer-events-none -z-0">
-                      🎬 Нет постера
-                    </div>
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-xs text-neutral-600">
+                        🎬 Нет постера
+                      </div>
+                    )}
 
                     <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
                       {isSeries ? 'Сериал' : 'Фильм'}
