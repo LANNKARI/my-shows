@@ -19,7 +19,6 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid ID format' }, { status: 400 });
     }
 
-    // Определяем текущего пользователя (если авторизован)
     const session = await auth();
     let currentUserId = (session?.user as { id?: string })?.id;
     if (!currentUserId && session?.user?.email) {
@@ -48,7 +47,7 @@ export async function GET(
       },
     });
 
-    // 2. Если не найден в Show — проверяем, не был ли передан UserShow.id
+    // 2. Если не найден в Show — проверяем UserShow.id
     if (!show) {
       const userShowItem = await prisma.userShow.findUnique({
         where: { id: numId },
@@ -73,14 +72,13 @@ export async function GET(
       }
     }
 
-    // 3. Если не найден — проверяем старую таблицу Title (карточки до миграции)
+    // 3. Если не найден — проверяем старую таблицу Title
     if (!show) {
       const oldTitle = await prisma.title.findUnique({
         where: { id: numId },
       });
 
       if (oldTitle) {
-        // Ищем соответствие по имени в каталоге Show
         show = await prisma.show.findFirst({
           where: { name: oldTitle.name },
           include: {
@@ -96,7 +94,6 @@ export async function GET(
           },
         });
 
-        // Если канонического Show еще нет — создаем его на основе старого Title
         if (!show) {
           show = await prisma.show.create({
             data: {
@@ -121,7 +118,7 @@ export async function GET(
       }
     }
 
-    // 4. Если в базе совсем ничего нет — проверяем напрямую через TMDB
+    // 4. Загрузка из TMDB
     const apiKey =
       process.env.TMDB_API_KEY ||
       process.env.TMDB_READ_ACCESS_TOKEN ||
@@ -130,9 +127,7 @@ export async function GET(
 
     if (!show && apiKey) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (apiKey.startsWith('eyJ')) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
+      if (apiKey.startsWith('eyJ')) headers['Authorization'] = `Bearer ${apiKey}`;
 
       const buildUrl = (type: 'movie' | 'tv') => {
         let u = `https://api.themoviedb.org/3/${type}/${numId}?language=ru-RU&append_to_response=credits`;
@@ -178,13 +173,13 @@ export async function GET(
 
         const creators = (data.created_by || []).map((c: { name: string }) => c.name);
 
-        // Формируем список топ-20 актеров
-        const cast = (data.credits?.cast || []).slice(0, 20).map((a: { id: number; name: string; character?: string; profile_path?: string | null }) => ({
+        const cast = (data.credits?.cast || []).slice(0, 25).map((a: any) => ({
           id: a.id,
           name: a.name,
           character: a.character || '',
+          profile_path: a.profile_path || null,
           profileUrl: a.profile_path ? `https://image.tmdb.org/t/p/w185${a.profile_path}` : null,
-          profile_path: a.profile_path,
+          image: a.profile_path ? `https://image.tmdb.org/t/p/w185${a.profile_path}` : null,
         }));
 
         show = await prisma.show.create({
@@ -227,8 +222,9 @@ export async function GET(
       return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
     }
 
-    // 5. Если фильм в базе есть, но актёры/бюджет ещё не были подтянуты — догружаем из TMDB
-    if (show.tmdbId && (!show.cast || (Array.isArray(show.cast) && show.cast.length === 0) || !show.director) && apiKey) {
+    // 5. Если в базе фильм есть, но актеры еще не были подгружены — догружаем
+    const castArray = Array.isArray(show.cast) ? (show.cast as any[]) : [];
+    if (show.tmdbId && castArray.length === 0 && apiKey) {
       try {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (apiKey.startsWith('eyJ')) headers['Authorization'] = `Bearer ${apiKey}`;
@@ -239,24 +235,23 @@ export async function GET(
         const detailRes = await fetch(detailUrl, { headers });
         if (detailRes.ok) {
           const d = await detailRes.json();
-          const cast = (d.credits?.cast || []).slice(0, 20).map((a: { id: number; name: string; character?: string; profile_path?: string | null }) => ({
+          const cast = (d.credits?.cast || []).slice(0, 25).map((a: any) => ({
             id: a.id,
             name: a.name,
             character: a.character || '',
+            profile_path: a.profile_path || null,
             profileUrl: a.profile_path ? `https://image.tmdb.org/t/p/w185${a.profile_path}` : null,
-            profile_path: a.profile_path,
+            image: a.profile_path ? `https://image.tmdb.org/t/p/w185${a.profile_path}` : null,
           }));
 
           const director =
             d.credits?.crew?.find((c: { job: string; name: string }) => c.job === 'Director')?.name ||
             d.created_by?.[0]?.name ||
-            null;
+            show.director;
 
           const runtime = d.runtime || d.episode_run_time?.[0] || show.runtime;
           const budget = d.budget && d.budget > 0 ? BigInt(d.budget) : show.budget;
           const revenue = d.revenue && d.revenue > 0 ? BigInt(d.revenue) : show.revenue;
-          const countries = (d.production_countries || []).map((c: { name: string }) => c.name);
-          const studios = (d.production_companies || []).map((c: { name: string }) => c.name);
 
           show = await prisma.show.update({
             where: { id: show.id },
@@ -266,8 +261,6 @@ export async function GET(
               runtime,
               budget,
               revenue,
-              countries: countries.length > 0 ? countries : show.countries,
-              studios: studios.length > 0 ? studios : show.studios,
             },
             include: {
               episodes: true,
@@ -283,7 +276,7 @@ export async function GET(
           });
         }
       } catch {
-        // Оставляем текущую запись при сбое сети TMDB
+        // Оставляем текущую запись при недоступности сети
       }
     }
 
@@ -304,7 +297,6 @@ export async function GET(
       });
     }
 
-    // Безопасная сериализация BigInt для JSON
     const serializedShow = {
       ...show,
       title: show.name,

@@ -62,6 +62,7 @@ export default function ShowPage({ params }: ShowPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           showId: show.id,
+          tmdbId: show.tmdbId,
           status: newStatus,
         }),
       });
@@ -72,14 +73,15 @@ export default function ShowPage({ params }: ShowPageProps) {
       }
 
       if (!res.ok) {
-        throw new Error('Не удалось обновить статус');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || errData.details || 'Не удалось обновить статус');
       }
 
       const updated = await res.json();
-      setUserShow(updated.item || updated);
-    } catch (err) {
+      setUserShow(updated.item || updated.userShow || updated);
+    } catch (err: any) {
       console.error(err);
-      alert('Ошибка при сохранении в библиотеку');
+      alert(err.message || 'Ошибка при сохранении в библиотеку');
     } finally {
       setUpdatingLibrary(false);
     }
@@ -90,17 +92,58 @@ export default function ShowPage({ params }: ShowPageProps) {
     if (!show) return;
     setUserRating(score);
     try {
-      await fetch('/api/user-shows', {
+      const res = await fetch('/api/user-shows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           showId: show.id,
+          tmdbId: show.tmdbId,
           score,
         }),
       });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.item || data.userShow) {
+          setUserShow(data.item || data.userShow);
+        }
+      }
     } catch (err) {
       console.error('Ошибка выставления оценки:', err);
     }
+  };
+
+  // Переход к трекеру библиотеки (с автодобавлением если еще не добавлен)
+  const handleOpenLibraryTracker = async () => {
+    if (!show) return;
+    if (userShow?.id) {
+      router.push(`/library/${userShow.id}`);
+      return;
+    }
+
+    // Если тайтла еще нет в библиотеке пользователя — сначала добавляем в "Смотрю"
+    try {
+      const res = await fetch('/api/user-shows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          showId: show.id,
+          tmdbId: show.tmdbId,
+          status: 'watching',
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const targetId = data.item?.id || data.userShow?.id || show.id;
+        router.push(`/library/${targetId}`);
+        return;
+      }
+    } catch {
+      // Фолбэк на прямой переход
+    }
+
+    router.push(`/library/${show.id}`);
   };
 
   if (loading) {
@@ -223,25 +266,24 @@ export default function ShowPage({ params }: ShowPageProps) {
               )}
 
               {/* Блок «Моя библиотека» */}
-              <div className="p-4 rounded-2xl bg-neutral-900/90 border border-neutral-800 mb-6 shadow-inner">
+              <div className="p-4 sm:p-5 rounded-2xl bg-neutral-900/90 border border-neutral-800 mb-6 shadow-inner">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                   <div className="flex items-center gap-2">
                     <span className="text-base">📚</span>
                     <span className="text-sm font-semibold text-white">Моя библиотека</span>
                   </div>
 
-                  {userShow && (
-                    <Link
-                      href={`/library/${userShow.id}`}
-                      className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1"
-                    >
-                      <span>Открыть трекер серий и заметки →</span>
-                    </Link>
-                  )}
+                  {/* Кнопка перехода к трекеру */}
+                  <button
+                    onClick={handleOpenLibraryTracker}
+                    className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1 self-start sm:self-auto"
+                  >
+                    <span>📖 Открыть трекер серий и заметки →</span>
+                  </button>
                 </div>
 
                 {/* Статусы просмотра */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {[
                     { key: 'watching', label: '👀 Смотрю' },
                     { key: 'planned', label: '🔖 В планах' },
@@ -264,7 +306,7 @@ export default function ShowPage({ params }: ShowPageProps) {
                 </div>
 
                 {/* Личная оценка */}
-                <div className="flex items-center gap-2 pt-2 border-t border-neutral-800/80 text-xs">
+                <div className="flex items-center gap-2 pt-3 border-t border-neutral-800/80 text-xs">
                   <span className="text-neutral-400">Моя оценка:</span>
                   <div className="flex items-center gap-1">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
@@ -290,7 +332,7 @@ export default function ShowPage({ params }: ShowPageProps) {
               {show.description && (
                 <div className="text-sm text-neutral-300 leading-relaxed">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
-                    О фильме
+                    О тайтле
                   </h3>
                   <p className="line-clamp-6">{show.description}</p>
                 </div>
@@ -306,7 +348,7 @@ export default function ShowPage({ params }: ShowPageProps) {
           <ShowDetails show={show} />
         </section>
 
-        {/* Актерский состав */}
+        {/* Актёрский состав */}
         {show.cast && Array.isArray(show.cast) && show.cast.length > 0 && (
           <section>
             <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
