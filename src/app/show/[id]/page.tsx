@@ -23,7 +23,6 @@ export default function ShowPage({ params }: ShowPageProps) {
   const [updatingLibrary, setUpdatingLibrary] = useState<boolean>(false);
   const [userRating, setUserRating] = useState<number>(0);
 
-  // Загрузка данных карточки
   const loadShow = async () => {
     setLoading(true);
     setError(null);
@@ -52,7 +51,6 @@ export default function ShowPage({ params }: ShowPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Изменение статуса в библиотеке
   const handleSetStatus = async (newStatus: string) => {
     if (!show) return;
     setUpdatingLibrary(true);
@@ -66,11 +64,6 @@ export default function ShowPage({ params }: ShowPageProps) {
           status: newStatus,
         }),
       });
-
-      if (res.status === 401) {
-        alert('Пожалуйста, войдите в аккаунт, чтобы сохранять тайтл в библиотеку.');
-        return;
-      }
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -87,12 +80,11 @@ export default function ShowPage({ params }: ShowPageProps) {
     }
   };
 
-  // Выставление пользовательской оценки
   const handleRate = async (score: number) => {
     if (!show) return;
     setUserRating(score);
     try {
-      const res = await fetch('/api/user-shows', {
+      await fetch('/api/user-shows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -101,49 +93,9 @@ export default function ShowPage({ params }: ShowPageProps) {
           score,
         }),
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.item || data.userShow) {
-          setUserShow(data.item || data.userShow);
-        }
-      }
     } catch (err) {
       console.error('Ошибка выставления оценки:', err);
     }
-  };
-
-  // Переход к трекеру библиотеки (с автодобавлением если еще не добавлен)
-  const handleOpenLibraryTracker = async () => {
-    if (!show) return;
-    if (userShow?.id) {
-      router.push(`/library/${userShow.id}`);
-      return;
-    }
-
-    // Если тайтла еще нет в библиотеке пользователя — сначала добавляем в "Смотрю"
-    try {
-      const res = await fetch('/api/user-shows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          showId: show.id,
-          tmdbId: show.tmdbId,
-          status: 'watching',
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const targetId = data.item?.id || data.userShow?.id || show.id;
-        router.push(`/library/${targetId}`);
-        return;
-      }
-    } catch {
-      // Фолбэк на прямой переход
-    }
-
-    router.push(`/library/${show.id}`);
   };
 
   if (loading) {
@@ -189,7 +141,6 @@ export default function ShowPage({ params }: ShowPageProps) {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
-      {/* Верхний баннер тайтла */}
       <div className="relative border-b border-neutral-800 bg-neutral-900/60 overflow-hidden">
         <div className="max-w-6xl mx-auto px-4 py-6 sm:py-10">
           <button
@@ -201,7 +152,6 @@ export default function ShowPage({ params }: ShowPageProps) {
           </button>
 
           <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-start">
-            {/* Постер */}
             <div className="w-48 sm:w-64 flex-shrink-0 mx-auto md:mx-0">
               <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl relative">
                 {show.posterUrl ? (
@@ -210,19 +160,20 @@ export default function ShowPage({ params }: ShowPageProps) {
                     src={show.posterUrl}
                     alt={title}
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
                   />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-neutral-600 text-sm">
-                    Нет постера
-                  </div>
-                )}
+                ) : null}
+                <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-600 pointer-events-none -z-0">
+                  Нет постера
+                </div>
                 <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-bold uppercase text-white border border-white/10">
                   {show.kind === 'movie' ? 'Фильм' : 'Сериал'}
                 </div>
               </div>
             </div>
 
-            {/* Основная информация */}
             <div className="flex-1 flex flex-col w-full">
               <div className="flex flex-wrap items-center gap-3 mb-2">
                 {show.year && (
@@ -251,7 +202,6 @@ export default function ShowPage({ params }: ShowPageProps) {
                 </p>
               )}
 
-              {/* Жанры */}
               {show.genres && show.genres.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-5">
                   {show.genres.map((g: string) => (
@@ -273,16 +223,15 @@ export default function ShowPage({ params }: ShowPageProps) {
                     <span className="text-sm font-semibold text-white">Моя библиотека</span>
                   </div>
 
-                  {/* Кнопка перехода к трекеру */}
-                  <button
-                    onClick={handleOpenLibraryTracker}
+                  {/* Переход строго по show.id в трекер */}
+                  <Link
+                    href={`/library/${show.id}`}
                     className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1 self-start sm:self-auto"
                   >
                     <span>📖 Открыть трекер серий и заметки →</span>
-                  </button>
+                  </Link>
                 </div>
 
-                {/* Статусы просмотра */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {[
                     { key: 'watching', label: '👀 Смотрю' },
@@ -305,7 +254,6 @@ export default function ShowPage({ params }: ShowPageProps) {
                   ))}
                 </div>
 
-                {/* Личная оценка */}
                 <div className="flex items-center gap-2 pt-3 border-t border-neutral-800/80 text-xs">
                   <span className="text-neutral-400">Моя оценка:</span>
                   <div className="flex items-center gap-1">
@@ -328,7 +276,6 @@ export default function ShowPage({ params }: ShowPageProps) {
                 </div>
               </div>
 
-              {/* Синопсис */}
               {show.description && (
                 <div className="text-sm text-neutral-300 leading-relaxed">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
@@ -342,13 +289,11 @@ export default function ShowPage({ params }: ShowPageProps) {
         </div>
       </div>
 
-      {/* Детальная информация: Бюджет, Сборы, Режиссер, Страны */}
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-10">
         <section>
           <ShowDetails show={show} />
         </section>
 
-        {/* Актёрский состав */}
         {show.cast && Array.isArray(show.cast) && show.cast.length > 0 && (
           <section>
             <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -359,7 +304,6 @@ export default function ShowPage({ params }: ShowPageProps) {
           </section>
         )}
 
-        {/* Комментарии */}
         <section className="pt-6 border-t border-neutral-800">
           <CommentSection
             showId={show.id}

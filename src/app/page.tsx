@@ -14,12 +14,7 @@ interface UserShowItem {
   year?: string;
   kind?: string;
   status: string;
-  isCompleted?: boolean;
-  isFavorite?: boolean;
-  totalSeasons?: number;
   totalEpisodes?: number;
-  rating?: number | null;
-  tmdbRating?: number | null;
   progress?: { episodeId: number; watched: boolean }[];
   show?: {
     episodes?: { id: number; season: number; episode: number }[];
@@ -49,7 +44,6 @@ export default function HomePage() {
     fetchShows();
   }, [fetchShows]);
 
-  // Вычисление прогресса просмотра для карточки
   const getProgressStats = (item: UserShowItem) => {
     const totalEps = item.totalEpisodes || item.show?.episodes?.length || (item.kind === 'movie' ? 1 : 0);
     const watchedCount = (item.progress || []).filter((p) => p.watched).length;
@@ -59,7 +53,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
-      {/* Шапка трекера */}
       <div className="border-b border-neutral-800 bg-neutral-900/40 backdrop-blur-md sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -93,15 +86,11 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Контентная сетка */}
       <div className="max-w-6xl mx-auto px-4 py-8">
         {loading && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
             {Array.from({ length: 10 }).map((_, idx) => (
-              <div
-                key={idx}
-                className="bg-neutral-900 rounded-2xl h-80 border border-neutral-800"
-              />
+              <div key={idx} className="bg-neutral-900 rounded-2xl h-80 border border-neutral-800" />
             ))}
           </div>
         )}
@@ -128,7 +117,7 @@ export default function HomePage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {shows.map((item) => {
               const displayTitle = item.title || item.name || 'Без названия';
-              const targetTrackerId = item.userShowId || item.id;
+              const targetShowId = item.showId;
               const isSeries = item.kind === 'series';
               const { totalEps, watchedCount, percent } = getProgressStats(item);
 
@@ -137,9 +126,9 @@ export default function HomePage() {
                   key={`${item.id}-${item.showId}`}
                   className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-md"
                 >
-                  {/* Клик по постеру сразу открывает трекер серий */}
+                  {/* Клик открывает напрямую страницу трекера */}
                   <Link
-                    href={`/library/${targetTrackerId}`}
+                    href={`/library/${targetShowId}`}
                     className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
                   >
                     {item.posterUrl ? (
@@ -149,12 +138,15 @@ export default function HomePage() {
                         alt={displayTitle}
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
                       />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
-                        Нет постера
-                      </div>
-                    )}
+                    ) : null}
+
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-xs text-neutral-600 pointer-events-none -z-0">
+                      🎬 Нет постера
+                    </div>
 
                     <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
                       {isSeries ? 'Сериал' : 'Фильм'}
@@ -165,14 +157,13 @@ export default function HomePage() {
                     </div>
                   </Link>
 
-                  {/* Описание и прогресс-бар */}
                   <div className="p-3 flex-1 flex flex-col justify-between">
                     <div>
                       {item.year && (
                         <div className="text-[11px] text-neutral-500 mb-1">{item.year}</div>
                       )}
                       <Link
-                        href={`/library/${targetTrackerId}`}
+                        href={`/library/${targetShowId}`}
                         className="font-semibold text-sm text-white line-clamp-1 group-hover:text-blue-400 transition-colors block"
                         title={displayTitle}
                       >
@@ -180,7 +171,6 @@ export default function HomePage() {
                       </Link>
                     </div>
 
-                    {/* Отображение прогресса просмотра */}
                     <div className="mt-3 pt-2.5 border-t border-neutral-800/80">
                       <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1.5">
                         <span>Прогресс:</span>

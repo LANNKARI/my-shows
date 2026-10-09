@@ -1,34 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getCurrentUserId, formatPosterUrl } from '@/lib/current-user';
 import { translateGenres } from '@/lib/genres';
 
 export async function GET() {
   try {
-    const session = await auth();
-    let currentUserId = (session?.user as { id?: string })?.id;
-    if (!currentUserId && session?.user?.email) {
-      const u = await prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true },
-      });
-      currentUserId = u?.id;
-    }
-
+    const currentUserId = await getCurrentUserId();
     if (!currentUserId) {
-      const firstUser = await prisma.user.findFirst({ select: { id: true } });
-      currentUserId = firstUser?.id;
+      return NextResponse.json([]);
     }
 
-    if (!currentUserId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Ищем записи со статусом planned
     const items = await prisma.userShow.findMany({
       where: {
         userId: currentUserId,
-        OR: [{ status: 'planned' }, { status: 'PLANNED' }],
+        status: 'planned',
       },
       include: {
         show: true,
@@ -38,15 +23,9 @@ export async function GET() {
       },
     });
 
-    // Формируем готовые нормализованные карточки с абсолютными ссылками на постеры
     const normalized = items.map((item) => {
       const s = item.show;
-      const rawPoster = s?.posterUrl;
-      const posterUrl = rawPoster
-        ? rawPoster.startsWith('http')
-          ? rawPoster
-          : `https://image.tmdb.org/t/p/w500${rawPoster.startsWith('/') ? '' : '/'}${rawPoster}`
-        : null;
+      const posterUrl = formatPosterUrl(s?.posterUrl);
 
       return {
         id: item.id,
@@ -77,21 +56,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-    let currentUserId = (session?.user as { id?: string })?.id;
-    if (!currentUserId && session?.user?.email) {
-      const u = await prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true },
-      });
-      currentUserId = u?.id;
-    }
-
-    if (!currentUserId) {
-      const firstUser = await prisma.user.findFirst({ select: { id: true } });
-      currentUserId = firstUser?.id;
-    }
-
+    const currentUserId = await getCurrentUserId();
     if (!currentUserId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -122,11 +87,8 @@ export async function POST(request: NextRequest) {
       let tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${numTmdbId}?language=ru-RU`;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
-      if (apiKey.startsWith('eyJ')) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      } else {
-        tmdbUrl += `&api_key=${apiKey}`;
-      }
+      if (apiKey.startsWith('eyJ')) headers['Authorization'] = `Bearer ${apiKey}`;
+      else tmdbUrl += `&api_key=${apiKey}`;
 
       const resTmdb = await fetch(tmdbUrl, { headers });
       if (resTmdb.ok) {
@@ -144,9 +106,7 @@ export async function POST(request: NextRequest) {
             originalName: data.original_title || data.original_name || null,
             description: data.overview || '',
             kind,
-            posterUrl: data.poster_path
-              ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
-              : null,
+            posterUrl: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null,
             year,
             releaseDate: releaseDate ? new Date(releaseDate) : null,
             genres: translatedGenres,
@@ -158,7 +118,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!show) {
-      return NextResponse.json({ error: 'Show not found in database' }, { status: 404 });
+      return NextResponse.json({ error: 'Show not found' }, { status: 404 });
     }
 
     const userShow = await prisma.userShow.upsert({
