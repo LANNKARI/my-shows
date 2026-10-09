@@ -1,191 +1,181 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/current-user";
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
-// ────────────────────────────────────────────────
-// Утилита: превращает BigInt в Number для JSON
-// ────────────────────────────────────────────────
-function serializeUserShow(us: any) {
-  if (!us) return us;
-  const result: any = {
-    ...us,
-  };
-  if (us.show) {
-    result.show = {
-      ...us.show,
-      budget: us.show.budget != null ? Number(us.show.budget) : null,
-      revenue: us.show.revenue != null ? Number(us.show.revenue) : null,
-    };
-  }
-  return result;
-}
-
-// Разрешённые статусы
-const ALLOWED_STATUSES = ["wishlist", "watching", "completed"] as const;
-type UserShowStatus = (typeof ALLOWED_STATUSES)[number];
-
-function normalizeStatus(value: any): UserShowStatus {
-  const s = String(value);
-  if (ALLOWED_STATUSES.includes(s as UserShowStatus)) {
-    return s as UserShowStatus;
-  }
-  return "watching";
-}
-
-// ────────────────────────────────────────────────
-// GET — моя библиотека
-// ВАЖНО: показывает только "watching" и "completed".
-// Wishlist отображается на отдельной странице /wishlist
-// ────────────────────────────────────────────────
-export async function GET() {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const userShows = await prisma.userShow.findMany({
-    where: {
-      userId: me.id,
-      // Главная показывает только "Смотрю". "Просмотрено" — в профиле. Wishlist — в /wishlist
-      status: "watching",
-    },
-    orderBy: { updatedAt: "desc" },
-    include: {
-      show: true,
-      ratings: true,
-      progress: { select: { watched: true } },
-    },
-  });
-
-  const result = userShows.map((us) => ({
-    id: us.id,
-    show: {
-      id: us.show.id,
-      name: us.show.name,
-      originalName: us.show.originalName,
-      posterUrl: us.show.posterUrl,
-      kind: us.show.kind,
-      year: us.show.year,
-      tmdbRating: us.show.tmdbRating,
-    },
-    totalSeasons: us.totalSeasons,
-    totalEpisodes: us.totalEpisodes,
-    isCompleted: us.isCompleted,
-    isFavorite: us.isFavorite,
-    status: us.status,
-    dubbing: us.dubbing,
-    watchSite: us.watchSite,
-    watchedEpisodes: us.progress.filter((p) => p.watched).length,
-    episodesCount: us.progress.length,
-    avgRating: us.ratings.length
-      ? us.ratings.reduce((s, r) => s + r.score, 0) / us.ratings.length
-      : null,
-  }));
-
-  return NextResponse.json(result);
-}
-
-// ────────────────────────────────────────────────
-// POST — добавить Show в мою библиотеку
-// ────────────────────────────────────────────────
-export async function POST(req: NextRequest) {
+// GET: Получение записей библиотеки пользователя
+export async function GET(request: NextRequest) {
   try {
-    const me = await getCurrentUser();
-    if (!me) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await req.json();
-    const {
-      showId,
-      totalSeasons,
-      totalEpisodes,
-      dubbing,
-      watchSite,
-      status,
-    } = body;
-
-    console.log("[user-shows POST] body:", body);
-
-    if (!showId) {
-      return NextResponse.json({ error: "showId required" }, { status: 400 });
-    }
-
-    // Проверяем, что Show существует
-    const show = await prisma.show.findUnique({
-      where: { id: Number(showId) },
-    });
-    console.log("[user-shows POST] show found:", !!show);
-    if (!show) {
-      return NextResponse.json({ error: "show not found" }, { status: 404 });
-    }
-
-    // Проверяем, нет ли уже UserShow
-    const existing = await prisma.userShow.findFirst({
-      where: { userId: me.id, showId: Number(showId) },
-      include: { show: true },
-    });
-    console.log("[user-shows POST] existing:", !!existing);
-
-    if (existing) {
-      // Если уже есть — обновляем статус, если пришёл
-      if (status) {
-        const newStatus = normalizeStatus(status);
-        const updated = await prisma.userShow.update({
-          where: { id: existing.id },
-          data: {
-            status: newStatus,
-            isCompleted:
-              newStatus === "completed" ? true : existing.isCompleted,
-          },
-          include: { show: true },
-        });
-        return NextResponse.json(serializeUserShow(updated));
-      }
-      return NextResponse.json(serializeUserShow(existing));
-    }
-
-    // Создаём UserShow
-    const userShow = await prisma.userShow.create({
-      data: {
-        userId: me.id,
-        showId: Number(showId),
-        kind: show.kind || "series",
-        totalSeasons: Number(totalSeasons) || 1,
-        totalEpisodes: Number(totalEpisodes) || 0,
-        dubbing: dubbing || null,
-        watchSite: watchSite || null,
-        status: normalizeStatus(status),
-      },
-      include: { show: true },
-    });
-    console.log("[user-shows POST] userShow created:", userShow.id);
-
-    // Создаём EpisodeProgress для всех эпизодов Show
-    const episodes = await prisma.episode.findMany({
-      where: { showId: show.id },
-    });
-    console.log("[user-shows POST] episodes found:", episodes.length);
-
-    if (episodes.length > 0) {
-      await prisma.episodeProgress.createMany({
-        data: episodes.map((e) => ({
-          userShowId: userShow.id,
-          episodeId: e.id,
-          watched: false,
-        })),
+    let userId = (session.user as { id?: string }).id;
+    if (!userId && session.user.email) {
+      const dbUser = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true },
       });
-      console.log(
-        "[user-shows POST] progress created for",
-        episodes.length,
-        "episodes"
-      );
+      userId = dbUser?.id;
     }
 
-    return NextResponse.json(serializeUserShow(userShow), { status: 201 });
-  } catch (err: any) {
-    console.error("[user-shows POST] Error:", err.message);
-    console.error("[user-shows POST] Stack:", err.stack);
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID not found' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const showIdParam = searchParams.get('showId');
+    const statusParam = searchParams.get('status');
+
+    if (showIdParam) {
+      const numShowId = parseInt(showIdParam, 10);
+      const userShow = await prisma.userShow.findUnique({
+        where: {
+          userId_showId: {
+            userId,
+            showId: numShowId,
+          },
+        },
+        include: {
+          show: true,
+          ratings: true,
+          progress: true,
+        },
+      });
+
+      return NextResponse.json({ item: userShow });
+    }
+
+    const items = await prisma.userShow.findMany({
+      where: {
+        userId,
+        ...(statusParam ? { status: statusParam } : {}),
+      },
+      include: {
+        show: true,
+        ratings: true,
+        progress: true,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    return NextResponse.json({ items });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: err.message || "Internal error" },
+      { error: 'Failed to fetch user shows', details: message },
+      { status: 500 }
+    );
+  }
+}
+
+// POST: Добавление/обновление статуса или оценки в библиотеке
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    let userId = (session.user as { id?: string }).id;
+    if (!userId && session.user.email) {
+      const dbUser = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true },
+      });
+      userId = dbUser?.id;
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID not found' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const rawShowId = body.showId;
+    if (!rawShowId) {
+      return NextResponse.json({ error: 'Missing showId' }, { status: 400 });
+    }
+
+    const numShowId = Number(rawShowId);
+    if (isNaN(numShowId)) {
+      return NextResponse.json({ error: 'Invalid showId' }, { status: 400 });
+    }
+
+    // Проверяем наличие тайтла в базе
+    const targetShow = await prisma.show.findUnique({
+      where: { id: numShowId },
+    });
+
+    if (!targetShow) {
+      return NextResponse.json({ error: 'Show not found' }, { status: 404 });
+    }
+
+    const status = body.status || 'watching';
+
+    // Создаем или обновляем запись в библиотеке
+    const userShow = await prisma.userShow.upsert({
+      where: {
+        userId_showId: {
+          userId,
+          showId: numShowId,
+        },
+      },
+      update: {
+        ...(body.status ? { status } : {}),
+        ...(body.isFavorite !== undefined ? { isFavorite: Boolean(body.isFavorite) } : {}),
+        ...(body.isCompleted !== undefined ? { isCompleted: Boolean(body.isCompleted) } : {}),
+        ...(body.dubbing ? { dubbing: body.dubbing } : {}),
+        ...(body.watchSite ? { watchSite: body.watchSite } : {}),
+      },
+      create: {
+        userId,
+        showId: numShowId,
+        kind: targetShow.kind,
+        status,
+        isFavorite: Boolean(body.isFavorite),
+        isCompleted: Boolean(body.isCompleted),
+        dubbing: body.dubbing || null,
+        watchSite: body.watchSite || null,
+      },
+      include: {
+        show: true,
+        ratings: true,
+        progress: true,
+      },
+    });
+
+    // Если была передана оценка (score 1-10)
+    if (body.score !== undefined && body.score !== null) {
+      const score = Math.min(Math.max(Number(body.score), 1), 10);
+      const existingRating = await prisma.rating.findFirst({
+        where: { userShowId: userShow.id, episodeId: null },
+      });
+
+      if (existingRating) {
+        await prisma.rating.update({
+          where: { id: existingRating.id },
+          data: { score },
+        });
+      } else {
+        await prisma.rating.create({
+          data: {
+            userShowId: userShow.id,
+            score,
+          },
+        });
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      item: userShow,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: 'Failed to update user show', details: message },
       { status: 500 }
     );
   }

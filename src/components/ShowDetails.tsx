@@ -1,144 +1,176 @@
-"use client";
+'use client';
 
-type DetailsProps = {
-  budget: number | null;
-  revenue: number | null;
-  countries: string[];
-  studios: string[];
-  runtime: number | null;
-  releaseDate: string | null;
-  director: string | null;
-  creators: string[];
-  tmdbRating: number | null;
-  tmdbVotes: number | null;
-  kind: string;
-};
+import React from 'react';
 
-function formatMoney(value: number | null): string | null {
-  if (!value) return null;
-  if (value >= 1_000_000_000) {
-    return `$${(value / 1_000_000_000).toFixed(1)} млрд`;
-  }
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(0)} млн`;
-  }
-  if (value >= 1_000) {
-    return `$${(value / 1_000).toFixed(0)} тыс`;
-  }
-  return `$${value}`;
-}
-
-function formatRuntime(min: number | null): string | null {
-  if (!min) return null;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  if (h === 0) return `${m} мин`;
-  if (m === 0) return `${h} ч`;
-  return `${h} ч ${m} мин`;
-}
-
-function formatDate(iso: string | null): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+export interface DetailsProps {
+  show?: any;
+  runtime?: number | null;
+  budget?: number | bigint | null;
+  revenue?: number | bigint | null;
+  countries?: string[];
+  studios?: string[];
+  director?: string | null;
+  creators?: string[];
+  year?: string | null;
+  releaseDate?: Date | string | null;
+  [key: string]: any;
 }
 
 export default function ShowDetails(props: DetailsProps) {
-  const {
-    budget,
-    revenue,
-    countries,
-    studios,
-    runtime,
-    releaseDate,
-    director,
-    creators,
-    tmdbRating,
-    tmdbVotes,
-    kind,
-  } = props;
+  const data = props.show || props;
 
-  const rows: { label: string; value: string | null; icon: string }[] = [
-    { label: "Режиссёр", value: director, icon: "🎬" },
-    {
-      label: kind === "series" ? "Создатели" : "Режиссёр",
-      value: creators.length > 0 ? creators.join(", ") : null,
-      icon: "🎥",
-    },
-    {
-      label: "Страна",
-      value: countries.length > 0 ? countries.join(", ") : null,
-      icon: "🌍",
-    },
-    {
-      label: "Студии",
-      value: studios.length > 0 ? studios.join(", ") : null,
-      icon: "🏢",
-    },
-    {
-      label: "Дата выхода",
-      value: formatDate(releaseDate),
-      icon: "📅",
-    },
-    {
-      label: "Длительность",
-      value: formatRuntime(runtime),
-      icon: "⏱",
-    },
-    {
-      label: "Бюджет",
-      value: formatMoney(budget),
-      icon: "💰",
-    },
-    {
-      label: "Сборы",
-      value: formatMoney(revenue),
-      icon: "💵",
-    },
-    {
-      label: "Рейтинг TMDB",
-      value:
-        tmdbRating != null
-          ? `⭐ ${tmdbRating}${tmdbVotes ? ` (${tmdbVotes.toLocaleString("ru-RU")} голосов)` : ""}`
-          : null,
-      icon: "⭐",
-    },
-  ];
+  const runtime: number | null | undefined = data.runtime;
+  const budget: number | bigint | null | undefined = data.budget;
+  const revenue: number | bigint | null | undefined = data.revenue;
+  const countries: string[] = Array.isArray(data.countries) ? data.countries : [];
+  const studios: string[] = Array.isArray(data.studios) ? data.studios : [];
+  const director: string | null | undefined = data.director;
+  const creators: string[] = Array.isArray(data.creators) ? data.creators : [];
 
-  const visible = rows.filter((r) => r.value);
-  if (visible.length === 0) return null;
+  const formatCurrency = (val: any) => {
+    if (!val || val === 0 || val === '0') return null;
+    const num = typeof val === 'bigint' ? Number(val) : Number(val);
+    if (isNaN(num) || num <= 0) return null;
+    return new Intl.NumberFormat('ru-RU', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(num);
+  };
+
+  const formatRuntime = (mins: number | null | undefined) => {
+    if (!mins || mins <= 0) return null;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (h > 0) {
+      return `${h} ч ${m > 0 ? `${m} мин` : ''}`;
+    }
+    return `${m} мин`;
+  };
+
+  const formatReleaseDate = (d: any) => {
+    if (!d) return null;
+    try {
+      const date = new Date(d);
+      if (isNaN(date.getTime())) return null;
+      return new Intl.DateTimeFormat('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).format(date);
+    } catch {
+      return null;
+    }
+  };
+
+  const formattedBudget = formatCurrency(budget);
+  const formattedRevenue = formatCurrency(revenue);
+  const formattedRuntime = formatRuntime(runtime);
+  const formattedDate = formatReleaseDate(data.releaseDate);
+
+  const hasAnyDetails =
+    director ||
+    creators.length > 0 ||
+    formattedBudget ||
+    formattedRevenue ||
+    formattedRuntime ||
+    countries.length > 0 ||
+    studios.length > 0 ||
+    formattedDate;
+
+  if (!hasAnyDetails) {
+    return null;
+  }
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-sm uppercase tracking-widest text-neutral-500 font-semibold">
-        📋 Детали
+    <div className="bg-neutral-900/70 border border-neutral-800 rounded-2xl p-5 sm:p-6 shadow-lg">
+      <h2 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+        <span>ℹ️ Информация о тайтле</span>
       </h2>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {visible.map((row) => (
-          <div
-            key={row.label}
-            className="flex items-start gap-3 rounded-xl bg-neutral-900/40 border border-white/5 px-3 py-2.5"
-          >
-            <span className="text-lg shrink-0">{row.icon}</span>
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-widest text-neutral-500">
-                {row.label}
-              </div>
-              <div className="text-sm text-neutral-200 break-words">
-                {row.value}
-              </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 text-sm">
+        {/* Режиссер */}
+        {director && (
+          <div>
+            <span className="text-neutral-500 text-xs block mb-0.5">Режиссёр</span>
+            <span className="text-neutral-200 font-medium">{director}</span>
+          </div>
+        )}
+
+        {/* Создатели сериала */}
+        {creators.length > 0 && (
+          <div>
+            <span className="text-neutral-500 text-xs block mb-0.5">Создатели</span>
+            <span className="text-neutral-200 font-medium">{creators.join(', ')}</span>
+          </div>
+        )}
+
+        {/* Премьера */}
+        {formattedDate && (
+          <div>
+            <span className="text-neutral-500 text-xs block mb-0.5">Дата премьеры</span>
+            <span className="text-neutral-200 font-medium">{formattedDate}</span>
+          </div>
+        )}
+
+        {/* Длительность */}
+        {formattedRuntime && (
+          <div>
+            <span className="text-neutral-500 text-xs block mb-0.5">Длительность</span>
+            <span className="text-neutral-200 font-medium">{formattedRuntime}</span>
+          </div>
+        )}
+
+        {/* Бюджет */}
+        {formattedBudget && (
+          <div>
+            <span className="text-neutral-500 text-xs block mb-0.5">Бюджет</span>
+            <span className="text-neutral-200 font-medium">{formattedBudget}</span>
+          </div>
+        )}
+
+        {/* Сборы */}
+        {formattedRevenue && (
+          <div>
+            <span className="text-neutral-500 text-xs block mb-0.5">Сборы</span>
+            <span className="text-emerald-400 font-medium">{formattedRevenue}</span>
+          </div>
+        )}
+
+        {/* Страны */}
+        {countries.length > 0 && (
+          <div className="sm:col-span-2 md:col-span-3">
+            <span className="text-neutral-500 text-xs block mb-1">Страны производства</span>
+            <div className="flex flex-wrap gap-1.5">
+              {countries.map((c: string, idx: number) => (
+                <span
+                  key={`${c}-${idx}`}
+                  className="px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-300 text-xs border border-neutral-700/60"
+                >
+                  {c}
+                </span>
+              ))}
             </div>
           </div>
-        ))}
+        )}
+
+        {/* Кинокомпании */}
+        {studios.length > 0 && (
+          <div className="sm:col-span-2 md:col-span-3">
+            <span className="text-neutral-500 text-xs block mb-1">Студии / Компании</span>
+            <div className="flex flex-wrap gap-1.5">
+              {studios.map((s: string, idx: number) => (
+                <span
+                  key={`${s}-${idx}`}
+                  className="px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-300 text-xs border border-neutral-700/60"
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-    </section>
+    </div>
   );
 }
