@@ -1,370 +1,190 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import TitleCard, { TitleCardData } from "@/components/TitleCard";
-import AchievementBadges, { BadgeData } from "@/components/AchievementBadges";
+import React, { useEffect, useState, use } from 'react';
+import Link from 'next/link';
 
-type UserPublic = {
-  id: string;
-  username: string;
-  name: string | null;
-  bio: string | null;
-  avatarUrl: string | null;
-  createdAt: string;
-};
+interface UserProfileData {
+  user: {
+    id: string;
+    username: string;
+    name: string | null;
+    bio: string | null;
+    avatarUrl: string | null;
+    createdAt: string;
+  };
+  completedShows: {
+    id: number;
+    showId: number;
+    name: string;
+    posterUrl: string | null;
+    year: string | null;
+    kind: string;
+    rating: number | null;
+  }[];
+  stats: {
+    totalCompleted: number;
+  };
+}
 
-type Stats = {
-  totalTitles: number;
-  completedTitles: number;
-  totalSeries: number;
-  totalMovies: number;
-  avgRating: number | null;
-};
-
-type Collection = {
-  id: number;
-  name: string;
-  items: { id: number }[];
-};
-
-type Data = {
-  user: UserPublic;
-  titles: TitleCardData[];
-  favorites: TitleCardData[];
-  collections: Collection[];
-  stats: Stats;
-  friendshipStatus: "none" | "pending_out" | "pending_in" | "friends" | "self";
-  friendshipId: number | null;
-};
-
-export default function UserProfilePage() {
-  const { username } = useParams<{ username: string }>();
-  const [data, setData] = useState<Data | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [achievements, setAchievements] = useState<BadgeData[]>([]);
+export default function UserProfilePage({
+  params,
+}: {
+  params: Promise<{ username: string }>;
+}) {
+  const { username } = use(params);
+  const [data, setData] = useState<UserProfileData | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/users/${username}`)
-      .then(async (r) => {
-        if (r.status === 404) {
-          setNotFound(true);
-          return;
+    const fetchProfile = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/users/${username}`);
+        if (!res.ok) {
+          throw new Error('Пользователь не найден');
         }
-        setData(await r.json());
-      })
-      .catch(() => setNotFound(true));
+        const json = await res.json();
+        setData(json);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Ошибка загрузки профиля';
+        setError(msg);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    // Отдельно — достижения
-    fetch(`/api/users/${username}/achievements`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.unlocked) setAchievements(d.unlocked);
-      })
-      .catch(() => {});
+    fetchProfile();
   }, [username]);
 
-  if (notFound) {
+  if (loading) {
     return (
-      <div className="text-center py-24">
-        <p className="text-neutral-500 text-lg mb-4">Пользователь не найден</p>
-        <Link href="/" className="btn btn-primary">
-          На главную
-        </Link>
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-neutral-400">Загрузка профиля...</p>
+        </div>
       </div>
     );
   }
 
-  if (!data) return <p className="text-neutral-500">Загрузка...</p>;
-
-  // Защита от неполных данных
-  const user = data.user;
-  if (!user) {
-    return <p className="text-neutral-500">Ошибка загрузки профиля</p>;
+  if (error || !data) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 text-center shadow-xl">
+          <div className="text-4xl mb-3">👤</div>
+          <h1 className="text-xl font-bold text-white mb-2">Профиль не найден</h1>
+          <p className="text-sm text-neutral-400 mb-6">{error || 'Пользователь не существует.'}</p>
+          <Link
+            href="/"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            На главную
+          </Link>
+        </div>
+      </div>
+    );
   }
 
-  const { titles = [], favorites = [], collections = [], stats } = data;
+  const { user, completedShows, stats } = data;
 
   return (
-    <div className="space-y-8">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
       {/* Шапка профиля */}
-      <div className="card p-6 md:p-8">
-        <div className="flex flex-col md:flex-row gap-6 items-start">
-          {/* Аватарка */}
-          <div className="shrink-0">
+      <div className="border-b border-neutral-800 bg-neutral-900/60">
+        <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col sm:flex-row items-center sm:items-start gap-6">
+          <div className="w-24 h-24 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center text-3xl font-bold text-neutral-300 overflow-hidden flex-shrink-0 shadow-xl">
             {user.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={user.avatarUrl}
-                alt={user.username}
-                className="w-24 h-24 md:w-32 md:h-32 rounded-2xl object-cover border border-white/5"
-              />
+              <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
             ) : (
-              <div className="w-24 h-24 md:w-32 md:h-32 rounded-2xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-4xl font-bold text-white">
-                {(user.name || user.username)[0].toUpperCase()}
-              </div>
+              user.username.charAt(0).toUpperCase()
             )}
           </div>
 
-          {/* Инфа */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-                {user.name || user.username}
-              </h1>
-              {achievements.length > 0 && (
-                <AchievementBadges
-                  badges={achievements}
-                  max={3}
-                  username={user.username}
-                  size="md"
-                />
-              )}
-            </div>
-            <p className="text-neutral-500 text-sm mt-1">@{user.username}</p>
-
-            {/* Кнопка дружбы — только если это не свой профиль */}
-            {data.friendshipStatus !== "self" && (
-              <div className="mt-4">
-                <FriendButton
-                  userId={user.id}
-                  initialStatus={data.friendshipStatus}
-                />
-              </div>
-            )}
-
+          <div className="text-center sm:text-left flex-1">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
+              {user.name || user.username}
+            </h1>
+            <p className="text-sm text-neutral-400 mt-0.5">@{user.username}</p>
             {user.bio && (
-              <p className="text-neutral-300 text-sm mt-4 whitespace-pre-wrap">
-                {user.bio}
-              </p>
+              <p className="text-xs text-neutral-300 mt-2 max-w-lg leading-relaxed">{user.bio}</p>
             )}
 
-            {/* Статистика */}
-            {stats && (
-              <div className="flex flex-wrap gap-4 mt-5 text-sm">
-                <div>
-                  <span className="text-neutral-500">Сериалов: </span>
-                  <span className="font-semibold">{stats.totalSeries}</span>
-                </div>
-                <div>
-                  <span className="text-neutral-500">Фильмов: </span>
-                  <span className="font-semibold">{stats.totalMovies}</span>
-                </div>
-                <div>
-                  <span className="text-neutral-500">Просмотрено: </span>
-                  <span className="font-semibold">{stats.completedTitles}</span>
-                </div>
-                {stats.avgRating != null && (
-                  <div>
-                    <span className="text-neutral-500">Средняя оценка: </span>
-                    <span className="font-semibold">
-                      ⭐ {stats.avgRating.toFixed(1)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-start gap-4 text-xs text-neutral-400">
+              <span className="px-3 py-1 bg-neutral-800 rounded-xl border border-neutral-700">
+                ✓ Просмотрено: <strong className="text-white">{stats.totalCompleted}</strong>
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ★ Любимые сериалы — компактные карточки */}
-      {favorites.length > 0 && (
-        <section>
-          <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
-            <span className="text-yellow-400">★</span>
-            Любимые сериалы
-            <span className="text-neutral-500 font-normal text-sm">
-              ({favorites.length}/5)
-            </span>
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {favorites.map((t) => (
-              <FavoriteCard key={t.id} t={t} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Коллекции */}
-      {collections.length > 0 && (
-        <section>
-          <h2 className="text-lg font-bold mb-3">Коллекции</h2>
-          <div className="flex flex-wrap gap-2">
-            {collections.map((c) => (
-              <span
-                key={c.id}
-                className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300"
-              >
-                📁 {c.name} · {c.items.length}
-              </span>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Все сериалы */}
-      <section>
-        <h2 className="text-lg font-bold mb-4">
-          Сериалы и фильмы{" "}
-          <span className="text-neutral-500 font-normal">
-            ({titles.length})
-          </span>
+      {/* Список просмотренных фильмов и сериалов */}
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+          <span>✓ Просмотренные тайтлы</span>
+          <span className="text-xs font-normal text-neutral-500">({completedShows.length})</span>
         </h2>
 
-        {titles.length === 0 ? (
-          <p className="text-neutral-500 py-12 text-center">
-            Пока нет добавленных сериалов
-          </p>
+        {completedShows.length === 0 ? (
+          <div className="p-12 text-center bg-neutral-900/40 border border-neutral-800 rounded-3xl text-xs text-neutral-500">
+            В списке просмотренного пока ничего нет.
+          </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-5">
-            {titles.map((t, i) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {completedShows.map((item) => (
               <div
-                key={t.id}
-                className="animate-in"
-                style={{ animationDelay: `${Math.min(i * 40, 400)}ms` }}
+                key={item.id}
+                className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-md"
               >
-                <TitleCard t={t} />
+                <Link
+                  href={`/show/${item.showId}`}
+                  className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
+                >
+                  {item.posterUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.posterUrl}
+                      alt={item.name}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
+                      Нет постера
+                    </div>
+                  )}
+
+                  <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
+                    {item.kind === 'series' ? 'Сериал' : 'Фильм'}
+                  </div>
+
+                  {item.rating && item.rating > 0 && (
+                    <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5">
+                      <span>★</span>
+                      <span>{item.rating}</span>
+                    </div>
+                  )}
+                </Link>
+
+                <div className="p-3">
+                  {item.year && (
+                    <div className="text-[11px] text-neutral-500 mb-1">{item.year}</div>
+                  )}
+                  <Link
+                    href={`/show/${item.showId}`}
+                    className="font-semibold text-sm text-white line-clamp-1 group-hover:text-blue-400 transition-colors block"
+                  >
+                    {item.name}
+                  </Link>
+                </div>
               </div>
             ))}
           </div>
         )}
-      </section>
+      </div>
     </div>
-  );
-}
-
-/* ---------- Кнопка дружбы на чужом профиле ---------- */
-function FriendButton({
-  userId,
-  initialStatus,
-}: {
-  userId: string;
-  initialStatus: "none" | "pending_out" | "pending_in" | "friends";
-}) {
-  const [status, setStatus] = useState(initialStatus);
-  const [loading, setLoading] = useState(false);
-
-  async function sendRequest() {
-    setLoading(true);
-    try {
-      const r = await fetch("/api/friendships", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
-      });
-      if (r.ok) {
-        setStatus("pending_out");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (status === "friends") {
-    return (
-      <span className="badge badge-green px-3 py-1.5 text-sm">
-        ✓ В друзьях
-      </span>
-    );
-  }
-
-  if (status === "pending_out") {
-    return (
-      <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-sm text-neutral-300">
-        Заявка отправлена
-      </span>
-    );
-  }
-
-  if (status === "pending_in") {
-    return (
-      <Link
-        href="/friends"
-        className="badge badge-gold px-3 py-1.5 text-sm hover:opacity-90 transition"
-      >
-        Входящая заявка — перейти в «Друзья»
-      </Link>
-    );
-  }
-
-  return (
-    <button
-      onClick={sendRequest}
-      disabled={loading}
-      className="btn btn-primary"
-      type="button"
-    >
-      {loading ? "Отправляю..." : "+ Добавить в друзья"}
-    </button>
-  );
-}
-
-/* ---------- Компактная карточка "Любимый сериал" ---------- */
-function FavoriteCard({
-  t,
-}: {
-  t: {
-    id: number;
-    name: string;
-    posterUrl?: string | null;
-    avgRating?: number | null;
-    isCompleted?: boolean;
-    kind?: string;
-    watchedEpisodes?: number;
-    episodesCount?: number;
-  };
-}) {
-  const progress =
-    t.episodesCount && t.episodesCount > 0
-      ? Math.min(100, ((t.watchedEpisodes ?? 0) / t.episodesCount) * 100)
-      : 0;
-
-  return (
-    <Link
-      href={`/show/${t.id}`}
-      className="group block rounded-xl overflow-hidden border border-yellow-500/20 bg-neutral-900/40 hover:bg-neutral-900/80 hover:border-yellow-500/40 transition-all duration-300 hover:-translate-y-0.5"
-    >
-      <div className="relative aspect-[2/3] bg-neutral-900 overflow-hidden">
-        {t.posterUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={t.posterUrl}
-            alt={t.name}
-            loading="lazy"
-            decoding="async"
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-3xl text-neutral-700 bg-gradient-to-br from-neutral-900 to-neutral-800">
-            🎞️
-          </div>
-        )}
-
-        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
-
-        {t.avgRating != null && (
-          <div className="absolute top-1.5 right-1.5 rounded-full bg-black/70 backdrop-blur px-1.5 py-0.5 text-[10px] font-semibold text-yellow-300">
-            ⭐ {t.avgRating.toFixed(1)}
-          </div>
-        )}
-
-        {t.kind === "series" && (t.episodesCount ?? 0) > 0 && (
-          <div className="absolute inset-x-0 bottom-0 h-0.5 bg-black/50">
-            <div
-              className="h-full bg-gradient-to-r from-yellow-400 to-yellow-600 transition-all"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="p-2">
-        <div className="text-xs font-medium line-clamp-2 leading-tight text-neutral-200 group-hover:text-yellow-300 transition-colors">
-          {t.name}
-        </div>
-      </div>
-    </Link>
   );
 }

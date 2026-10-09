@@ -1,620 +1,526 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import WatchSiteChip from "@/components/WatchSiteChip";
-import RatingModal from "@/components/RatingModal";
+import React, { useEffect, useState, use } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
-type EpisodeProgress = {
+interface EpisodeItem {
   id: number;
+  season: number;
+  episode: number;
   watched: boolean;
-  stoppedAt: string | null;
-  watchedAt: string | null;
-  episode: {
-    id: number;
-    season: number;
-    episode: number;
-  };
-};
-
-type RatingItem = {
-  id: number;
-  score: number;
-  episodeId: number | null;
-};
-
-type UserShowData = {
-  id: number;
-  userId: string;
-  showId: number;
-  totalSeasons: number;
-  totalEpisodes: number;
-  isCompleted: boolean;
-  isFavorite: boolean;
-  status: string; // ← новое
-  dubbing: string | null;
-  watchSite: string | null;
-  show: {
-    id: number;
-    name: string;
-    originalName: string | null;
-    posterUrl: string | null;
-    kind: string;
-  };
-  progress: EpisodeProgress[];
-  ratings: RatingItem[];
-};
-
-// ────────────────────────────────────────────────
-// Хелпер вне компонента — не зависит от data
-// ────────────────────────────────────────────────
-function getEpisodeRating(
-  ratings: RatingItem[],
-  episodeId: number
-): number | null {
-  const rating = ratings.find((r) => r.episodeId === episodeId);
-  return rating ? rating.score : null;
 }
 
-export default function LibraryPage() {
-  const { id } = useParams<{ id: string }>();
+interface SeasonItem {
+  seasonNumber: number;
+  totalEpisodes: number;
+  watchedEpisodes: number;
+  isCompleted: boolean;
+  episodes: EpisodeItem[];
+}
+
+interface TrackerData {
+  userShow: {
+    id: number;
+    showId: number;
+    status: string;
+    kind: string;
+    dubbing: string | null;
+    watchSite: string | null;
+    userRating: number | null;
+  };
+  show: {
+    id: number;
+    title: string;
+    originalTitle: string | null;
+    posterUrl: string | null;
+    year: string | null;
+    kind: string;
+    genres: string[];
+    tmdbRating: number | null;
+  };
+  stats: {
+    totalEpisodes: number;
+    watchedEpisodesCount: number;
+    progressPercent: number;
+  };
+  seasons: SeasonItem[];
+}
+
+export default function LibraryTrackerPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
   const router = useRouter();
-  const [data, setData] = useState<UserShowData | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
-  const [openSeasons, setOpenSeasons] = useState<Set<number>>(new Set());
-  const [autoOpened, setAutoOpened] = useState(false);
-  const [editDubbing, setEditDubbing] = useState("");
-  const [editWatchSite, setEditWatchSite] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
 
-  // Модалка оценки
-  const [showRating, setShowRating] = useState(false);
-  const [ratingForEpisode, setRatingForEpisode] = useState<number | null>(null);
+  const [data, setData] = useState<TrackerData | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  // Локальные состояния для формы заметок
+  const [dubbing, setDubbing] = useState<string>('');
+  const [watchSite, setWatchSite] = useState<string>('');
+  const [status, setStatus] = useState<string>('watching');
+  const [userRating, setUserRating] = useState<number>(0);
+  const [savingNotes, setSavingNotes] = useState<boolean>(false);
+
+  const loadTracker = async () => {
     setLoading(true);
-    const r = await fetch(`/api/user-shows/${id}`);
-    if (!r.ok) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/user-shows/${id}`);
+      if (!res.ok) {
+        throw new Error('Не удалось загрузить данные трекера');
+      }
+      const json: TrackerData = await res.json();
+      setData(json);
+
+      setDubbing(json.userShow.dubbing || '');
+      setWatchSite(json.userShow.watchSite || '');
+      setStatus(json.userShow.status || 'watching');
+      setUserRating(json.userShow.userRating || 0);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Ошибка загрузки';
+      setError(msg);
+    } finally {
       setLoading(false);
-      return;
     }
-    setData(await r.json());
-    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadTracker();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Автооткрытие первого незавершённого сезона — ТОЛЬКО ПРИ ПЕРВОЙ ЗАГРУЗКЕ
-  useEffect(() => {
-    if (autoOpened || !data) return;
-    const seasonsList = Array.from(
-      new Set(data.progress.map((p) => p.episode.season))
-    ).sort((a, b) => a - b);
-    const firstIncomplete = seasonsList.find((s) =>
-      data.progress
-        .filter((p) => p.episode.season === s)
-        .some((p) => !p.watched)
-    );
-    const toOpen = firstIncomplete ?? seasonsList[0];
-    if (toOpen != null) {
-      setOpenSeasons(new Set([toOpen]));
-    }
-    setAutoOpened(true);
-  }, [data, autoOpened]);
-
-  async function changeStatus(newStatus: "wishlist" | "watching" | "completed") {
+  // Переключение одной серии
+  const toggleEpisode = async (episodeId: number, currentWatched: boolean) => {
     if (!data) return;
-    setBusy(true);
-    try {
-      const r = await fetch(`/api/user-shows/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+    const nextWatched = !currentWatched;
+
+    // Оптимистичное обновление UI
+    setData((prev) => {
+      if (!prev) return prev;
+      let newWatchedTotal = prev.stats.watchedEpisodesCount;
+
+      const newSeasons = prev.seasons.map((s) => {
+        let seasonWatched = s.watchedEpisodes;
+        const newEps = s.episodes.map((ep) => {
+          if (ep.id === episodeId) {
+            if (nextWatched) {
+              seasonWatched += 1;
+              newWatchedTotal += 1;
+            } else {
+              seasonWatched = Math.max(0, seasonWatched - 1);
+              newWatchedTotal = Math.max(0, newWatchedTotal - 1);
+            }
+            return { ...ep, watched: nextWatched };
+          }
+          return ep;
+        });
+
+        return {
+          ...s,
+          watchedEpisodes: seasonWatched,
+          isCompleted: seasonWatched === s.totalEpisodes && s.totalEpisodes > 0,
+          episodes: newEps,
+        };
       });
-      if (!r.ok) {
-        alert("Ошибка смены статуса");
-        return;
-      }
-      load();
+
+      const total = prev.stats.totalEpisodes;
+      const newPercent = total > 0 ? Math.round((newWatchedTotal / total) * 100) : 0;
+
+      return {
+        ...prev,
+        stats: {
+          ...prev.stats,
+          watchedEpisodesCount: newWatchedTotal,
+          progressPercent: newPercent,
+        },
+        seasons: newSeasons,
+      };
+    });
+
+    try {
+      await fetch(`/api/user-shows/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          episodeId,
+          watched: nextWatched,
+        }),
+      });
+    } catch (err) {
+      console.error('Ошибка сохранения серии:', err);
+    }
+  };
+
+  // Отметка всего сезона сразу
+  const toggleSeasonAll = async (seasonNumber: number, markWatched: boolean) => {
+    if (!data) return;
+
+    setData((prev) => {
+      if (!prev) return prev;
+      const newSeasons = prev.seasons.map((s) => {
+        if (s.seasonNumber === seasonNumber) {
+          return {
+            ...s,
+            watchedEpisodes: markWatched ? s.totalEpisodes : 0,
+            isCompleted: markWatched,
+            episodes: s.episodes.map((ep) => ({ ...ep, watched: markWatched })),
+          };
+        }
+        return s;
+      });
+
+      const totalWatched = newSeasons.reduce((acc, s) => acc + s.watchedEpisodes, 0);
+      const total = prev.stats.totalEpisodes;
+      const newPercent = total > 0 ? Math.round((totalWatched / total) * 100) : 0;
+
+      return {
+        ...prev,
+        stats: {
+          ...prev.stats,
+          watchedEpisodesCount: totalWatched,
+          progressPercent: newPercent,
+        },
+        seasons: newSeasons,
+      };
+    });
+
+    try {
+      await fetch(`/api/user-shows/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seasonNumber,
+          markSeasonWatched: markWatched,
+        }),
+      });
+    } catch (err) {
+      console.error('Ошибка отметки сезона:', err);
+    }
+  };
+
+  // Сохранение заметок (озвучка, сайт, статус, оценка)
+  const saveNotes = async (newStatus?: string) => {
+    const targetStatus = newStatus || status;
+    setSavingNotes(true);
+    try {
+      await fetch(`/api/user-shows/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: targetStatus,
+          dubbing,
+          watchSite,
+          score: userRating > 0 ? userRating : undefined,
+        }),
+      });
+      if (newStatus) setStatus(newStatus);
+    } catch (err) {
+      console.error(err);
+      alert('Ошибка при сохранении заметок');
     } finally {
-      setBusy(false);
+      setSavingNotes(false);
     }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-neutral-400">Загрузка трекера серий...</p>
+        </div>
+      </div>
+    );
   }
 
-  async function toggleEpisode(progress: EpisodeProgress) {
-    await fetch(`/api/user-shows/${id}/episodes/${progress.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ watched: !progress.watched }),
-    });
-    load();
+  if (error || !data) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 text-center shadow-xl">
+          <div className="text-4xl mb-3">🎬</div>
+          <h1 className="text-xl font-bold text-white mb-2">Трекер не найден</h1>
+          <p className="text-sm text-neutral-400 mb-6">{error || 'Не удалось найти серии для этого тайтла.'}</p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => router.back()}
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-xl transition-colors"
+            >
+              ← Назад
+            </button>
+            <Link
+              href="/"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors"
+            >
+              На главную
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  function openEdit() {
-    if (!data) return;
-    setEditDubbing(data.dubbing || "");
-    setEditWatchSite(data.watchSite || "");
-    setEditOpen(true);
-  }
-
-  async function saveEdit() {
-    await fetch(`/api/user-shows/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        dubbing: editDubbing,
-        watchSite: editWatchSite,
-      }),
-    });
-    setEditOpen(false);
-    load();
-  }
-
-  function toggleSeason(s: number) {
-    setOpenSeasons((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) next.delete(s);
-      else next.add(s);
-      return next;
-    });
-  }
-
-  async function updateStoppedAt(progress: EpisodeProgress, value: string) {
-    await fetch(`/api/user-shows/${id}/episodes/${progress.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stoppedAt: value }),
-    });
-    load();
-  }
-
-  async function toggleFavorite() {
-    if (!data) return;
-    await fetch(`/api/user-shows/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isFavorite: !data.isFavorite }),
-    });
-    load();
-  }
-
-  async function removeFromLibrary() {
-    if (!confirm("Удалить из библиотеки? Прогресс будет потерян.")) return;
-    await fetch(`/api/user-shows/${id}`, { method: "DELETE" });
-    router.push("/");
-  }
-
-  function openRatingModal(episodeId: number | null) {
-    setRatingForEpisode(episodeId);
-    setShowRating(true);
-  }
-
-  if (loading) return <p className="text-neutral-500">Загрузка...</p>;
-  if (!data) return <p className="text-neutral-500">Не найдено</p>;
-
-  const watchedCount = data.progress.filter((p) => p.watched).length;
-  const progress =
-    data.progress.length > 0 ? (watchedCount / data.progress.length) * 100 : 0;
-
-  const seasons = Array.from(
-    new Set(data.progress.map((p) => p.episode.season))
-  ).sort((a, b) => a - b);
-
-  // Средняя оценка по тайтлу (без episodeId)
-  const wholeRatings = data.ratings.filter((r) => r.episodeId === null);
-  const avgRating = wholeRatings.length
-    ? wholeRatings.reduce((s, r) => s + r.score, 0) / wholeRatings.length
-    : null;
-
-  // Значение для предзаполнения модалки
-  const initialScore = (() => {
-    if (ratingForEpisode != null) {
-      return getEpisodeRating(data.ratings, ratingForEpisode);
-    }
-    return wholeRatings[0]?.score ?? null;
-  })();
+  const { show, stats, seasons } = data;
 
   return (
-    <div className="grid md:grid-cols-[320px_1fr] gap-8 md:gap-10">
-      {/* ЛЕВАЯ КОЛОНКА */}
-      <aside className="space-y-5">
-        <div className="rounded-2xl overflow-hidden border border-white/5 shadow-2xl">
-          {data.show.posterUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={data.show.posterUrl}
-              alt={data.show.name}
-              className="w-full block"
-            />
-          ) : (
-            <div className="aspect-[2/3] flex items-center justify-center text-6xl text-neutral-700 bg-gradient-to-br from-neutral-900 to-neutral-800">
-              🎞️
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Link
-            href={`/show/${data.show.id}`}
-            className="btn btn-secondary w-full justify-center"
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-24">
+      {/* Шапка трекера */}
+      <div className="border-b border-neutral-800 bg-neutral-900/60 backdrop-blur-md sticky top-0 z-20">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+          <button
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
           >
-            📖 Каталог
-          </Link>
+            <span>←</span>
+            <span>Назад</span>
+          </button>
 
-          {/* ── Переключатель статуса ── */}
-          <div className="rounded-xl bg-neutral-900/60 border border-white/5 p-3 space-y-2">
-            <p className="text-xs uppercase tracking-widest text-neutral-500 font-semibold mb-1">
-              Статус
-            </p>
-            <div className="flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={() => changeStatus("wishlist")}
-                disabled={busy}
-                className={`btn text-xs w-full justify-start ${
-                  data.status === "wishlist" ? "btn-primary" : "btn-secondary"
-                }`}
-              >
-                👀 Хочу посмотреть
-              </button>
-              <button
-                type="button"
-                onClick={() => changeStatus("watching")}
-                disabled={busy}
-                className={`btn text-xs w-full justify-start ${
-                  data.status === "watching" ? "btn-primary" : "btn-secondary"
-                }`}
-              >
-                📺 Смотрю
-              </button>
-              <button
-                type="button"
-                onClick={() => changeStatus("completed")}
-                disabled={busy}
-                className={`btn text-xs w-full justify-start ${
-                  data.status === "completed" ? "btn-primary" : "btn-secondary"
-                }`}
-              >
-                ✅ Просмотрено
-              </button>
+          <Link
+            href={`/show/${show.id}`}
+            className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+          >
+            Карточка фильма ↗
+          </Link>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8 space-y-8">
+        {/* Карточка тайтла и шкала прогресса */}
+        <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl p-5 sm:p-7 shadow-xl flex flex-col sm:flex-row gap-6 items-start">
+          <div className="w-28 sm:w-36 flex-shrink-0 mx-auto sm:mx-0">
+            <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800 shadow-lg">
+              {show.posterUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={show.posterUrl}
+                  alt={show.title}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-neutral-600 text-xs">
+                  Нет постера
+                </div>
+              )}
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={openEdit}
-            className="btn btn-secondary w-full justify-center"
-          >
-            ✏️ Редактировать
-          </button>
-
-          <button
-            type="button"
-            onClick={() => openRatingModal(null)}
-            className="btn btn-secondary w-full justify-center"
-          >
-            ⭐ Поставить оценку
-          </button>
-
-          <button
-            className={`btn w-full justify-center ${
-              data.isFavorite ? "btn-primary" : "btn-secondary"
-            }`}
-            onClick={toggleFavorite}
-            type="button"
-          >
-            {data.isFavorite ? "★ В любимых" : "☆ В любимые"}
-          </button>
-
-          <button
-            className="btn btn-danger w-full justify-center"
-            onClick={removeFromLibrary}
-            type="button"
-          >
-            🗑 Убрать из библиотеки
-          </button>
-        </div>
-      </aside>
-
-      {/* ПРАВАЯ КОЛОНКА */}
-      <section className="space-y-6">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-            {data.show.name}
-            {data.status === "wishlist" && (
-              <span className="ml-3 inline-flex align-middle badge badge-dark bg-white/5 border border-white/5 text-sm text-neutral-300">
-                👀 В планах
-              </span>
-            )}
-            {data.status === "watching" && (
-              <span className="ml-3 inline-flex align-middle badge badge-dark bg-white/5 border border-white/5 text-sm text-neutral-300">
-                📺 Смотрю
-              </span>
-            )}
-            {data.status === "completed" && (
-              <span className="ml-3 inline-flex align-middle badge badge-green text-sm">
-                ✓ Просмотрено
-              </span>
-            )}
-            {data.isFavorite && (
-              <span className="ml-2 inline-flex align-middle badge badge-gold text-sm">
-                ★ Любимый
-              </span>
-            )}
-          </h1>
-
-          {data.show.originalName && (
-            <p className="text-neutral-500 text-base mt-1">
-              {data.show.originalName}
-            </p>
-          )}
-
-          {/* Чипы: озвучка, сайт, средняя оценка */}
-          {(data.dubbing || data.watchSite || avgRating != null) && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {data.dubbing && (
-                <span className="badge badge-dark bg-white/5 border border-white/5 px-3 py-1.5 text-neutral-300">
-                  🎙 {data.dubbing}
-                </span>
-              )}
-              {data.watchSite && <WatchSiteChip site={data.watchSite} />}
-              {avgRating != null && (
-                <span className="badge badge-gold px-3 py-1.5 text-sm">
-                  ⭐ {avgRating.toFixed(1)}
-                  <span className="opacity-70 ml-1 font-normal">
-                    ({wholeRatings.length})
+          <div className="flex-1 w-full flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                {show.year && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300">
+                    {show.year}
                   </span>
+                )}
+                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  {show.kind === 'series' ? 'Сериал' : 'Фильм'}
                 </span>
+              </div>
+
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-1">
+                {show.title}
+              </h1>
+
+              {show.originalTitle && show.originalTitle !== show.title && (
+                <p className="text-xs text-neutral-400 italic mb-4">
+                  {show.originalTitle}
+                </p>
               )}
             </div>
-          )}
+
+            {/* Прогресс-бар */}
+            <div className="mt-4 pt-4 border-t border-neutral-800">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="font-semibold text-neutral-200">
+                  Прогресс просмотра:
+                </span>
+                <span className="text-blue-400 font-bold">
+                  {stats.watchedEpisodesCount} из {stats.totalEpisodes} серий ({stats.progressPercent}%)
+                </span>
+              </div>
+              <div className="w-full h-3 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-600 to-indigo-500 rounded-full transition-all duration-300"
+                  style={{ width: `${stats.progressPercent}%` }}
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Прогресс */}
-        {data.progress.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-neutral-400">Прогресс просмотра</span>
-              <span className="font-semibold text-white">
-                {watchedCount} / {data.progress.length}
-              </span>
+        {/* Панель персональных настроек и заметок */}
+        <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-5 shadow-lg space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <span>📝 Заметки и статус</span>
+            </h2>
+            <button
+              onClick={() => saveNotes()}
+              disabled={savingNotes}
+              className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium rounded-xl transition-colors shadow-sm"
+            >
+              {savingNotes ? 'Сохранение...' : 'Сохранить заметки'}
+            </button>
+          </div>
+
+          {/* Статус */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { key: 'watching', label: '👀 Смотрю' },
+              { key: 'planned', label: '🔖 В планах' },
+              { key: 'completed', label: '✓ Просмотрено' },
+              { key: 'dropped', label: '✕ Брошено' },
+            ].map((st) => (
+              <button
+                key={st.key}
+                onClick={() => saveNotes(st.key)}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all border ${
+                  status === st.key
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/20'
+                    : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-white'
+                }`}
+              >
+                {st.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <div>
+              <label className="block text-xs text-neutral-400 mb-1">
+                Озвучка / Перевод:
+              </label>
+              <input
+                type="text"
+                value={dubbing}
+                onChange={(e) => setDubbing(e.target.value)}
+                placeholder="Например: LostFilm, Red Head Sound, Дубляж"
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-blue-500"
+              />
             </div>
-            <div className="h-2 bg-neutral-900 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-red-500 to-red-600 transition-all duration-500"
-                style={{ width: `${progress}%` }}
+
+            <div>
+              <label className="block text-xs text-neutral-400 mb-1">
+                Где смотрю (сайт / сервис):
+              </label>
+              <input
+                type="text"
+                value={watchSite}
+                onChange={(e) => setWatchSite(e.target.value)}
+                placeholder="Например: Кинопоиск, Иви, HDRezka"
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-blue-500"
               />
             </div>
           </div>
-        )}
 
-        {/* Кнопки управления сезонами */}
-        {seasons.length > 1 && (
-          <div className="flex justify-end gap-3 text-xs">
-            <button
-              type="button"
-              onClick={() => setOpenSeasons(new Set(seasons))}
-              className="text-neutral-500 hover:text-white transition"
-            >
-              Развернуть все
-            </button>
-            <span className="text-neutral-700">·</span>
-            <button
-              type="button"
-              onClick={() => setOpenSeasons(new Set())}
-              className="text-neutral-500 hover:text-white transition"
-            >
-              Свернуть все
-            </button>
-          </div>
-        )}
-
-        {/* Серии — аккордеон по сезонам */}
-        <div className="space-y-3">
-          {seasons.map((s) => {
-            const seasonProgress = data.progress.filter(
-              (p) => p.episode.season === s
-            );
-            const seasonWatched = seasonProgress.filter((p) => p.watched).length;
-            const isOpen = openSeasons.has(s);
-            const allWatched = seasonWatched === seasonProgress.length;
-            const percent =
-              seasonProgress.length > 0
-                ? (seasonWatched / seasonProgress.length) * 100
-                : 0;
-
-            return (
-              <div
-                key={s}
-                className="rounded-xl border border-white/5 bg-neutral-900/40 overflow-hidden transition-colors hover:border-white/10"
-              >
+          {/* Личная оценка */}
+          <div className="flex items-center gap-2 pt-2 border-t border-neutral-800/80 text-xs">
+            <span className="text-neutral-400">Личная оценка:</span>
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
                 <button
-                  type="button"
-                  onClick={() => toggleSeason(s)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left"
+                  key={star}
+                  onClick={() => {
+                    setUserRating(star);
+                    fetch(`/api/user-shows/${id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ score: star }),
+                    });
+                  }}
+                  className={`text-sm transition-transform hover:scale-125 ${
+                    userRating >= star ? 'text-amber-400' : 'text-neutral-700 hover:text-neutral-400'
+                  }`}
+                  title={`${star} из 10`}
                 >
-                  <span
-                    className={`text-neutral-500 transition-transform duration-200 shrink-0 ${
-                      isOpen ? "rotate-90" : "rotate-0"
+                  ★
+                </button>
+              ))}
+            </div>
+            {userRating > 0 && (
+              <span className="font-bold text-amber-400 ml-1">{userRating}/10</span>
+            )}
+          </div>
+        </div>
+
+        {/* СПИСОК СЕЗОНОВ И СЕРИЙ С ЧЕКБОКСАМИ */}
+        <div className="space-y-6">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <span>📺 Эпизоды по сезонам</span>
+          </h2>
+
+          {seasons.length === 0 ? (
+            <div className="p-8 text-center bg-neutral-900 border border-neutral-800 rounded-2xl text-xs text-neutral-500">
+              Список серий для этого тайтла формируется...
+            </div>
+          ) : (
+            seasons.map((season) => (
+              <div
+                key={season.seasonNumber}
+                className="bg-neutral-900/70 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg"
+              >
+                {/* Шапка сезона */}
+                <div className="p-4 bg-neutral-850/80 border-b border-neutral-800 flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-sm text-white">
+                      Сезон {season.seasonNumber}
+                    </span>
+                    <span className="text-xs text-neutral-400 font-medium">
+                      ({season.watchedEpisodes} из {season.totalEpisodes} просмотрено)
+                    </span>
+                  </div>
+
+                  {/* Кнопка отметки всего сезона */}
+                  <button
+                    onClick={() =>
+                      toggleSeasonAll(season.seasonNumber, !season.isCompleted)
+                    }
+                    className={`text-xs px-3 py-1.5 rounded-xl font-medium transition-colors border ${
+                      season.isCompleted
+                        ? 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-750'
+                        : 'bg-blue-600/20 text-blue-300 border-blue-500/30 hover:bg-blue-600/30'
                     }`}
                   >
-                    ▶
-                  </span>
+                    {season.isCompleted ? 'Снять отметки сезона' : '✓ Отметить весь сезон'}
+                  </button>
+                </div>
 
-                  <span className="text-sm font-semibold tracking-wide">
-                    Сезон {s}
-                  </span>
-
-                  {allWatched && (
-                    <span className="badge badge-green text-[10px] px-2 py-0.5">
-                      ✓ Завершён
-                    </span>
-                  )}
-
-                  <div className="ml-auto flex items-center gap-3">
-                    <div className="hidden sm:block w-24 h-1.5 bg-neutral-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-red-500 to-red-600 transition-all duration-500"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-neutral-500 tabular-nums shrink-0">
-                      {seasonWatched} / {seasonProgress.length}
-                    </span>
-                  </div>
-                </button>
-
-                <div
-                  className={`grid transition-all duration-300 ease-in-out ${
-                    isOpen
-                      ? "grid-rows-[1fr] opacity-100"
-                      : "grid-rows-[0fr] opacity-0"
-                  }`}
-                >
-                  <div className="overflow-hidden">
-                    <div className="px-3 pb-3 pt-3 border-t border-white/5 space-y-2">
-                      {seasonProgress.map((p) => {
-                        const epRating = getEpisodeRating(
-                          data.ratings,
-                          p.episode.id
-                        );
-                        return (
-                          <div
-                            key={p.id}
-                            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 border transition-all ${
-                              p.watched
-                                ? "bg-emerald-950/20 border-emerald-900/40"
-                                : "bg-neutral-900/60 border-white/5 hover:border-white/10"
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleEpisode(p)}
-                              className={`shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-xs font-bold transition-all ${
-                                p.watched
-                                  ? "bg-gradient-to-b from-emerald-500 to-emerald-600 border-emerald-500 text-white shadow-lg"
-                                  : "border-white/15 hover:border-white/40 text-transparent hover:text-white/40"
-                              }`}
-                            >
-                              ✓
-                            </button>
-
-                            <div className="flex-1 min-w-0">
-                              <div
-                                className={`text-sm font-medium ${
-                                  p.watched
-                                    ? "text-neutral-400 line-through"
-                                    : "text-neutral-100"
-                                }`}
-                              >
-                                S{String(p.episode.season).padStart(2, "0")}E
-                                {String(p.episode.episode).padStart(2, "0")}
-                              </div>
-                            </div>
-
-                            {epRating != null && (
-                              <span className="badge badge-gold text-[10px] px-2 py-0.5 shrink-0">
-                                ⭐ {epRating}
-                              </span>
-                            )}
-
-                            <input
-                              className="input max-w-[130px] text-xs py-1.5"
-                              placeholder="00:34:12"
-                              value={p.stoppedAt ?? ""}
-                              onChange={(e) =>
-                                updateStoppedAt(p, e.target.value)
-                              }
-                            />
-
-                            <button
-                              type="button"
-                              onClick={() => openRatingModal(p.episode.id)}
-                              className="btn btn-secondary text-xs shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Оценить серию"
-                            >
-                              ⭐
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                {/* Сетка серий с чекбоксами */}
+                <div className="p-4 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
+                  {season.episodes.map((ep) => (
+                    <button
+                      key={ep.id}
+                      type="button"
+                      onClick={() => toggleEpisode(ep.id, ep.watched)}
+                      className={`p-3 rounded-xl border flex flex-col items-center justify-center transition-all ${
+                        ep.watched
+                          ? 'bg-blue-600/20 border-blue-500/50 text-white shadow-sm'
+                          : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-xs">
+                          {ep.watched ? '☑' : '☐'}
+                        </span>
+                        <span className="text-xs font-bold">
+                          {ep.episode} сер.
+                        </span>
+                      </div>
+                      <span className="text-[10px] opacity-70">
+                        {ep.watched ? 'Просмотрено' : 'Не смотрел'}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
-            );
-          })}
+            ))
+          )}
         </div>
-      </section>
-
-      {/* МОДАЛКА редактирования */}
-      {editOpen && (
-        <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setEditOpen(false)}
-        >
-          <div
-            className="card w-full max-w-md bg-neutral-900 border border-white/10 shadow-2xl p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold mb-4">✏️ Редактировать запись</h3>
-
-            <div className="space-y-4">
-              <div>
-                <label className="label">Озвучка</label>
-                <input
-                  className="input"
-                  value={editDubbing}
-                  onChange={(e) => setEditDubbing(e.target.value)}
-                  placeholder="Например: LostFilm"
-                />
-              </div>
-
-              <div>
-                <label className="label">Сайт просмотра</label>
-                <input
-                  className="input"
-                  value={editWatchSite}
-                  onChange={(e) => setEditWatchSite(e.target.value)}
-                  placeholder="Например: https://example.com"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-6 justify-end">
-              <button
-                type="button"
-                onClick={() => setEditOpen(false)}
-                className="btn btn-secondary"
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                onClick={saveEdit}
-                className="btn btn-primary"
-              >
-                Сохранить
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* МОДАЛКА оценки */}
-      {showRating && (
-        <RatingModal
-          userShowId={data.id}
-          episodeId={ratingForEpisode}
-          initialScore={initialScore}
-          onClose={() => setShowRating(false)}
-          onSaved={load}
-        />
-      )}
+      </div>
     </div>
   );
 }

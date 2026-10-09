@@ -1,175 +1,222 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
-type WishItem = {
+interface WishlistItem {
   id: number;
   showId: number;
-  name: string;
-  originalName: string | null;
+  title: string;
+  originalTitle?: string;
   posterUrl: string | null;
-  kind: string;
-  year: string | null;
-  tmdbRating: number | null;
-  status: string;
-  updatedAt: string;
-};
+  year?: string;
+  kind?: string;
+  rating?: number | null;
+  genres?: string[];
+}
 
 export default function WishlistPage() {
-  const { status } = useSession();
   const router = useRouter();
-  const [items, setItems] = useState<WishItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [items, setItems] = useState<WishlistItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  const fetchWishlist = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/wishlist');
+      if (res.ok) {
+        const data = await res.json();
+        setItems(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки Wishlist:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-      return;
-    }
-    if (status !== "authenticated") return;
+    fetchWishlist();
+  }, [fetchWishlist]);
 
-    fetch("/api/wishlist")
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setItems)
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, [status, router]);
-
-  async function startWatching(userShowId: number) {
-    setBusyId(userShowId);
+  // Перевод тайтла из "В планах" в "Смотрю"
+  const handleStartWatching = async (showId: number) => {
     try {
-      const r = await fetch(`/api/user-shows/${userShowId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "watching" }),
+      const res = await fetch('/api/user-shows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          showId,
+          status: 'watching',
+        }),
       });
-      if (r.ok) {
-        setItems((prev) => prev.filter((i) => i.id !== userShowId));
-      } else {
-        alert("Ошибка");
+
+      if (res.ok) {
+        // Убираем из списка желаемого
+        setItems((prev) => prev.filter((it) => it.showId !== showId));
+        router.push(`/library/${showId}`);
       }
-    } finally {
-      setBusyId(null);
+    } catch (err) {
+      console.error('Ошибка старта просмотра:', err);
     }
-  }
+  };
 
-  async function removeItem(userShowId: number) {
-    if (!confirm("Удалить из планов?")) return;
-    setBusyId(userShowId);
+  // Удаление из списка желаемого
+  const handleRemove = async (showId: number) => {
     try {
-      await fetch(`/api/user-shows/${userShowId}`, { method: "DELETE" });
-      setItems((prev) => prev.filter((i) => i.id !== userShowId));
-    } finally {
-      setBusyId(null);
-    }
-  }
+      const res = await fetch('/api/user-shows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          showId,
+          status: 'dropped',
+        }),
+      });
 
-  if (status === "loading" || loading) {
-    return <p className="text-neutral-500">Загрузка...</p>;
-  }
+      if (res.ok) {
+        setItems((prev) => prev.filter((it) => it.showId !== showId));
+      }
+    } catch (err) {
+      console.error('Ошибка удаления:', err);
+    }
+  };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Заголовок */}
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight">
-          👀 Хочу посмотреть
-        </h1>
-        <p className="text-neutral-500 text-sm mt-1">
-          Сериалы и фильмы, которые вы отложили на потом
-          {items.length > 0 && ` · ${items.length}`}
-        </p>
-      </div>
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
+      {/* Шапка раздела */}
+      <div className="border-b border-neutral-800 bg-neutral-900/40 backdrop-blur-md sticky top-0 z-20">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              <span>🔖 Хочу посмотреть</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                {items.length} в планах
+              </span>
+            </h1>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Фильмы и сериалы, отложенные на будущее
+            </p>
+          </div>
 
-      {items.length === 0 ? (
-        <div className="text-center py-20 text-neutral-500">
-          <div className="text-6xl mb-4">👀</div>
-          <p className="mb-1 text-lg text-neutral-300">Пока пусто</p>
-          <p className="mb-6 text-sm">
-            Найдите сериал или фильм через поиск и нажмите
-            «👀 Хочу посмотреть»
-          </p>
-          <Link href="/" className="btn btn-primary">
-            На главную
+          <Link
+            href="/random"
+            className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 transition-colors flex items-center gap-1.5 border border-neutral-700/60"
+          >
+            <span>🎲</span>
+            <span>Подобрать ещё</span>
           </Link>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-5">
-          {items.map((t) => (
-            <div
-              key={t.id}
-              className="rounded-2xl overflow-hidden border border-white/5 bg-neutral-900/40 hover:bg-neutral-900/80 hover:border-white/10 transition-all group"
-            >
-              <Link href={`/show/${t.showId}`} className="block">
-                <div className="relative aspect-[2/3] bg-neutral-900 overflow-hidden">
-                  {t.posterUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={t.posterUrl}
-                      alt={t.name}
-                      loading="lazy"
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-4xl text-neutral-700 bg-gradient-to-br from-neutral-900 to-neutral-800">
-                      🎞️
-                    </div>
-                  )}
+      </div>
 
-                  <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none" />
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {loading && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
+            {Array.from({ length: 10 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="bg-neutral-900 rounded-2xl h-80 border border-neutral-800"
+              />
+            ))}
+          </div>
+        )}
 
-                  <div className="absolute top-2 left-2 badge badge-dark bg-black/70 backdrop-blur px-2 py-1 text-[10px]">
-                    👀 В планах
-                  </div>
-
-                  {t.tmdbRating != null && (
-                    <div className="absolute top-2 right-2 badge badge-gold px-1.5 py-0.5 text-[10px] font-semibold">
-                      ⭐ {t.tmdbRating.toFixed(1)}
-                    </div>
-                  )}
-                </div>
+        {!loading && items.length === 0 && (
+          <div className="max-w-md mx-auto text-center py-16 px-4 bg-neutral-900/40 border border-neutral-800 rounded-3xl">
+            <div className="text-4xl mb-3">🔖</div>
+            <h2 className="text-lg font-bold text-white mb-2">Список желаемого пуст</h2>
+            <p className="text-xs text-neutral-400 mb-6">
+              Добавляйте заинтересовавшие картины из раздела «Что посмотреть» или поиска.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <Link
+                href="/random"
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-md shadow-blue-600/20"
+              >
+                🎲 Что посмотреть
               </Link>
-
-              <div className="p-3 space-y-2">
-                <Link
-                  href={`/show/${t.showId}`}
-                  className="block text-sm font-medium line-clamp-2 leading-tight text-neutral-100 hover:text-red-400 transition-colors"
-                >
-                  {t.name}
-                </Link>
-                <div className="text-[10px] text-neutral-500">
-                  {t.kind === "series" ? "📺 Сериал" : "🎬 Фильм"}
-                  {t.year && ` · ${t.year}`}
-                </div>
-
-                <div className="flex gap-1.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => startWatching(t.id)}
-                    disabled={busyId === t.id}
-                    className="btn btn-primary text-xs flex-1 justify-center"
-                  >
-                    {busyId === t.id ? "..." : "📚 Смотрю"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeItem(t.id)}
-                    disabled={busyId === t.id}
-                    className="btn btn-secondary text-xs shrink-0 px-2"
-                    title="Убрать из планов"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+
+        {!loading && items.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {items.map((item) => {
+              const isSeries = item.kind === 'series';
+
+              return (
+                <div
+                  key={`${item.id}-${item.showId}`}
+                  className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-md"
+                >
+                  {/* Постер с гарантированной загрузкой */}
+                  <Link
+                    href={`/show/${item.showId}`}
+                    className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
+                  >
+                    {item.posterUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.posterUrl}
+                        alt={item.title}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
+                        Нет постера
+                      </div>
+                    )}
+
+                    <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
+                      {isSeries ? 'Сериал' : 'Фильм'}
+                    </div>
+
+                    {item.rating && item.rating > 0 && (
+                      <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5">
+                        <span>★</span>
+                        <span>{item.rating.toFixed(1)}</span>
+                      </div>
+                    )}
+                  </Link>
+
+                  <div className="p-3 flex-1 flex flex-col justify-between">
+                    <div>
+                      {item.year && (
+                        <div className="text-[11px] text-neutral-500 mb-1">{item.year}</div>
+                      )}
+                      <Link
+                        href={`/show/${item.showId}`}
+                        className="font-semibold text-sm text-white line-clamp-1 group-hover:text-blue-400 transition-colors block"
+                      >
+                        {item.title}
+                      </Link>
+                    </div>
+
+                    {/* Кнопки действий */}
+                    <div className="mt-3 pt-2.5 border-t border-neutral-800/80 flex items-center justify-between text-xs gap-1">
+                      <button
+                        onClick={() => handleStartWatching(item.showId)}
+                        className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
+                      >
+                        Смотрю →
+                      </button>
+
+                      <button
+                        onClick={() => handleRemove(item.showId)}
+                        className="text-xs text-neutral-500 hover:text-rose-400 transition-colors"
+                        title="Удалить из списка"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

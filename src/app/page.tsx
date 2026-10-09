@@ -20,39 +20,23 @@ interface UserShowItem {
   totalEpisodes?: number;
   rating?: number | null;
   tmdbRating?: number | null;
+  progress?: { episodeId: number; watched: boolean }[];
+  show?: {
+    episodes?: { id: number; season: number; episode: number }[];
+  };
 }
 
-const TABS = [
-  { key: 'watching', label: '👀 Смотрю' },
-  { key: 'planned', label: '🔖 В планах' },
-  { key: 'completed', label: '✓ Просмотрено' },
-  { key: 'dropped', label: '✕ Брошено' },
-  { key: 'all', label: 'Все тайтлы' },
-];
-
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<string>('watching');
   const [shows, setShows] = useState<UserShowItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   const fetchShows = useCallback(async () => {
     setLoading(true);
     try {
-      let res = await fetch('/api/user-shows');
-      if (!res.ok) {
-        res = await fetch('/api/shows');
-      }
-
+      const res = await fetch('/api/user-shows?status=watching');
       if (res.ok) {
         const data = await res.json();
-        const list = Array.isArray(data)
-          ? data
-          : Array.isArray(data.items)
-          ? data.items
-          : Array.isArray(data.shows)
-          ? data.shows
-          : [];
-        setShows(list);
+        setShows(Array.isArray(data) ? data : []);
       }
     } catch (err) {
       console.error('Ошибка загрузки библиотеки:', err);
@@ -65,20 +49,12 @@ export default function HomePage() {
     fetchShows();
   }, [fetchShows]);
 
-  // Фильтрация по активной вкладке
-  const filteredShows = shows.filter((s) => {
-    if (activeTab === 'all') return true;
-    const itemStatus = (s.status || 'watching').toLowerCase();
-    return itemStatus === activeTab.toLowerCase();
-  });
-
-  // Подсчет количества в каждой категории
-  const counts = {
-    watching: shows.filter((s) => (s.status || 'watching') === 'watching').length,
-    planned: shows.filter((s) => s.status === 'planned').length,
-    completed: shows.filter((s) => s.status === 'completed').length,
-    dropped: shows.filter((s) => s.status === 'dropped').length,
-    all: shows.length,
+  // Вычисление прогресса просмотра для карточки
+  const getProgressStats = (item: UserShowItem) => {
+    const totalEps = item.totalEpisodes || item.show?.episodes?.length || (item.kind === 'movie' ? 1 : 0);
+    const watchedCount = (item.progress || []).filter((p) => p.watched).length;
+    const percent = totalEps > 0 ? Math.round((watchedCount / totalEps) * 100) : 0;
+    return { totalEps, watchedCount, percent };
   };
 
   return (
@@ -88,55 +64,32 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <span>📚 Моя библиотека</span>
+              <span>👀 Сейчас смотрю</span>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                {shows.length} тайтлов
+                {shows.length} активных
               </span>
             </h1>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Отслеживайте статус просмотра фильмов и сериалов
+              Нажмите на карточку, чтобы открыть трекер серий и отметить просмотр
             </p>
           </div>
 
-          {/* Быстрые ссылки */}
           <div className="flex items-center gap-2">
             <Link
-              href="/random"
+              href="/wishlist"
               className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 transition-colors flex items-center gap-1.5 border border-neutral-700/60"
+            >
+              <span>🔖</span>
+              <span>В планах</span>
+            </Link>
+            <Link
+              href="/random"
+              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-medium text-white transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-600/20"
             >
               <span>🎲</span>
               <span>Что посмотреть</span>
             </Link>
           </div>
-        </div>
-
-        {/* Навигация по статусам */}
-        <div className="max-w-6xl mx-auto px-4 flex gap-2 overflow-x-auto no-scrollbar pb-3">
-          {TABS.map((tab) => {
-            const count = counts[tab.key as keyof typeof counts] || 0;
-            const isActive = activeTab === tab.key;
-
-            return (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-2 border ${
-                  isActive
-                    ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/20'
-                    : 'bg-neutral-900/80 text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-neutral-200'
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
-                    isActive ? 'bg-blue-700 text-white' : 'bg-neutral-800 text-neutral-400'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -153,12 +106,12 @@ export default function HomePage() {
           </div>
         )}
 
-        {!loading && filteredShows.length === 0 && (
+        {!loading && shows.length === 0 && (
           <div className="max-w-md mx-auto text-center py-16 px-4 bg-neutral-900/40 border border-neutral-800 rounded-3xl">
             <div className="text-4xl mb-3">🎬</div>
-            <h2 className="text-lg font-bold text-white mb-2">В этом списке пока пусто</h2>
+            <h2 className="text-lg font-bold text-white mb-2">Сейчас ничего не отслеживается</h2>
             <p className="text-xs text-neutral-400 mb-6">
-              Воспользуйтесь поиском в шапке или генератором рекомендаций, чтобы добавить новые фильмы и сериалы.
+              Выберите фильм или сериал через поиск или рекомендации, переведите в статус «Смотрю», и он появится здесь вместе с трекером серий.
             </p>
             <div className="flex items-center justify-center gap-3">
               <Link
@@ -171,21 +124,22 @@ export default function HomePage() {
           </div>
         )}
 
-        {!loading && filteredShows.length > 0 && (
+        {!loading && shows.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {filteredShows.map((item) => {
+            {shows.map((item) => {
               const displayTitle = item.title || item.name || 'Без названия';
-              const targetShowId = item.showId || item.id;
+              const targetTrackerId = item.userShowId || item.id;
               const isSeries = item.kind === 'series';
+              const { totalEps, watchedCount, percent } = getProgressStats(item);
 
               return (
                 <div
                   key={`${item.id}-${item.showId}`}
                   className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-md"
                 >
-                  {/* Постер */}
+                  {/* Клик по постеру сразу открывает трекер серий */}
                   <Link
-                    href={`/show/${targetShowId}`}
+                    href={`/library/${targetTrackerId}`}
                     className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
                   >
                     {item.posterUrl ? (
@@ -202,33 +156,23 @@ export default function HomePage() {
                       </div>
                     )}
 
-                    {/* Бейдж типа */}
                     <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
                       {isSeries ? 'Сериал' : 'Фильм'}
                     </div>
 
-                    {/* Оценка */}
-                    {item.rating && item.rating > 0 ? (
-                      <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5">
-                        <span>★</span>
-                        <span>{item.rating}</span>
-                      </div>
-                    ) : item.tmdbRating && item.tmdbRating > 0 ? (
-                      <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-neutral-300 flex items-center gap-0.5">
-                        <span>★</span>
-                        <span>{item.tmdbRating.toFixed(1)}</span>
-                      </div>
-                    ) : null}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-semibold text-xs gap-1.5">
+                      <span>📖 Трекер серий</span>
+                    </div>
                   </Link>
 
-                  {/* Описание карточки */}
+                  {/* Описание и прогресс-бар */}
                   <div className="p-3 flex-1 flex flex-col justify-between">
                     <div>
                       {item.year && (
                         <div className="text-[11px] text-neutral-500 mb-1">{item.year}</div>
                       )}
                       <Link
-                        href={`/show/${targetShowId}`}
+                        href={`/library/${targetTrackerId}`}
                         className="font-semibold text-sm text-white line-clamp-1 group-hover:text-blue-400 transition-colors block"
                         title={displayTitle}
                       >
@@ -236,21 +180,20 @@ export default function HomePage() {
                       </Link>
                     </div>
 
-                    {/* Действия */}
-                    <div className="mt-3 pt-2.5 border-t border-neutral-800/80 flex items-center justify-between text-xs">
-                      <Link
-                        href={`/show/${targetShowId}`}
-                        className="text-neutral-400 hover:text-white transition-colors"
-                      >
-                        Карточка →
-                      </Link>
-
-                      <Link
-                        href={`/library/${item.userShowId || item.id}`}
-                        className="text-blue-400 hover:text-blue-300 font-medium"
-                      >
-                        Трекер
-                      </Link>
+                    {/* Отображение прогресса просмотра */}
+                    <div className="mt-3 pt-2.5 border-t border-neutral-800/80">
+                      <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1.5">
+                        <span>Прогресс:</span>
+                        <span className="text-blue-400 font-bold">
+                          {watchedCount}/{totalEps > 0 ? totalEps : '?'}
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800">
+                        <div
+                          className="h-full bg-blue-600 rounded-full transition-all"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
