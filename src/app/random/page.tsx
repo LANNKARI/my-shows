@@ -56,7 +56,6 @@ export default function WhatToWatchPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Состояния для кнопок «Хочу посмотреть» и «Переход к тайтлу»
   const [wishlistedMap, setWishlistedMap] = useState<Record<number, boolean>>({});
   const [wishlistLoadingId, setWishlistLoadingId] = useState<number | null>(null);
   const [navigatingId, setNavigatingId] = useState<number | null>(null);
@@ -71,7 +70,7 @@ export default function WhatToWatchPage() {
     setSelectedGenres([]);
   };
 
-  // Запрос случайного фильма (Рулетка)
+  // Запрос случайного тайтла (Рулетка)
   const spinRoulette = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
@@ -148,7 +147,7 @@ export default function WhatToWatchPage() {
     }
   }, [contentType, minRating, yearFrom, selectedGenres, excludeAnimation]);
 
-  // Переход на карточку фильма на сайте с автоимпортом
+  // Открытие страницы фильма на сайте с автоимпортом
   const handleOpenShow = async (item: MediaItem) => {
     setNavigatingId(item.id);
     try {
@@ -167,18 +166,18 @@ export default function WhatToWatchPage() {
         router.push(`/show/${targetId}`);
         return;
       }
-    } catch {
-      // Фолбэк на прямой переход по ID
+    } catch (err) {
+      console.error('Ошибка импорта перед открытием:', err);
     }
+    // Фолбэк: роут /show/[id] сам подтянет и сохранит данные по TMDB ID
     router.push(`/show/${item.tmdbId}`);
   };
 
-  // Добавление в список «Хочу посмотреть» (Wishlist / Planned)
+  // Добавление в Wishlist
   const handleAddToWishlist = async (item: MediaItem) => {
     setWishlistLoadingId(item.id);
     try {
-      // 1. Обеспечиваем наличие фильма в базе
-      const importRes = await fetch('/api/tmdb/import', {
+      const res = await fetch('/api/wishlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -187,44 +186,19 @@ export default function WhatToWatchPage() {
         }),
       });
 
-      let showId: string | number = item.tmdbId;
-      if (importRes.ok) {
-        const importData = await importRes.json();
-        showId = importData.show?.id || importData.id || item.tmdbId;
-      }
-
-      // 2. Отправляем в список желаемого
-      let saveRes = await fetch('/api/wishlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          showId,
-          tmdbId: item.tmdbId,
-          type: item.type,
-        }),
-      });
-
-      if (!saveRes.ok) {
-        // Запасной путь через user-shows
-        saveRes = await fetch('/api/user-shows', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            showId,
-            status: 'PLANNED',
-          }),
-        });
-      }
-
-      if (saveRes.status === 401) {
-        alert('Пожалуйста, войдите в аккаунт, чтобы сохранять тайтлы в список просмотра.');
+      if (res.status === 401) {
+        alert('Пожалуйста, авторизуйтесь на сайте, чтобы сохранять тайтлы в Wishlist.');
         return;
+      }
+
+      if (!res.ok) {
+        throw new Error('Не удалось добавить в список');
       }
 
       setWishlistedMap((prev) => ({ ...prev, [item.id]: true }));
     } catch (err) {
-      console.error('Ошибка добавления в список:', err);
-      alert('Не удалось добавить в список. Проверьте подключение к интернету.');
+      console.error('Ошибка добавления в Wishlist:', err);
+      alert('Ошибка при сохранении в Wishlist. Попробуйте еще раз.');
     } finally {
       setWishlistLoadingId(null);
     }
@@ -237,7 +211,7 @@ export default function WhatToWatchPage() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
-      {/* Шапка страницы */}
+      {/* Шапка раздела */}
       <div className="border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -252,7 +226,7 @@ export default function WhatToWatchPage() {
             </p>
           </div>
 
-          {/* Переключатель режимов */}
+          {/* Переключатель режимов: Рулетка / Подборка */}
           <div className="flex bg-neutral-800/80 p-1 rounded-xl border border-neutral-700/60 self-start sm:self-auto">
             <button
               onClick={() => {
@@ -285,7 +259,7 @@ export default function WhatToWatchPage() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6">
-        {/* Блок фильтров */}
+        {/* Панель фильтров */}
         <div className="bg-neutral-900/70 border border-neutral-800 rounded-2xl p-4 sm:p-6 mb-8 shadow-xl">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
             {/* Тип контента */}
@@ -351,7 +325,7 @@ export default function WhatToWatchPage() {
               </select>
             </div>
 
-            {/* Год выпуска */}
+            {/* Год релиза */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
                 Год релиза
@@ -370,33 +344,48 @@ export default function WhatToWatchPage() {
             </div>
           </div>
 
-          {/* Галочка: Исключить аниме и мультики */}
-          <div className="mb-5 p-3 rounded-xl bg-neutral-950/80 border border-neutral-800 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-lg">🚫</span>
-              <div>
-                <p className="text-sm font-medium text-white">Без аниме и мультиков</p>
-                <p className="text-xs text-neutral-400">
-                  Полностью убирает рисованную анимацию, мультсериалы и аниме из выдачи
-                </p>
-              </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={excludeAnimation}
-                onChange={(e) => setExcludeAnimation(e.target.checked)}
-                className="sr-only peer"
+          {/* Аккуратная кнопка-тумблер «Без аниме и мультиков» */}
+          <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setExcludeAnimation(!excludeAnimation)}
+              className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all border ${
+                excludeAnimation
+                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-sm shadow-rose-500/10'
+                  : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full transition-all ${
+                  excludeAnimation
+                    ? 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.8)]'
+                    : 'bg-neutral-600'
+                }`}
               />
-              <div className="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:width-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
+              <span>Без аниме и мультиков</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase transition-colors ${
+                  excludeAnimation
+                    ? 'bg-rose-500/25 text-rose-200'
+                    : 'bg-neutral-800 text-neutral-500'
+                }`}
+              >
+                {excludeAnimation ? 'Вкл' : 'Выкл'}
+              </span>
+            </button>
+
+            {minRating >= 8.5 && (
+              <span className="text-xs text-amber-300/80 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg">
+                💡 При оценке 8.5+ ищутся мировые шедевры
+              </span>
+            )}
           </div>
 
-          {/* Жанры (Мультивыбор) */}
+          {/* Жанры */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                Жанры (любое количество совпадений)
+                Жанры (по любому совпадению)
               </label>
               {selectedGenres.length > 0 && (
                 <button
@@ -471,7 +460,7 @@ export default function WhatToWatchPage() {
           </div>
         </div>
 
-        {/* Ошибка / Ничего не найдено */}
+        {/* Сообщение об ошибке */}
         {errorMsg && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center text-red-300 max-w-xl mx-auto mb-8">
             <p className="text-base font-medium mb-2">Ничего не найдено</p>
@@ -479,7 +468,7 @@ export default function WhatToWatchPage() {
           </div>
         )}
 
-        {/* 1. ВИД: РУЛЕТКА */}
+        {/* 1. РЕЖИМ РУЛЕТКИ */}
         {activeTab === 'roulette' && (
           <div>
             {loading && !randomItem && (
@@ -507,7 +496,7 @@ export default function WhatToWatchPage() {
                   <div
                     onClick={() => handleOpenShow(randomItem)}
                     className="w-full md:w-72 flex-shrink-0 cursor-pointer group"
-                    title="Нажмите, чтобы открыть карточку на сайте"
+                    title="Открыть страницу тайтла"
                   >
                     <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800 shadow-xl relative">
                       {randomItem.posterUrl ? (
@@ -533,7 +522,7 @@ export default function WhatToWatchPage() {
                     </div>
                   </div>
 
-                  {/* Описание и кнопки */}
+                  {/* Информация и кнопки действий */}
                   <div className="flex-1 flex flex-col h-full">
                     <div className="flex flex-wrap items-center gap-3 mb-2">
                       <span className="text-sm font-semibold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
@@ -543,7 +532,7 @@ export default function WhatToWatchPage() {
                         <span>★</span>
                         <span>{randomItem.voteAverage.toFixed(1)}</span>
                         <span className="text-neutral-500 text-xs font-normal">
-                          ({randomItem.voteCount} голосов)
+                          ({randomItem.voteCount} оценок)
                         </span>
                       </div>
                     </div>
@@ -578,7 +567,7 @@ export default function WhatToWatchPage() {
                       {randomItem.overview}
                     </div>
 
-                    {/* Панель действий: Перейти на сайт и Хочу посмотреть */}
+                    {/* Панель кнопок */}
                     <div className="mt-auto pt-4 border-t border-neutral-800/80 flex flex-wrap items-center gap-3">
                       <button
                         onClick={spinRoulette}
@@ -588,7 +577,6 @@ export default function WhatToWatchPage() {
                         <span>🎲 Крутить ещё</span>
                       </button>
 
-                      {/* Кнопка перехода на карточку фильма на сайте */}
                       <button
                         onClick={() => handleOpenShow(randomItem)}
                         disabled={navigatingId === randomItem.id}
@@ -597,7 +585,7 @@ export default function WhatToWatchPage() {
                         {navigatingId === randomItem.id ? (
                           <>
                             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            <span>Открываем...</span>
+                            <span>Создаем страницу...</span>
                           </>
                         ) : (
                           <>
@@ -606,7 +594,6 @@ export default function WhatToWatchPage() {
                         )}
                       </button>
 
-                      {/* Кнопка «Хочу посмотреть» */}
                       <button
                         onClick={() => handleAddToWishlist(randomItem)}
                         disabled={wishlistLoadingId === randomItem.id || wishlistedMap[randomItem.id]}
@@ -619,7 +606,7 @@ export default function WhatToWatchPage() {
                         {wishlistLoadingId === randomItem.id ? (
                           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                         ) : wishlistedMap[randomItem.id] ? (
-                          <span>✓ В планах</span>
+                          <span>✓ В Wishlist</span>
                         ) : (
                           <span>🔖 Хочу посмотреть</span>
                         )}
@@ -632,7 +619,7 @@ export default function WhatToWatchPage() {
           </div>
         )}
 
-        {/* 2. ВИД: ПОДБОРКА СПИСКОМ */}
+        {/* 2. РЕЖИМ ПОДБОРКИ */}
         {activeTab === 'list' && (
           <div>
             {loading && (
@@ -650,7 +637,6 @@ export default function WhatToWatchPage() {
                     key={`${item.type}-${item.id}`}
                     className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group"
                   >
-                    {/* Кликабельный постер */}
                     <div
                       onClick={() => handleOpenShow(item)}
                       className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden cursor-pointer"
@@ -693,27 +679,26 @@ export default function WhatToWatchPage() {
                         </div>
                       )}
 
-                      {/* Нижняя панель с кнопками на карточке подборки */}
                       <div className="mt-auto pt-3 border-t border-neutral-800/60 flex items-center justify-between gap-1">
                         <button
                           onClick={() => handleOpenShow(item)}
                           disabled={navigatingId === item.id}
                           className="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1"
                         >
-                          {navigatingId === item.id ? 'Загрузка...' : 'Карточка →'}
+                          {navigatingId === item.id ? 'Создаем...' : 'Карточка →'}
                         </button>
 
                         <button
                           onClick={() => handleAddToWishlist(item)}
                           disabled={wishlistLoadingId === item.id || wishlistedMap[item.id]}
-                          className={`text-xs px-2 py-1 rounded-md transition-colors ${
+                          className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
                             wishlistedMap[item.id]
-                              ? 'bg-emerald-500/20 text-emerald-300'
+                              ? 'bg-emerald-500/20 text-emerald-300 font-semibold'
                               : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
                           }`}
-                          title="Хочу посмотреть"
+                          title="Добавить в Wishlist"
                         >
-                          {wishlistLoadingId === item.id ? '...' : wishlistedMap[item.id] ? '✓' : '🔖'}
+                          {wishlistLoadingId === item.id ? '...' : wishlistedMap[item.id] ? '✓ Wishlist' : '🔖 Хочу'}
                         </button>
                       </div>
                     </div>

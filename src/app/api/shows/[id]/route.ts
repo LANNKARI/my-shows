@@ -1,183 +1,141 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/current-user";
-
-// Утилита: превращает BigInt в Number
-function serializeShow(show: any) {
-  if (!show) return show;
-  return {
-    ...show,
-    budget: show.budget != null ? Number(show.budget) : null,
-    revenue: show.revenue != null ? Number(show.revenue) : null,
-  };
-}
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { translateGenres } from '@/lib/genres';
 
 export async function GET(
-  _: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  try {
+    const { id } = await params;
 
-  const { id: idStr } = await params;
-  const id = Number(idStr);
-  if (!id) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: 'Missing show id' }, { status: 400 });
+    }
 
-  const show = await prisma.show.findUnique({
-    where: { id },
-    include: {
-      episodes: { orderBy: [{ season: "asc" }, { episode: "asc" }] },
-      createdBy: {
-        select: { id: true, username: true, name: true, avatarUrl: true },
+    const numId = parseInt(id, 10);
+    if (isNaN(numId)) {
+      return NextResponse.json({ error: 'Invalid ID format' }, { status: 400 });
+    }
+
+    // 1. Ищем тайтл в локальной базе данных по ID или TMDB ID
+    let show = await prisma.show.findFirst({
+      where: {
+        OR: [
+          { id: numId },
+          { tmdbId: numId },
+        ],
       },
-      comments: {
-        orderBy: { createdAt: "desc" },
-        include: {
-          user: {
-            select: { id: true, username: true, name: true, avatarUrl: true },
+      include: {
+        episodes: true,
+        comments: {
+          include: {
+            user: {
+              select: { id: true, name: true, username: true, avatarUrl: true },
+            },
           },
+          orderBy: { createdAt: 'desc' },
         },
       },
-      userShows: {
-        include: {
-          user: {
-            select: { id: true, username: true, name: true, avatarUrl: true },
-          },
-          ratings: true,
+    });
+
+    // 2. Если фильм уже есть в базе — отдаем его (с полем title для фронтенда)
+    if (show) {
+      return NextResponse.json({
+        show: {
+          ...show,
+          title: show.name,
+          originalTitle: show.originalName,
         },
-      },
-    },
-  });
+      });
+    }
 
-  if (!show) return NextResponse.json({ error: "not found" }, { status: 404 });
+    // 3. Если фильма нет в базе — автоматически импортируем из TMDB
+    const apiKey =
+      process.env.TMDB_API_KEY ||
+      process.env.TMDB_READ_ACCESS_TOKEN ||
+      process.env.NEXT_PUBLIC_TMDB_API_KEY ||
+      '';
 
-  // Мой UserShow (если есть)
-  const myUserShow = show.userShows.find((us) => us.userId === me.id) || null;
+    if (apiKey) {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (apiKey.startsWith('eyJ')) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
 
-  // Средняя оценка по всем пользователям
-  const allRatings = show.userShows.flatMap((us) => us.ratings);
-  const avgRating = allRatings.length
-    ? allRatings.reduce((s, r) => s + r.score, 0) / allRatings.length
-    : null;
+      const buildUrl = (type: 'movie' | 'tv') => {
+        let u = `https://api.themoviedb.org/3/${type}/${numId}?language=ru-RU`;
+        if (!apiKey.startsWith('eyJ')) u += `&api_key=${apiKey}`;
+        return u;
+      };
 
-  return NextResponse.json({
-    show: {
-      id: show.id,
-      name: show.name,
-      originalName: show.originalName,
-      description: show.description,
-      posterUrl: show.posterUrl,
-      kind: show.kind,
-      tmdbId: show.tmdbId,
-      year: show.year,
-      releaseDate: show.releaseDate,
-      runtime: show.runtime,
-      budget: show.budget ? Number(show.budget) : null,
-      revenue: show.revenue ? Number(show.revenue) : null,
-      countries: show.countries,
-      studios: show.studios,
-      genres: show.genres,
-      director: show.director,
-      creators: show.creators,
-      cast: show.cast,
-      tmdbRating: show.tmdbRating,
-      tmdbVotes: show.tmdbVotes,
-      createdAt: show.createdAt,
-      createdBy: show.createdBy,
-    },
-    episodes: show.episodes.map((e) => ({
-      id: e.id,
-      season: e.season,
-      episode: e.episode,
-    })),
-    comments: show.comments.map((c) => ({
-      id: c.id,
-      text: c.text,
-      createdAt: c.createdAt,
-      user: c.user,
-      isOwn: c.userId === me.id,
-    })),
-    userShowsCount: show.userShows.length,
-    userShows: show.userShows.map((us) => ({
-      user: us.user,
-      isFavorite: us.isFavorite,
-      isCompleted: us.isCompleted,
-      status: us.status, // ← новое
-    })),
-    avgRating,
-    ratingsCount: allRatings.length,
-    myUserShow: myUserShow
-      ? {
-          id: myUserShow.id,
-          totalSeasons: myUserShow.totalSeasons,
-          totalEpisodes: myUserShow.totalEpisodes,
-          isCompleted: myUserShow.isCompleted,
-          isFavorite: myUserShow.isFavorite,
-          status: myUserShow.status, // ← новое
-          dubbing: myUserShow.dubbing,
-          watchSite: myUserShow.watchSite,
-        }
-      : null,
-  });
-}
+      let tmdbRes = await fetch(buildUrl('movie'), { headers });
+      let mediaType: 'movie' | 'tv' = 'movie';
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      if (!tmdbRes.ok) {
+        tmdbRes = await fetch(buildUrl('tv'), { headers });
+        mediaType = 'tv';
+      }
 
-  const { id: idStr } = await params;
-  const id = Number(idStr);
+      if (tmdbRes.ok) {
+        const data = await tmdbRes.json();
+        const name = data.title || data.name || 'Без названия';
+        const originalName = data.original_title || data.original_name || null;
+        const description = data.overview || '';
+        const releaseDate = data.release_date || data.first_air_date || null;
+        const year = releaseDate ? releaseDate.slice(0, 4) : null;
+        const posterUrl = data.poster_path
+          ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
+          : null;
+        const tmdbRating = data.vote_average ? Math.round(data.vote_average * 10) / 10 : 0;
+        const tmdbVotes = data.vote_count || 0;
+        const kind = mediaType === 'tv' ? 'series' : 'movie';
 
-  const show = await prisma.show.findUnique({ where: { id } });
-  if (!show) return NextResponse.json({ error: "not found" }, { status: 404 });
+        const rawGenreNames = (data.genres || []).map((g: { name: string }) => g.name);
+        const translatedGenres: string[] = translateGenres(rawGenreNames);
 
-  if (show.createdById !== me.id) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+        const createdShow = await prisma.show.create({
+          data: {
+            tmdbId: numId,
+            name,
+            originalName,
+            description,
+            kind,
+            posterUrl,
+            year,
+            releaseDate: releaseDate ? new Date(releaseDate) : null,
+            genres: translatedGenres,
+            tmdbRating,
+            tmdbVotes,
+          },
+          include: {
+            episodes: true,
+            comments: {
+              include: {
+                user: {
+                  select: { id: true, name: true, username: true, avatarUrl: true },
+                },
+              },
+            },
+          },
+        });
+
+        return NextResponse.json({
+          show: {
+            ...createdShow,
+            title: createdShow.name,
+            originalTitle: createdShow.originalName,
+          },
+        });
+      }
+    }
+
+    return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: 'Failed to fetch show', details: message },
+      { status: 500 }
+    );
   }
-
-  const body = await req.json();
-  const data: any = {};
-  for (const k of [
-    "name",
-    "originalName",
-    "posterUrl",
-    "description",
-    "year",
-    "director",
-  ]) {
-    if (k in body) data[k] = body[k] || null;
-  }
-  if ("genres" in body)
-    data.genres = Array.isArray(body.genres) ? body.genres : [];
-  if ("countries" in body)
-    data.countries = Array.isArray(body.countries) ? body.countries : [];
-  if ("studios" in body)
-    data.studios = Array.isArray(body.studios) ? body.studios : [];
-
-  const updated = await prisma.show.update({ where: { id }, data });
-  return NextResponse.json(serializeShow(updated));
-}
-
-export async function DELETE(
-  _: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const { id: idStr } = await params;
-  const id = Number(idStr);
-
-  const show = await prisma.show.findUnique({ where: { id } });
-  if (!show) return NextResponse.json({ error: "not found" }, { status: 404 });
-
-  if (show.createdById !== me.id) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
-  await prisma.show.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
 }
