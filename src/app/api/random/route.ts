@@ -1,286 +1,254 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/current-user";
+import { NextRequest, NextResponse } from 'next/server';
+import { resolveGenreIds, getGenreNames } from '@/lib/genres';
 
-const TMDB_BASE = "https://api.themoviedb.org/3";
-const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
-
-// Карта: русский жанр → TMDB ID (для фильмов)
-const MOVIE_GENRE_IDS: Record<string, number> = {
-  боевик: 28,
-  приключения: 12,
-  мультфильм: 16,
-  комедия: 35,
-  криминал: 80,
-  документальный: 99,
-  драма: 18,
-  семейный: 10751,
-  фэнтези: 14,
-  история: 36,
-  ужасы: 27,
-  музыка: 10402,
-  детектив: 9648,
-  романтика: 10749,
-  фантастика: 878,
-  триллер: 53,
-  военный: 10752,
-  вестерн: 37,
-};
-
-// Карта: русский жанр → TMDB ID (для сериалов)
-const TV_GENRE_IDS: Record<string, number> = {
-  боевик: 10759,
-  приключения: 10759,
-  мультфильм: 16,
-  комедия: 35,
-  криминал: 80,
-  документальный: 99,
-  драма: 18,
-  семейный: 10751,
-  фэнтези: 10765,
-  детектив: 9648,
-  фантастика: 10765,
-  военный: 10768,
-  вестерн: 37,
-  kids: 10762,
-  реалити: 10764,
-  новости: 10763,
-  "ток-шоу": 10767,
-};
-
-// Обратный маппинг: TMDB ID → английский жанр
-const GENRE_ID_TO_EN: Record<number, string> = {
-  28: "Action",
-  12: "Adventure",
-  16: "Animation",
-  35: "Comedy",
-  80: "Crime",
-  99: "Documentary",
-  18: "Drama",
-  10751: "Family",
-  14: "Fantasy",
-  36: "History",
-  27: "Horror",
-  10402: "Music",
-  9648: "Mystery",
-  10749: "Romance",
-  878: "Science Fiction",
-  53: "Thriller",
-  10752: "War",
-  37: "Western",
-  10759: "Action & Adventure",
-  10762: "Kids",
-  10763: "News",
-  10764: "Reality",
-  10765: "Sci-Fi & Fantasy",
-  10766: "Soap",
-  10767: "Talk",
-  10768: "War & Politics",
-};
-
-// ────────────────────────────────────────────────
-// Запрос к TMDB Discover
-// ────────────────────────────────────────────────
-async function fetchDiscover(
-  apiKey: string,
-  kind: "series" | "movie",
-  genreIds: number[],
-  yearFrom: number,
-  ratingFrom: number,
-  page: number,
-  useRussian: boolean = true
-): Promise<{ results: any[]; total: number; page: number; sort: string }> {
-  const endpoint = kind === "movie" ? "movie" : "tv";
-
-  // ── Случайная сортировка ──
-  const sortOptions = [
-    "popularity.desc",
-    "vote_average.desc",
-    "primary_release_date.desc",
-  ];
-  const randomSort =
-    sortOptions[Math.floor(Math.random() * sortOptions.length)];
-
-  const query = new URLSearchParams();
-  query.set("api_key", apiKey);
-  if (useRussian) {
-    query.set("language", "ru-RU");
-  }
-  query.set("sort_by", randomSort);
-  query.set("include_adult", "false");
-  query.set("vote_count.gte", "50"); // чтобы не было мусора
-  query.set("page", String(page));
-
-  if (ratingFrom > 0) {
-    query.set("vote_average.gte", String(ratingFrom));
-  }
-
-  if (yearFrom > 0) {
-    if (kind === "movie") {
-      query.set("primary_release_date.gte", `${yearFrom}-01-01`);
-    } else {
-      query.set("first_air_date.gte", `${yearFrom}-01-01`);
-    }
-  }
-
-  // OR: жанры через запятую — фильм с ЛЮБЫМ из них
-  if (genreIds.length > 0) {
-    query.set("with_genres", genreIds.join(","));
-  }
-
-  const url = `${TMDB_BASE}/discover/${endpoint}?${query.toString()}`;
-  console.log("[random] URL:", url.replace(apiKey, "***"));
-  console.log("[random] sort_by:", randomSort, "| lang:", useRussian ? "ru" : "en");
-
-  const res = await fetch(url, { cache: "no-store" });
-  console.log("[random] status:", res.status);
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("[random] error body:", text.slice(0, 300));
-    return { results: [], total: 0, page, sort: randomSort };
-  }
-
-  const data = await res.json();
-  const total = data.total_results || 0;
-  const resultsLen = (data.results || []).length;
-  console.log("[random] total_results:", total, "| results.length:", resultsLen);
-
-  return {
-    results: data.results || [],
-    total,
-    page,
-    sort: randomSort,
-  };
+interface TmdbRawItem {
+  id: number;
+  title?: string;
+  name?: string;
+  original_title?: string;
+  original_name?: string;
+  overview?: string;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  release_date?: string;
+  first_air_date?: string;
+  vote_average?: number;
+  vote_count?: number;
+  genre_ids?: number[];
+  popularity?: number;
 }
 
-// ────────────────────────────────────────────────
-// GET — случайный фильм
-// ────────────────────────────────────────────────
-export async function GET(req: NextRequest) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+export async function GET(request: NextRequest) {
+  try {
+    const apiKey =
+      process.env.TMDB_API_KEY ||
+      process.env.TMDB_READ_ACCESS_TOKEN ||
+      process.env.NEXT_PUBLIC_TMDB_API_KEY ||
+      '';
 
-  const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) {
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'TMDB API key is not configured in environment variables' },
+        { status: 500 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+
+    const type = (searchParams.get('type') || 'all') as 'all' | 'movie' | 'tv';
+    const genresParam = searchParams.get('genres') || '';
+    const yearFrom = parseInt(searchParams.get('yearFrom') || '0', 10);
+    const yearTo = parseInt(searchParams.get('yearTo') || '0', 10);
+    const minRating = parseFloat(searchParams.get('minRating') || '0');
+    const sortBy = searchParams.get('sortBy') || 'popularity.desc';
+    const mode = (searchParams.get('mode') || 'roulette') as 'roulette' | 'list';
+    const requestedPage = parseInt(searchParams.get('page') || '1', 10);
+
+    const genreKeys = genresParam
+      ? genresParam.split(/[,|]/).map((s) => s.trim()).filter(Boolean)
+      : [];
+
+    const { movieIds, tvIds } = resolveGenreIds(genreKeys, type);
+
+    // Определяем порог количества голосов, чтобы не отсекать фильмы с высокой оценкой (9.0+)
+    let voteCountGte = 50;
+    if (minRating >= 9.0) {
+      voteCountGte = 10;
+    } else if (minRating >= 8.5) {
+      voteCountGte = 40;
+    } else if (minRating >= 8.0) {
+      voteCountGte = 80;
+    } else if (minRating >= 7.0) {
+      voteCountGte = 120;
+    } else if (minRating === 0) {
+      voteCountGte = 30;
+    }
+
+    // Собираем параметры для TMDB
+    const buildTmdbParams = (mediaType: 'movie' | 'tv', pageNumber: number) => {
+      const params = new URLSearchParams({
+        language: 'ru-RU',
+        include_adult: 'false',
+        page: pageNumber.toString(),
+        sort_by: sortBy,
+      });
+
+      if (apiKey.startsWith('eyJ')) {
+        // Bearer Token будет в headers
+      } else {
+        params.set('api_key', apiKey);
+      }
+
+      if (minRating > 0) {
+        params.set('vote_average.gte', minRating.toString());
+      }
+
+      params.set('vote_count.gte', voteCountGte.toString());
+
+      // ВАЖНО: Разделение через '|' обеспечивает логику OR (любой из выбранных жанров)
+      if (mediaType === 'movie' && movieIds.length > 0) {
+        params.set('with_genres', movieIds.join('|'));
+      } else if (mediaType === 'tv' && tvIds.length > 0) {
+        params.set('with_genres', tvIds.join('|'));
+      }
+
+      // Даты выхода для фильмов и сериалов
+      if (mediaType === 'movie') {
+        if (yearFrom > 0) params.set('primary_release_date.gte', `${yearFrom}-01-01`);
+        if (yearTo > 0) params.set('primary_release_date.lte', `${yearTo}-12-31`);
+      } else {
+        if (yearFrom > 0) params.set('first_air_date.gte', `${yearFrom}-01-01`);
+        if (yearTo > 0) params.set('first_air_date.lte', `${yearTo}-12-31`);
+      }
+
+      return params;
+    };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (apiKey.startsWith('eyJ')) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const fetchFromTmdb = async (mediaType: 'movie' | 'tv', pageNumber: number) => {
+      const endpoint = mediaType === 'movie' ? 'discover/movie' : 'discover/tv';
+      const query = buildTmdbParams(mediaType, pageNumber);
+      const url = `https://api.themoviedb.org/3/${endpoint}?${query.toString()}`;
+
+      const res = await fetch(url, { headers, next: { revalidate: 60 } });
+      if (!res.ok) {
+        throw new Error(`TMDB error ${res.status}: ${await res.text()}`);
+      }
+      return res.json();
+    };
+
+    // Нормализация элементов для фронтенда
+    const normalize = (item: TmdbRawItem, mediaType: 'movie' | 'tv') => {
+      const rawDate = item.release_date || item.first_air_date || '';
+      const year = rawDate ? rawDate.split('-')[0] : '—';
+      const title = item.title || item.name || 'Без названия';
+      const originalTitle = item.original_title || item.original_name || '';
+
+      return {
+        id: item.id,
+        tmdbId: item.id,
+        type: mediaType,
+        title,
+        originalTitle,
+        overview: item.overview || 'Описание на русском языке пока отсутствует.',
+        posterUrl: item.poster_path
+          ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
+          : null,
+        backdropUrl: item.backdrop_path
+          ? `https://image.tmdb.org/t/p/original${item.backdrop_path}`
+          : null,
+        releaseDate: rawDate,
+        year,
+        voteAverage: item.vote_average ? Math.round(item.vote_average * 10) / 10 : 0,
+        voteCount: item.vote_count || 0,
+        popularity: item.popularity || 0,
+        genreIds: item.genre_ids || [],
+        genres: getGenreNames(item.genre_ids || []),
+      };
+    };
+
+    // 1. РЕЖИМ РУЛЕТКИ (Случайный тайтл на вечер)
+    if (mode === 'roulette') {
+      const targetType: 'movie' | 'tv' =
+        type === 'all' ? (Math.random() > 0.5 ? 'movie' : 'tv') : type;
+
+      const firstPageData = await fetchFromTmdb(targetType, 1);
+      const totalPages = Math.min(firstPageData.total_pages || 1, 20);
+      let results: TmdbRawItem[] = firstPageData.results || [];
+
+      // Если страниц больше одной — выбираем случайную страницу для максимального разнообразия
+      if (totalPages > 1) {
+        const randomPage = Math.floor(Math.random() * totalPages) + 1;
+        if (randomPage !== 1) {
+          try {
+            const pageData = await fetchFromTmdb(targetType, randomPage);
+            if (pageData.results && pageData.results.length > 0) {
+              results = pageData.results;
+            }
+          } catch {
+            // Фолбэк на результаты 1-й страницы
+          }
+        }
+      }
+
+      // Если в выбранном типе ничего не нашлось, а был режим "all" — пробуем второй тип
+      if (results.length === 0 && type === 'all') {
+        const fallbackType = targetType === 'movie' ? 'tv' : 'movie';
+        const fallbackData = await fetchFromTmdb(fallbackType, 1);
+        results = fallbackData.results || [];
+        if (results.length > 0) {
+          const randomItem = results[Math.floor(Math.random() * results.length)];
+          return NextResponse.json({
+            success: true,
+            randomItem: normalize(randomItem, fallbackType),
+            totalResults: fallbackData.total_results || 0,
+          });
+        }
+      }
+
+      if (results.length === 0) {
+        return NextResponse.json({
+          success: true,
+          randomItem: null,
+          totalResults: 0,
+          message: 'По выбранным фильтрам ничего не найдено. Попробуйте снизить планку рейтинга или выбрать меньше ограничений.',
+        });
+      }
+
+      // Отбираем случайный фильм из выборки
+      const randomItem = results[Math.floor(Math.random() * results.length)];
+
+      return NextResponse.json({
+        success: true,
+        randomItem: normalize(randomItem, targetType),
+        totalResults: firstPageData.total_results || 0,
+      });
+    }
+
+    // 2. РЕЖИМ ПОДБОРКИ (Список карточек)
+    let combinedItems: ReturnType<typeof normalize>[] = [];
+    let totalResults = 0;
+
+    if (type === 'all') {
+      const [moviesData, tvData] = await Promise.all([
+        fetchFromTmdb('movie', requestedPage),
+        fetchFromTmdb('tv', requestedPage),
+      ]);
+
+      const normMovies = (moviesData.results || []).map((m: TmdbRawItem) => normalize(m, 'movie'));
+      const normTv = (tvData.results || []).map((t: TmdbRawItem) => normalize(t, 'tv'));
+
+      combinedItems = [...normMovies, ...normTv];
+      // Сортировка по популярности или оценке
+      if (sortBy.includes('vote_average')) {
+        combinedItems.sort((a, b) => b.voteAverage - a.voteAverage);
+      } else {
+        combinedItems.sort((a, b) => b.popularity - a.popularity);
+      }
+      totalResults = (moviesData.total_results || 0) + (tvData.total_results || 0);
+    } else {
+      const data = await fetchFromTmdb(type, requestedPage);
+      combinedItems = (data.results || []).map((item: TmdbRawItem) => normalize(item, type));
+      totalResults = data.total_results || 0;
+    }
+
+    return NextResponse.json({
+      success: true,
+      items: combinedItems,
+      totalResults,
+      page: requestedPage,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown server error';
     return NextResponse.json(
-      { error: "TMDB_API_KEY не настроен" },
+      { error: 'Failed to fetch recommendations', details: message },
       { status: 500 }
     );
   }
-
-  const params = new URL(req.url).searchParams;
-  let kind = params.get("kind") || "all";
-  const genreParam = (params.get("genre") || "").trim();
-  const yearFrom = Number(params.get("yearFrom")) || 0;
-  const ratingFrom = Number(params.get("ratingFrom")) || 0;
-
-  const selectedGenres = genreParam
-    .split(",")
-    .map((g) => g.trim().toLowerCase())
-    .filter(Boolean);
-
-  // Если "all" — случайно выбираем сериал или фильм
-  if (kind === "all") {
-    kind = Math.random() < 0.5 ? "series" : "movie";
-  }
-  const finalKind: "series" | "movie" = kind === "movie" ? "movie" : "series";
-
-  // Преобразуем русские жанры в TMDB ID
-  const genreMap = finalKind === "movie" ? MOVIE_GENRE_IDS : TV_GENRE_IDS;
-  const genreIds = selectedGenres
-    .map((g) => genreMap[g])
-    .filter((id): id is number => typeof id === "number");
-
-  console.log("[random] kind:", finalKind, "genres:", genreIds);
-
-  // Случайная страница 1..20
-  const randomPage = Math.floor(Math.random() * 20) + 1;
-  let fallbackUsed = "none";
-
-  // Попытка 1: случайная страница
-  let data = await fetchDiscover(
-    apiKey,
-    finalKind,
-    genreIds,
-    yearFrom,
-    ratingFrom,
-    randomPage,
-    true
-  );
-
-  const MIN_THRESHOLD = 5;
-
-  // Попытка 2: если мало — page=1
-  if (data.total < MIN_THRESHOLD && randomPage !== 1) {
-    console.log("[random] fallback: page=1");
-    data = await fetchDiscover(
-      apiKey,
-      finalKind,
-      genreIds,
-      yearFrom,
-      ratingFrom,
-      1,
-      true
-    );
-    fallbackUsed = "page";
-  }
-
-  // Попытка 3: если мало — без рейтинга
-  if (data.total < MIN_THRESHOLD && ratingFrom > 0) {
-    console.log("[random] fallback: без рейтинга");
-    data = await fetchDiscover(apiKey, finalKind, genreIds, yearFrom, 0, 1, true);
-    fallbackUsed = "rating";
-  }
-
-  // Попытка 4: если мало — без года
-  if (data.total < MIN_THRESHOLD && yearFrom > 0) {
-    console.log("[random] fallback: без года");
-    data = await fetchDiscover(apiKey, finalKind, genreIds, 0, 0, 1, true);
-    fallbackUsed = "year";
-  }
-
-  // Попытка 5: если мало — без языка
-  if (data.total < MIN_THRESHOLD) {
-    console.log("[random] fallback: без language=ru-RU");
-    data = await fetchDiscover(apiKey, finalKind, genreIds, 0, 0, 1, false);
-    fallbackUsed = "language";
-  }
-
-  // Попытка 6: если всё ещё мало — без жанров
-  if (data.total < MIN_THRESHOLD) {
-    console.log("[random] fallback: без жанров");
-    data = await fetchDiscover(apiKey, finalKind, [], 0, 0, 1, false);
-    fallbackUsed = "all";
-  }
-
-  if (data.results.length === 0) {
-    return NextResponse.json({ error: "no_shows" }, { status: 404 });
-  }
-
-  // Случайный из результатов
-  const item = data.results[Math.floor(Math.random() * data.results.length)];
-
-  const genres = Array.isArray(item.genre_ids)
-    ? item.genre_ids.map((id: number) => GENRE_ID_TO_EN[id]).filter(Boolean)
-    : [];
-
-  const year = (item.release_date || item.first_air_date || "").slice(0, 4);
-
-  return NextResponse.json({
-    tmdbId: item.id,
-    kind: finalKind,
-    name: item.name || item.title || "Без названия",
-    originalName: item.original_name || item.original_title || null,
-    description: item.overview || null,
-    posterUrl: item.poster_path ? `${TMDB_IMG}${item.poster_path}` : null,
-    year: year || null,
-    genres,
-    tmdbRating: item.vote_average
-      ? Math.round(item.vote_average * 10) / 10
-      : null,
-    tmdbVotes: item.vote_count || null,
-    totalMatching: data.total,
-    fallbackUsed,
-    sortBy: data.sort,
-  });
 }

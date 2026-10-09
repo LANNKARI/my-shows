@@ -1,46 +1,102 @@
-const GENRE_MAP: Record<string, string> = {
-  // Общие
-  Action: "Боевик",
-  Adventure: "Приключения",
-  Animation: "Анимация",
-  Comedy: "Комедия",
-  Crime: "Криминал",
-  Documentary: "Документальный",
-  Drama: "Драма",
-  Family: "Семейный",
-  Fantasy: "Фэнтези",
-  History: "История",
-  Horror: "Ужасы",
-  Music: "Музыка",
-  Mystery: "Детектив",
-  Romance: "Романтика",
-  "Science Fiction": "Фантастика",
-  "TV Movie": "ТВ-фильм",
-  Thriller: "Триллер",
-  War: "Военный",
-  Western: "Вестерн",
-  // TV-специфичные
-  "Action & Adventure": "Боевик и приключения",
-  "Sci-Fi & Fantasy": "Фантастика и фэнтези",
-  "War & Politics": "Война и политика",
-  "Reality": "Реалити-шоу",
-  "Talk": "Ток-шоу",
-  "News": "Новости",
-  "Soap": "Мыльная опера",
-  "Kids": "Детский",
+export interface UnifiedGenre {
+  key: string;
+  name: string;
+  movieIds: number[];
+  tvIds: number[];
+}
+
+export const UNIFIED_GENRES: UnifiedGenre[] = [
+  { key: 'action', name: 'Боевик', movieIds: [28], tvIds: [10759] },
+  { key: 'adventure', name: 'Приключения', movieIds: [12], tvIds: [10759] },
+  { key: 'scifi', name: 'Фантастика', movieIds: [878], tvIds: [10765] },
+  { key: 'fantasy', name: 'Фэнтези', movieIds: [14], tvIds: [10765] },
+  { key: 'comedy', name: 'Комедия', movieIds: [35], tvIds: [35] },
+  { key: 'drama', name: 'Драма', movieIds: [18], tvIds: [18] },
+  { key: 'thriller', name: 'Триллер', movieIds: [53], tvIds: [80, 9648] },
+  { key: 'mystery', name: 'Детектив', movieIds: [9648], tvIds: [9648] },
+  { key: 'horror', name: 'Ужасы', movieIds: [27], tvIds: [9648, 10765] },
+  { key: 'romance', name: 'Мелодрама', movieIds: [10749], tvIds: [18, 10766] },
+  { key: 'crime', name: 'Криминал', movieIds: [80], tvIds: [80] },
+  { key: 'animation', name: 'Мультфильм', movieIds: [16], tvIds: [16, 10762] },
+  { key: 'family', name: 'Семейный', movieIds: [10751], tvIds: [10751, 10762] },
+  { key: 'war', name: 'Военный', movieIds: [10752], tvIds: [10768] },
+  { key: 'documentary', name: 'Документальный', movieIds: [99], tvIds: [99] },
+  { key: 'history', name: 'История', movieIds: [36], tvIds: [18, 10768] },
+  { key: 'music', name: 'Музыка', movieIds: [10402], tvIds: [10402, 35] },
+  { key: 'western', name: 'Вестерн', movieIds: [37], tvIds: [37] },
+];
+
+export const GENRE_ID_TO_NAME: Record<number, string> = {
+  // Movie genres
+  28: 'Боевик',
+  12: 'Приключения',
+  16: 'Мультфильм',
+  35: 'Комедия',
+  80: 'Криминал',
+  99: 'Документальный',
+  18: 'Драма',
+  10751: 'Семейный',
+  14: 'Фэнтези',
+  36: 'История',
+  27: 'Ужасы',
+  10402: 'Музыка',
+  9648: 'Детектив',
+  10749: 'Мелодрама',
+  878: 'Фантастика',
+  10770: 'Телефильм',
+  53: 'Триллер',
+  10752: 'Военный',
+  37: 'Вестерн',
+  // TV-specific genres
+  10759: 'Боевик и Приключения',
+  10762: 'Детский',
+  10763: 'Новости',
+  10764: 'Реалити-шоу',
+  10765: 'НФ и Фэнтези',
+  10766: 'Мыльная опера',
+  10767: 'Ток-шоу',
+  10768: 'Война и Политика',
 };
 
-/**
- * Переводит английское название жанра в русское.
- * Если нет перевода — возвращает оригинал.
- */
-export function translateGenre(genre: string): string {
-  return GENRE_MAP[genre] || genre;
+export function resolveGenreIds(
+  selectedKeys: string[],
+  type: 'movie' | 'tv' | 'all'
+): { movieIds: number[]; tvIds: number[] } {
+  const movieSet = new Set<number>();
+  const tvSet = new Set<number>();
+
+  for (const item of selectedKeys) {
+    // Если передан числовой ID
+    const asNum = Number(item);
+    if (!Number.isNaN(asNum) && asNum > 0) {
+      movieSet.add(asNum);
+      tvSet.add(asNum);
+      continue;
+    }
+
+    // Поиск по ключу
+    const found = UNIFIED_GENRES.find(
+      (g) => g.key.toLowerCase() === item.toLowerCase() || g.name.toLowerCase() === item.toLowerCase()
+    );
+
+    if (found) {
+      found.movieIds.forEach((id) => movieSet.add(id));
+      found.tvIds.forEach((id) => tvSet.add(id));
+    }
+  }
+
+  return {
+    movieIds: Array.from(movieSet),
+    tvIds: Array.from(tvSet),
+  };
 }
 
-/**
- * Переводит массив жанров.
- */
-export function translateGenres(genres: string[]): string[] {
-  return genres.map(translateGenre);
+export function getGenreNames(ids: number[]): string[] {
+  if (!ids || !Array.isArray(ids)) return [];
+  return ids
+    .map((id) => GENRE_ID_TO_NAME[id])
+    .filter((name): name is string => Boolean(name));
 }
+
+export const GENRES = UNIFIED_GENRES;
+export default UNIFIED_GENRES;
