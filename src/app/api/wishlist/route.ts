@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUserId, formatPosterUrl } from '@/lib/current-user';
+import { getCurrentUserId, formatPosterUrl, safeJson } from '@/lib/current-user';
 import { translateGenres } from '@/lib/genres';
 
 export async function GET() {
@@ -41,13 +41,15 @@ export async function GET() {
         rating: s?.tmdbRating || null,
         genres: s?.genres || [],
         show: {
-          ...s,
+          id: s?.id,
+          name: s?.name,
+          title: s?.name,
           posterUrl,
         },
       };
     });
 
-    return NextResponse.json(normalized);
+    return NextResponse.json(safeJson(normalized));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
@@ -137,16 +139,15 @@ export async function POST(request: NextRequest) {
         kind: show.kind,
         status: 'planned',
       },
-      include: {
-        show: true,
-      },
     });
 
-    return NextResponse.json({
-      success: true,
-      item: userShow,
-      showId: show.id,
-    });
+    return NextResponse.json(
+      safeJson({
+        success: true,
+        item: userShow,
+        showId: show.id,
+      })
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });

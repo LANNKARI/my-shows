@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUserId, formatPosterUrl } from '@/lib/current-user';
+import { getCurrentUserId, formatPosterUrl, safeJson } from '@/lib/current-user';
 
 export async function GET(
   request: NextRequest,
@@ -19,11 +19,9 @@ export async function GET(
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
     }
 
-    // 1. Ищем канонический тайтл Show по ID или TMDB ID
-    let targetShow = await prisma.show.findFirst({
-      where: {
-        OR: [{ id: numId }, { tmdbId: numId }],
-      },
+    // 1. СТРОГИЙ ПОИСК: сначала ищем по первичному ключу id, чтобы исключить показ чужого фильма
+    let targetShow = await prisma.show.findUnique({
+      where: { id: numId },
       include: {
         episodes: {
           orderBy: [{ season: 'asc' }, { episode: 'asc' }],
@@ -31,7 +29,19 @@ export async function GET(
       },
     });
 
-    // 2. Если не найден — проверяем, не был ли это ID записи UserShow
+    // 2. Если не найден по id — проверяем по tmdbId
+    if (!targetShow) {
+      targetShow = await prisma.show.findFirst({
+        where: { tmdbId: numId },
+        include: {
+          episodes: {
+            orderBy: [{ season: 'asc' }, { episode: 'asc' }],
+          },
+        },
+      });
+    }
+
+    // 3. Если не найден — проверяем, не был ли передан id из таблицы UserShow
     if (!targetShow) {
       const us = await prisma.userShow.findUnique({
         where: { id: numId },
@@ -50,30 +60,11 @@ export async function GET(
       }
     }
 
-    // 3. Если не найден — проверяем старую таблицу Title
-    if (!targetShow) {
-      const oldTitle = await prisma.title.findUnique({ where: { id: numId } });
-      if (oldTitle) {
-        targetShow = await prisma.show.create({
-          data: {
-            name: oldTitle.name,
-            originalName: oldTitle.originalName,
-            posterUrl: oldTitle.posterUrl,
-            kind: oldTitle.kind || 'series',
-            genres: [],
-          },
-          include: {
-            episodes: true,
-          },
-        });
-      }
-    }
-
     if (!targetShow) {
       return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
     }
 
-    // 4. Находим или создаем привязку UserShow строго для этого тайтла
+    // 4. Привязываем именно этот тайтл к текущему пользователю
     let userShow = await prisma.userShow.findUnique({
       where: {
         userId_showId: {
@@ -102,7 +93,7 @@ export async function GET(
       });
     }
 
-    // 5. АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ СЕРИЙ ИЗ TMDB ДЛЯ СЕРИАЛОВ
+    // 5. Автоматическая генерация серий из TMDB для сериалов
     if (targetShow.kind === 'series' && targetShow.episodes.length === 0 && targetShow.tmdbId) {
       const apiKey =
         process.env.TMDB_API_KEY ||
@@ -165,7 +156,6 @@ export async function GET(
       }
     }
 
-    // Если это фильм и серий нет — создаем 1 серию (сам фильм)
     if (targetShow.kind === 'movie' && targetShow.episodes.length === 0) {
       await prisma.episode.create({
         data: {
@@ -190,7 +180,6 @@ export async function GET(
     const progressPercent =
       totalEpisodes > 0 ? Math.round((watchedEpisodesCount / totalEpisodes) * 100) : 0;
 
-    // Группировка серий по сезонам
     const seasonsMap: Record<number, typeof episodes> = {};
     for (const ep of episodes) {
       if (!seasonsMap[ep.season]) seasonsMap[ep.season] = [];
@@ -217,43 +206,44 @@ export async function GET(
         };
       });
 
-    return NextResponse.json({
-      userShow: {
-        id: userShow.id,
-        showId: targetShow.id,
-        status: userShow.status,
-        kind: userShow.kind,
-        isFavorite: userShow.isFavorite,
-        isCompleted: userShow.isCompleted,
-        dubbing: userShow.dubbing,
-        watchSite: userShow.watchSite,
-        userRating: userShow.ratings?.[0]?.score || null,
-      },
-      show: {
-        id: targetShow.id,
-        name: targetShow.name,
-        title: targetShow.name,
-        originalName: targetShow.originalName,
-        posterUrl: formatPosterUrl(targetShow.posterUrl),
-        year: targetShow.year,
-        kind: targetShow.kind,
-        genres: targetShow.genres,
-        tmdbRating: targetShow.tmdbRating,
-      },
-      stats: {
-        totalEpisodes,
-        watchedEpisodesCount,
-        progressPercent,
-      },
-      seasons: seasonsList,
-    });
+    return NextResponse.json(
+      safeJson({
+        userShow: {
+          id: userShow.id,
+          showId: targetShow.id,
+          status: userShow.status,
+          kind: userShow.kind,
+          isFavorite: userShow.isFavorite,
+          isCompleted: userShow.isCompleted,
+          dubbing: userShow.dubbing,
+          watchSite: userShow.watchSite,
+          userRating: userShow.ratings?.[0]?.score || null,
+        },
+        show: {
+          id: targetShow.id,
+          name: targetShow.name,
+          title: targetShow.name,
+          originalName: targetShow.originalName,
+          posterUrl: formatPosterUrl(targetShow.posterUrl),
+          year: targetShow.year,
+          kind: targetShow.kind,
+          genres: targetShow.genres,
+          tmdbRating: targetShow.tmdbRating,
+        },
+        stats: {
+          totalEpisodes,
+          watchedEpisodesCount,
+          progressPercent,
+        },
+        seasons: seasonsList,
+      })
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
-// POST: Отметка серии или всего сезона
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -270,11 +260,17 @@ export async function POST(
     const body = await request.json();
     const { episodeId, seasonNumber, markSeasonWatched, watched = true } = body;
 
-    // Находим тайтл
-    const targetShow = await prisma.show.findFirst({
-      where: { OR: [{ id: numId }, { tmdbId: numId }] },
+    let targetShow = await prisma.show.findUnique({
+      where: { id: numId },
       include: { episodes: true },
     });
+
+    if (!targetShow) {
+      targetShow = await prisma.show.findFirst({
+        where: { tmdbId: numId },
+        include: { episodes: true },
+      });
+    }
 
     if (!targetShow) {
       return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
@@ -296,7 +292,6 @@ export async function POST(
       },
     });
 
-    // 1. Отметка всего сезона
     if (markSeasonWatched !== undefined && seasonNumber !== undefined) {
       const seasonEpisodes = targetShow.episodes.filter(
         (e) => e.season === Number(seasonNumber)
@@ -319,10 +314,9 @@ export async function POST(
         });
       }
 
-      return NextResponse.json({ success: true, updatedSeason: seasonNumber });
+      return NextResponse.json(safeJson({ success: true, updatedSeason: seasonNumber }));
     }
 
-    // 2. Отметка одной серии
     if (episodeId) {
       const epProgress = await prisma.episodeProgress.upsert({
         where: {
@@ -339,7 +333,7 @@ export async function POST(
         },
       });
 
-      return NextResponse.json({ success: true, progress: epProgress });
+      return NextResponse.json(safeJson({ success: true, progress: epProgress }));
     }
 
     return NextResponse.json({ error: 'Invalid parameters' }, { status: 400 });
@@ -349,7 +343,6 @@ export async function POST(
   }
 }
 
-// PATCH: Сохранение заметок (озвучка, сайт, статус, оценка)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -364,9 +357,15 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const targetShow = await prisma.show.findFirst({
-      where: { OR: [{ id: numId }, { tmdbId: numId }] },
+    let targetShow = await prisma.show.findUnique({
+      where: { id: numId },
     });
+
+    if (!targetShow) {
+      targetShow = await prisma.show.findFirst({
+        where: { tmdbId: numId },
+      });
+    }
 
     if (!targetShow) {
       return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
@@ -417,7 +416,7 @@ export async function PATCH(
       }
     }
 
-    return NextResponse.json({ success: true, item: userShow });
+    return NextResponse.json(safeJson({ success: true, item: userShow }));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });

@@ -60,7 +60,6 @@ export default function ShowPage({ params }: ShowPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           showId: show.id,
-          tmdbId: show.tmdbId,
           status: newStatus,
         }),
       });
@@ -89,7 +88,6 @@ export default function ShowPage({ params }: ShowPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           showId: show.id,
-          tmdbId: show.tmdbId,
           score,
         }),
       });
@@ -215,7 +213,7 @@ export default function ShowPage({ params }: ShowPageProps) {
                 </div>
               )}
 
-              {/* Блок «Моя библиотека» */}
+              {/* Блок управления в библиотеке */}
               <div className="p-4 sm:p-5 rounded-2xl bg-neutral-900/90 border border-neutral-800 mb-6 shadow-inner">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                   <div className="flex items-center gap-2">
@@ -223,7 +221,6 @@ export default function ShowPage({ params }: ShowPageProps) {
                     <span className="text-sm font-semibold text-white">Моя библиотека</span>
                   </div>
 
-                  {/* Переход строго по show.id в трекер */}
                   <Link
                     href={`/library/${show.id}`}
                     className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1 self-start sm:self-auto"
@@ -232,6 +229,7 @@ export default function ShowPage({ params }: ShowPageProps) {
                   </Link>
                 </div>
 
+                {/* 4 статуса */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                   {[
                     { key: 'watching', label: '👀 Смотрю' },
@@ -254,6 +252,7 @@ export default function ShowPage({ params }: ShowPageProps) {
                   ))}
                 </div>
 
+                {/* Личная оценка */}
                 <div className="flex items-center gap-2 pt-3 border-t border-neutral-800/80 text-xs">
                   <span className="text-neutral-400">Моя оценка:</span>
                   <div className="flex items-center gap-1">

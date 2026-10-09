@@ -1,7 +1,23 @@
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-// Основная функция, которую используют все эндпоинты проекта
+// Глобальный патч: автоматическая сериализация BigInt в обычное число
+if (typeof BigInt !== 'undefined' && !(BigInt.prototype as any).toJSON) {
+  (BigInt.prototype as any).toJSON = function () {
+    return Number(this);
+  };
+}
+
+// Универсальная очистка объектов от BigInt перед отправкой клиенту
+export function safeJson<T>(data: T): T {
+  return JSON.parse(
+    JSON.stringify(data, (_, value) =>
+      typeof value === 'bigint' ? Number(value) : value
+    )
+  );
+}
+
+// Получение текущего пользователя с надежным фолбэком
 export async function getCurrentUser() {
   try {
     const session = await auth();
@@ -22,7 +38,6 @@ export async function getCurrentUser() {
       }
     }
 
-    // Запасной фолбэк для локального режима/разработки (чтобы данные не пропадали при отсутствии активной сессии)
     if (!user) {
       user = await prisma.user.findFirst();
     }
@@ -34,13 +49,12 @@ export async function getCurrentUser() {
   }
 }
 
-// Вспомогательная функция для получения строкового ID
 export async function getCurrentUserId(): Promise<string | null> {
   const user = await getCurrentUser();
   return user?.id || null;
 }
 
-// Форматирование ссылок на постеры (TMDB + локальные загрузки)
+// Корректное определение ссылок на постеры (TMDB + локальные загрузки)
 export function formatPosterUrl(raw: string | null | undefined): string | null {
   if (!raw || typeof raw !== 'string') return null;
   const trimmed = raw.trim();
@@ -52,6 +66,15 @@ export function formatPosterUrl(raw: string | null | undefined): string | null {
 
   if (trimmed.startsWith('/uploads/') || trimmed.startsWith('uploads/')) {
     return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  }
+
+  // Если это имя файла из локальной папки загрузок
+  if (
+    trimmed.includes('-') &&
+    (trimmed.endsWith('.jpg') || trimmed.endsWith('.png') || trimmed.endsWith('.webp')) &&
+    !trimmed.startsWith('/')
+  ) {
+    return `/uploads/${trimmed}`;
   }
 
   const clean = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
