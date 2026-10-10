@@ -21,6 +21,7 @@ model User {
   name          String?
   bio           String?
   avatarUrl     String?
+  bannerUrl     String?
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
   sentRequests     Friendship[] @relation("FriendshipRequester")
@@ -289,3 +290,4 @@ model EpisodeProgress {
   @@index([userShowId])
   @@index([episodeId])
 }
+

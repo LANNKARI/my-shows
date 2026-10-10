@@ -12,7 +12,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get('status') || 'watching';
 
-    // 1. Загружаем сериалы и фильмы пользователя
     let userShows = await prisma.userShow.findMany({
       where: {
         userId: currentUserId,
@@ -30,67 +29,6 @@ export async function GET(request: NextRequest) {
       orderBy: { updatedAt: 'desc' },
     });
 
-    // 2. Если на главной пусто — синхронизируем тайтлы из Title
-    if (userShows.length === 0 && statusParam === 'watching') {
-      const anyUserShows = await prisma.userShow.findMany({
-        where: { status: 'watching' },
-        include: { show: { include: { episodes: true } }, ratings: true, progress: true },
-      });
-
-      if (anyUserShows.length > 0) {
-        await prisma.userShow.updateMany({
-          where: { id: { in: anyUserShows.map((w) => w.id) } },
-          data: { userId: currentUserId },
-        });
-        userShows = anyUserShows;
-      } else {
-        const oldTitles = await prisma.title.findMany({
-          where: { isCompleted: false },
-          take: 20,
-        });
-
-        for (const t of oldTitles) {
-          let s = await prisma.show.findFirst({ where: { name: t.name } });
-          if (!s) {
-            s = await prisma.show.create({
-              data: {
-                name: t.name,
-                originalName: t.originalName,
-                posterUrl: t.posterUrl,
-                kind: t.kind || 'series',
-                genres: [],
-              },
-            });
-          }
-
-          const created = await prisma.userShow.upsert({
-            where: {
-              userId_showId: {
-                userId: currentUserId,
-                showId: s.id,
-              },
-            },
-            update: { status: 'watching' },
-            create: {
-              userId: currentUserId,
-              showId: s.id,
-              kind: t.kind || 'series',
-              status: 'watching',
-              totalSeasons: t.totalSeasons,
-              totalEpisodes: t.totalEpisodes,
-            },
-            include: {
-              show: { include: { episodes: true } },
-              ratings: true,
-              progress: true,
-            },
-          });
-          userShows.push(created);
-        }
-      }
-    }
-
-    // 3. АВТО-ПОДТЯГИВАНИЕ ОБЩЕГО КОЛИЧЕСТВА СЕРИЙ ИЗ TMDB
     const apiKey =
       process.env.TMDB_API_KEY ||
       process.env.TMDB_READ_ACCESS_TOKEN ||
@@ -101,7 +39,6 @@ export async function GET(request: NextRequest) {
       for (const us of userShows) {
         const isSeries = us.kind === 'series' || us.show?.kind === 'series';
 
-        // Если это сериал и количество серий равно 0 или список серий пуст
         if (isSeries && (us.totalEpisodes <= 0 || (us.show?.episodes?.length || 0) === 0)) {
           try {
             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -109,7 +46,6 @@ export async function GET(request: NextRequest) {
 
             let tmdbId = us.show?.tmdbId;
 
-            // Если tmdbId ещё не был сохранён — ищем сериал в TMDB по названию
             if (!tmdbId && us.show?.name) {
               let searchUrl = `https://api.themoviedb.org/3/search/tv?query=${encodeURIComponent(us.show.name)}&language=ru-RU`;
               if (!apiKey.startsWith('eyJ')) searchUrl += `&api_key=${apiKey}`;
@@ -127,7 +63,6 @@ export async function GET(request: NextRequest) {
               }
             }
 
-            // Запрашиваем детали сериала из TMDB
             if (tmdbId) {
               let detailsUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?language=ru-RU`;
               if (!apiKey.startsWith('eyJ')) detailsUrl += `&api_key=${apiKey}`;
@@ -150,7 +85,6 @@ export async function GET(request: NextRequest) {
                   us.totalSeasons = totalSeasonsCount;
                 }
 
-                // Генерируем эпизоды в базе, если их ещё нет
                 if (us.show.episodes.length === 0 && Array.isArray(tvData.seasons)) {
                   const episodesToCreate: { showId: number; season: number; episode: number }[] = [];
                   for (const s of tvData.seasons) {
@@ -185,12 +119,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Формирование ответа для фронтенда
     const normalized = userShows.map((us) => {
       const isMovie = us.kind === 'movie' || us.show?.kind === 'movie';
       const watchedCount = (us.progress || []).filter((p) => p.watched).length;
 
-      // Рассчитываем точное количество серий
       let totalEpisodes = us.totalEpisodes > 0 ? us.totalEpisodes : us.show?.episodes?.length || 0;
       if (isMovie && totalEpisodes <= 0) {
         totalEpisodes = 1;
@@ -211,7 +143,7 @@ export async function GET(request: NextRequest) {
         year: us.show?.year || (us.show?.releaseDate ? new Date(us.show.releaseDate).getFullYear().toString() : ''),
         kind: isMovie ? 'movie' : 'series',
         status: us.status || 'watching',
-        isCompleted: us.isCompleted,
+        isCompleted: us.status === 'completed',
         isFavorite: us.isFavorite,
         totalSeasons: us.totalSeasons || 1,
         totalEpisodes,
@@ -275,6 +207,7 @@ export async function POST(request: NextRequest) {
     }
 
     const status = body.status || 'watching';
+    const isCompleted = status === 'completed';
 
     const userShow = await prisma.userShow.upsert({
       where: {
@@ -284,9 +217,8 @@ export async function POST(request: NextRequest) {
         },
       },
       update: {
-        ...(body.status ? { status } : {}),
-        ...(status === 'completed' ? { isCompleted: true } : {}),
-        ...(body.isCompleted !== undefined ? { isCompleted: Boolean(body.isCompleted) } : {}),
+        status,
+        isCompleted,
         ...(body.isFavorite !== undefined ? { isFavorite: Boolean(body.isFavorite) } : {}),
       },
       create: {
@@ -294,7 +226,7 @@ export async function POST(request: NextRequest) {
         showId: targetShow.id,
         kind: targetShow.kind || 'series',
         status,
-        isCompleted: status === 'completed',
+        isCompleted,
         isFavorite: Boolean(body.isFavorite),
         totalEpisodes: targetShow.episodes.length || 0,
       },

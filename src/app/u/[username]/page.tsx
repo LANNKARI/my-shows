@@ -31,6 +31,7 @@ interface UserProfileData {
     name: string | null;
     bio: string | null;
     avatarUrl: string | null;
+    bannerUrl?: string | null;
     createdAt: string;
   };
   isOwnProfile?: boolean;
@@ -68,6 +69,12 @@ export default function UserProfilePage({
 
   const [activeTab, setActiveTab] = useState<'all' | 'movies' | 'series'>('all');
 
+  // Состояния модального окна настройки обложки
+  const [isBannerModalOpen, setIsBannerModalOpen] = useState<boolean>(false);
+  const [bannerUrlInput, setBannerUrlInput] = useState<string>('');
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [savingBanner, setSavingBanner] = useState<boolean>(false);
+
   const fetchProfile = async () => {
     setLoading(true);
     setError(null);
@@ -78,6 +85,7 @@ export default function UserProfilePage({
       }
       const json = await res.json();
       setData(json);
+      setBannerUrlInput(json.user?.bannerUrl || '');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Ошибка загрузки профиля';
       setError(msg);
@@ -91,7 +99,7 @@ export default function UserProfilePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
-  // Действия с дружбой
+  // Управление дружбой
   const handleFriendshipAction = async () => {
     if (!data?.user) return;
     setFriendshipLoading(true);
@@ -128,6 +136,49 @@ export default function UserProfilePage({
       console.error('Ошибка изменения дружбы:', err);
     } finally {
       setFriendshipLoading(false);
+    }
+  };
+
+  // Сохранение обложки профиля
+  const handleSaveBanner = async () => {
+    setSavingBanner(true);
+    try {
+      let res;
+      if (bannerFile) {
+        const fd = new FormData();
+        fd.append('file', bannerFile);
+        res = await fetch(`/api/users/${username}/banner`, {
+          method: 'POST',
+          body: fd,
+        });
+      } else {
+        res = await fetch(`/api/users/${username}/banner`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bannerUrl: bannerUrlInput.trim() }),
+        });
+      }
+
+      if (res.ok) {
+        const result = await res.json();
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                user: { ...prev.user, bannerUrl: result.bannerUrl },
+              }
+            : prev
+        );
+        setIsBannerModalOpen(false);
+        setBannerFile(null);
+      } else {
+        alert('Не удалось сохранить обложку');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Ошибка при сохранении обложки');
+    } finally {
+      setSavingBanner(false);
     }
   };
 
@@ -182,100 +233,129 @@ export default function UserProfilePage({
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-24">
-      {/* Шапка профиля */}
-      <div className="border-b border-neutral-800 bg-neutral-900/60">
-        <div className="max-w-6xl mx-auto px-4 py-8 sm:py-10 flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-neutral-800 border-2 border-neutral-700 flex items-center justify-center text-3xl font-bold text-neutral-300 overflow-hidden flex-shrink-0 shadow-2xl">
-            {user.avatarUrl ? (
+      {/* Скругленная шапка профиля с поддержкой обложки */}
+      <div className="max-w-6xl mx-auto px-4 pt-6">
+        <div className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-900/80 shadow-2xl">
+          {/* Фоновый баннер */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+            {user.bannerUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
+              <img
+                src={user.bannerUrl}
+                alt="Profile cover"
+                className="w-full h-full object-cover opacity-40 scale-105 blur-[1px]"
+              />
             ) : (
-              user.username.charAt(0).toUpperCase()
+              <div className="w-full h-full bg-gradient-to-r from-neutral-900 via-neutral-850 to-neutral-900 opacity-90" />
             )}
+            <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/70 to-neutral-950/40" />
           </div>
 
-          <div className="text-center sm:text-left flex-1 w-full">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
-                  {user.name || user.username}
-                </h1>
-                <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">@{user.username}</p>
-              </div>
+          {/* Кнопка смены обложки */}
+          {isOwnProfile && (
+            <button
+              type="button"
+              onClick={() => setIsBannerModalOpen(true)}
+              className="absolute top-4 right-4 z-30 px-3.5 py-2 rounded-xl bg-black/75 hover:bg-black/95 backdrop-blur-md border border-white/20 text-xs font-semibold text-neutral-200 hover:text-white transition-all flex items-center gap-1.5 shadow-xl cursor-pointer"
+            >
+              <span>📷</span>
+              <span>{user.bannerUrl ? 'Изменить обложку' : 'Добавить обложку'}</span>
+            </button>
+          )}
 
-              {/* Кнопка добавления в друзья */}
-              {!isOwnProfile && (
-                <button
-                  type="button"
-                  onClick={handleFriendshipAction}
-                  disabled={friendshipLoading}
-                  className={`self-center sm:self-auto px-4 py-2 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 shadow-sm ${
-                    friendshipStatus === 'friends'
-                      ? 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-rose-500/50 hover:text-rose-400'
-                      : friendshipStatus === 'pending_sent'
-                      ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-rose-500/10 hover:text-rose-300 hover:border-rose-500/30'
-                      : friendshipStatus === 'pending_received'
-                      ? 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500 shadow-emerald-600/20'
-                      : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-blue-600/20'
-                  }`}
-                >
-                  {friendshipLoading ? (
-                    'Загрузка...'
-                  ) : friendshipStatus === 'friends' ? (
-                    <>
-                      <span>👥</span>
-                      <span>В друзьях (удалить)</span>
-                    </>
-                  ) : friendshipStatus === 'pending_sent' ? (
-                    <>
-                      <span>⏳</span>
-                      <span>Заявка отправлена (отменить)</span>
-                    </>
-                  ) : friendshipStatus === 'pending_received' ? (
-                    <>
-                      <span>✓</span>
-                      <span>Принять заявку</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>➕</span>
-                      <span>Добавить в друзья</span>
-                    </>
-                  )}
-                </button>
+          {/* Содержимое шапки */}
+          <div className="relative z-10 p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-start gap-6">
+            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-neutral-800 border-2 border-neutral-700/80 flex items-center justify-center text-3xl font-bold text-neutral-300 overflow-hidden flex-shrink-0 shadow-2xl">
+              {user.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
+              ) : (
+                user.username.charAt(0).toUpperCase()
               )}
             </div>
 
-            {user.bio && (
-              <p className="text-xs text-neutral-300 mt-2 max-w-xl leading-relaxed">{user.bio}</p>
-            )}
+            <div className="text-center sm:text-left flex-1 w-full">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-sm">
+                    {user.name || user.username}
+                  </h1>
+                  <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">@{user.username}</p>
+                </div>
 
-            {/* Счетчики */}
-            <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs">
-              <span className="px-3 py-1.5 bg-neutral-900 rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
-                <span>✓ Просмотрено:</span>
-                <strong className="text-white font-bold">{stats.totalCompleted}</strong>
-              </span>
+                {!isOwnProfile && (
+                  <button
+                    type="button"
+                    onClick={handleFriendshipAction}
+                    disabled={friendshipLoading}
+                    className={`self-center sm:self-auto px-4 py-2 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                      friendshipStatus === 'friends'
+                        ? 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-rose-500/50 hover:text-rose-400'
+                        : friendshipStatus === 'pending_sent'
+                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-rose-500/10 hover:text-rose-300 hover:border-rose-500/30'
+                        : friendshipStatus === 'pending_received'
+                        ? 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500 shadow-emerald-600/20'
+                        : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-blue-600/20'
+                    }`}
+                  >
+                    {friendshipLoading ? (
+                      'Загрузка...'
+                    ) : friendshipStatus === 'friends' ? (
+                      <>
+                        <span>👥</span>
+                        <span>В друзьях (удалить)</span>
+                      </>
+                    ) : friendshipStatus === 'pending_sent' ? (
+                      <>
+                        <span>⏳</span>
+                        <span>Заявка отправлена (отменить)</span>
+                      </>
+                    ) : friendshipStatus === 'pending_received' ? (
+                      <>
+                        <span>✓</span>
+                        <span>Принять заявку</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>➕</span>
+                        <span>Добавить в друзья</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
 
-              <span className="px-3 py-1.5 bg-neutral-900 rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
-                <span>🎬 Фильмов:</span>
-                <strong className="text-blue-400 font-bold">{stats.moviesCount}</strong>
-              </span>
+              {user.bio && (
+                <p className="text-xs text-neutral-300 mt-2 max-w-xl leading-relaxed">{user.bio}</p>
+              )}
 
-              <span className="px-3 py-1.5 bg-neutral-900 rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
-                <span>📺 Сериалов:</span>
-                <strong className="text-indigo-400 font-bold">{stats.seriesCount}</strong>
-              </span>
+              {/* Счетчики */}
+              <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs">
+                <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
+                  <span>✓ Просмотрено:</span>
+                  <strong className="text-white font-bold">{stats.totalCompleted}</strong>
+                </span>
 
-              <span className="px-3 py-1.5 bg-neutral-900 rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
-                <span>★ Оценок:</span>
-                <strong className="text-amber-400 font-bold">{stats.ratingsCount}</strong>
-              </span>
+                <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
+                  <span>🎬 Фильмов:</span>
+                  <strong className="text-blue-400 font-bold">{stats.moviesCount}</strong>
+                </span>
 
-              <span className="px-3 py-1.5 bg-neutral-900 rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
-                <span>⏱ Время:</span>
-                <strong className="text-emerald-400 font-bold">{stats.hoursWatched} ч</strong>
-              </span>
+                <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
+                  <span>📺 Сериалов:</span>
+                  <strong className="text-indigo-400 font-bold">{stats.seriesCount}</strong>
+                </span>
+
+                <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
+                  <span>★ Оценок:</span>
+                  <strong className="text-amber-400 font-bold">{stats.ratingsCount}</strong>
+                </span>
+
+                <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
+                  <span>⏱ Время:</span>
+                  <strong className="text-emerald-400 font-bold">{stats.hoursWatched} ч</strong>
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -427,7 +507,7 @@ export default function UserProfilePage({
             <div className="flex bg-neutral-900 p-1 rounded-xl border border-neutral-800 self-start sm:self-auto text-xs">
               <button
                 onClick={() => setActiveTab('all')}
-                className={`px-3 py-1 rounded-lg transition-colors ${
+                className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
                   activeTab === 'all'
                     ? 'bg-neutral-800 text-white font-bold'
                     : 'text-neutral-400 hover:text-white'
@@ -437,7 +517,7 @@ export default function UserProfilePage({
               </button>
               <button
                 onClick={() => setActiveTab('movies')}
-                className={`px-3 py-1 rounded-lg transition-colors ${
+                className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
                   activeTab === 'movies'
                     ? 'bg-neutral-800 text-white font-bold'
                     : 'text-neutral-400 hover:text-white'
@@ -447,7 +527,7 @@ export default function UserProfilePage({
               </button>
               <button
                 onClick={() => setActiveTab('series')}
-                className={`px-3 py-1 rounded-lg transition-colors ${
+                className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
                   activeTab === 'series'
                     ? 'bg-neutral-800 text-white font-bold'
                     : 'text-neutral-400 hover:text-white'
@@ -514,6 +594,100 @@ export default function UserProfilePage({
           )}
         </section>
       </div>
+
+      {/* Модальное окно загрузки обложки */}
+      {isBannerModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>📷 Обложка профиля</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsBannerModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center text-neutral-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-neutral-400 mb-1">
+                  1. Прямая ссылка на изображение (URL):
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://images.unsplash.com/... или ссылка на арт"
+                  value={bannerUrlInput}
+                  onChange={(e) => {
+                    setBannerUrlInput(e.target.value);
+                    setBannerFile(null);
+                  }}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-neutral-600">
+                <div className="flex-1 border-t border-neutral-800" />
+                <span>ИЛИ</span>
+                <div className="flex-1 border-t border-neutral-800" />
+              </div>
+
+              <div>
+                <label className="block text-xs text-neutral-400 mb-1">
+                  2. Загрузить файл с устройства:
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                      setBannerFile(e.target.files[0]);
+                      setBannerUrlInput('');
+                    }
+                  }}
+                  className="w-full text-xs text-neutral-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-neutral-800 file:text-white hover:file:bg-neutral-700 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-neutral-800 flex items-center justify-between">
+              {user.bannerUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBannerUrlInput('');
+                    setBannerFile(null);
+                    handleSaveBanner();
+                  }}
+                  className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer"
+                >
+                  Удалить обложку
+                </button>
+              )}
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsBannerModalOpen(false)}
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveBanner}
+                  disabled={savingBanner}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-md shadow-blue-600/20 cursor-pointer"
+                >
+                  {savingBanner ? 'Сохранение...' : 'Сохранить'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

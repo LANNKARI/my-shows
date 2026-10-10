@@ -18,6 +18,7 @@ export async function GET(
         name: true,
         bio: true,
         avatarUrl: true,
+        bannerUrl: true,
         createdAt: true,
       },
     });
@@ -28,7 +29,19 @@ export async function GET(
 
     const isOwnProfile = currentUserId === user.id;
 
-    // Определение текущего статуса дружбы
+    // Корректировка флага isCompleted: не завершенные тайтлы не должны иметь isCompleted: true
+    await prisma.userShow.updateMany({
+      where: {
+        userId: user.id,
+        status: { not: 'completed' },
+        isCompleted: true,
+      },
+      data: {
+        isCompleted: false,
+      },
+    });
+
+    // Определение статуса дружбы
     let friendshipStatus: 'none' | 'pending_sent' | 'pending_received' | 'friends' = 'none';
 
     if (!isOwnProfile && currentUserId) {
@@ -65,9 +78,9 @@ export async function GET(
       orderBy: { updatedAt: 'desc' },
     });
 
-    // 2. Просмотренные картины
+    // 2. Просмотренные тайтлы: СТРОГО status === 'completed'
     const completedUserShows = userShows.filter(
-      (us) => us.status === 'completed' || us.isCompleted
+      (us) => us.status === 'completed'
     );
 
     const completedShows = completedUserShows.map((us) => {
@@ -93,21 +106,23 @@ export async function GET(
       (us) => us.ratings && us.ratings.length > 0 && us.ratings[0].score > 0
     ).length;
 
-    // Подсчет времени просмотра
+    // Расчет часов просмотра (без брошенных)
     let totalMinutes = 0;
     for (const us of userShows) {
+      if (us.status === 'dropped') continue;
+
       const isMovie = us.kind === 'movie' || us.show?.kind === 'movie';
       const runtime = us.show?.runtime || (isMovie ? 110 : 45);
 
       if (isMovie) {
-        if (us.status === 'completed' || us.isCompleted) {
+        if (us.status === 'completed') {
           totalMinutes += runtime;
         }
       } else {
         const watchedEpisodes = (us.progress || []).filter((p) => p.watched).length;
         if (watchedEpisodes > 0) {
           totalMinutes += watchedEpisodes * runtime;
-        } else if (us.status === 'completed' || us.isCompleted) {
+        } else if (us.status === 'completed') {
           const epCount = us.totalEpisodes || us.show?.episodes?.length || 10;
           totalMinutes += epCount * runtime;
         }
@@ -115,7 +130,7 @@ export async function GET(
     }
     const hoursWatched = Math.round(totalMinutes / 60);
 
-    // 3. Любимые картины (отмеченные звездочкой)
+    // 3. Любимые сериалы и фильмы
     const favoriteShows = userShows
       .filter((us) => us.isFavorite)
       .map((us, index) => ({
