@@ -49,7 +49,6 @@ export default function HomePage() {
   const handleToggleFavorite = async (showId: number, currentFavorite: boolean) => {
     const nextFavorite = !currentFavorite;
 
-    // Оптимистичное обновление интерфейса
     setShows((prev) =>
       prev.map((s) => (s.showId === showId ? { ...s, isFavorite: nextFavorite } : s))
     );
@@ -68,11 +67,36 @@ export default function HomePage() {
     }
   };
 
+  // Расчет прогресса просмотра
   const getProgressStats = (item: UserShowItem) => {
-    const totalEps = item.totalEpisodes || item.show?.episodes?.length || (item.kind === 'movie' ? 1 : 0);
     const watchedCount = (item.progress || []).filter((p) => p.watched).length;
-    const percent = totalEps > 0 ? Math.round((watchedCount / totalEps) * 100) : 0;
-    return { totalEps, watchedCount, percent };
+
+    let totalEps =
+      (item.totalEpisodes && item.totalEpisodes > 0 ? item.totalEpisodes : 0) ||
+      (item.show?.episodes?.length && item.show.episodes.length > 0 ? item.show.episodes.length : 0) ||
+      (item.kind === 'movie' ? 1 : 0);
+
+    // Если просмотрено больше, чем было записано
+    if (watchedCount > totalEps && totalEps > 0) {
+      totalEps = watchedCount;
+    }
+
+    if (totalEps <= 0 && watchedCount > 0) {
+      totalEps = watchedCount;
+    }
+
+    const percent =
+      totalEps > 0
+        ? Math.min(100, Math.round((watchedCount / totalEps) * 100))
+        : watchedCount > 0
+        ? 100
+        : 0;
+
+    return {
+      totalEps: totalEps > 0 ? totalEps : 1,
+      watchedCount,
+      percent,
+    };
   };
 
   return (
@@ -151,7 +175,7 @@ export default function HomePage() {
                   key={`${item.id}-${item.showId}`}
                   className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-md relative"
                 >
-                  {/* Кнопка «Любимый сериал» прямо на карточке */}
+                  {/* Кнопка «Любимый сериал» */}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -172,7 +196,7 @@ export default function HomePage() {
                     </span>
                   </button>
 
-                  {/* Клик по постеру сразу открывает страницу трекера серий */}
+                  {/* Клик по постеру открывает страницу трекера серий */}
                   <Link
                     href={`/library/${targetShowId}`}
                     className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
@@ -214,11 +238,12 @@ export default function HomePage() {
                       </Link>
                     </div>
 
+                    {/* Прогресс серий */}
                     <div className="mt-3 pt-2.5 border-t border-neutral-800/80">
                       <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1.5">
                         <span>Прогресс:</span>
                         <span className="text-blue-400 font-bold">
-                          {watchedCount}/{totalEps > 0 ? totalEps : '?'}
+                          {watchedCount}/{totalEps}
                         </span>
                       </div>
                       <div className="w-full h-1.5 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800">

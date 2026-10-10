@@ -19,7 +19,7 @@ export async function GET(
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
     }
 
-    // 1. СТРОГИЙ ПОИСК: сначала ищем по первичному ключу id, чтобы исключить показ чужого фильма
+    // 1. Ищем тайтл в базе данных
     let targetShow = await prisma.show.findUnique({
       where: { id: numId },
       include: {
@@ -29,7 +29,6 @@ export async function GET(
       },
     });
 
-    // 2. Если не найден по id — проверяем по tmdbId
     if (!targetShow) {
       targetShow = await prisma.show.findFirst({
         where: { tmdbId: numId },
@@ -41,7 +40,6 @@ export async function GET(
       });
     }
 
-    // 3. Если не найден — проверяем, не был ли передан id из таблицы UserShow
     if (!targetShow) {
       const us = await prisma.userShow.findUnique({
         where: { id: numId },
@@ -64,7 +62,7 @@ export async function GET(
       return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
     }
 
-    // 4. Привязываем именно этот тайтл к текущему пользователю
+    // 2. Находим запись пользователя
     let userShow = await prisma.userShow.findUnique({
       where: {
         userId_showId: {
@@ -93,19 +91,40 @@ export async function GET(
       });
     }
 
-    // 5. Автоматическая генерация серий из TMDB для сериалов
-    if (targetShow.kind === 'series' && targetShow.episodes.length === 0 && targetShow.tmdbId) {
-      const apiKey =
-        process.env.TMDB_API_KEY ||
-        process.env.TMDB_READ_ACCESS_TOKEN ||
-        process.env.NEXT_PUBLIC_TMDB_API_KEY ||
-        '';
+    // 3. АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ СЕРИЙ ИЗ TMDB ДЛЯ СЕРИАЛОВ
+    const apiKey =
+      process.env.TMDB_API_KEY ||
+      process.env.TMDB_READ_ACCESS_TOKEN ||
+      process.env.NEXT_PUBLIC_TMDB_API_KEY ||
+      '';
 
-      if (apiKey) {
-        try {
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (apiKey.startsWith('eyJ')) headers['Authorization'] = `Bearer ${apiKey}`;
-          let tmdbUrl = `https://api.themoviedb.org/3/tv/${targetShow.tmdbId}?language=ru-RU`;
+    if (targetShow.kind === 'series' && (targetShow.episodes.length === 0 || userShow.totalEpisodes <= 0) && apiKey) {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (apiKey.startsWith('eyJ')) headers['Authorization'] = `Bearer ${apiKey}`;
+
+        let tmdbId = targetShow.tmdbId;
+
+        // Если tmdbId не был сохранен — ищем в TMDB по имени
+        if (!tmdbId && targetShow.name) {
+          let searchUrl = `https://api.themoviedb.org/3/search/tv?query=${encodeURIComponent(targetShow.name)}&language=ru-RU`;
+          if (!apiKey.startsWith('eyJ')) searchUrl += `&api_key=${apiKey}`;
+
+          const searchRes = await fetch(searchUrl, { headers });
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            if (searchData.results && searchData.results.length > 0) {
+              tmdbId = searchData.results[0].id;
+              await prisma.show.update({
+                where: { id: targetShow.id },
+                data: { tmdbId },
+              });
+            }
+          }
+        }
+
+        if (tmdbId) {
+          let tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?language=ru-RU`;
           if (!apiKey.startsWith('eyJ')) tmdbUrl += `&api_key=${apiKey}`;
 
           const tmdbRes = await fetch(tmdbUrl, { headers });
@@ -117,45 +136,52 @@ export async function GET(
             );
 
             const episodesToCreate: { showId: number; season: number; episode: number }[] = [];
-            let totalEpsCount = 0;
+            let totalEpsCount = data.number_of_episodes || 0;
 
-            for (const s of seasons) {
-              totalEpsCount += s.episode_count;
-              for (let ep = 1; ep <= s.episode_count; ep++) {
-                episodesToCreate.push({
-                  showId: targetShow.id,
-                  season: s.season_number,
-                  episode: ep,
+            if (targetShow.episodes.length === 0) {
+              for (const s of seasons) {
+                for (let ep = 1; ep <= s.episode_count; ep++) {
+                  episodesToCreate.push({
+                    showId: targetShow.id,
+                    season: s.season_number,
+                    episode: ep,
+                  });
+                }
+              }
+
+              if (episodesToCreate.length > 0) {
+                await prisma.episode.createMany({
+                  data: episodesToCreate,
+                  skipDuplicates: true,
+                });
+                targetShow.episodes = await prisma.episode.findMany({
+                  where: { showId: targetShow.id },
+                  orderBy: [{ season: 'asc' }, { episode: 'asc' }],
                 });
               }
             }
 
-            if (episodesToCreate.length > 0) {
-              await prisma.episode.createMany({
-                data: episodesToCreate,
-                skipDuplicates: true,
-              });
-
-              await prisma.userShow.update({
-                where: { id: userShow.id },
-                data: {
-                  totalSeasons: seasons.length || 1,
-                  totalEpisodes: totalEpsCount,
-                },
-              });
-
-              targetShow.episodes = await prisma.episode.findMany({
-                where: { showId: targetShow.id },
-                orderBy: [{ season: 'asc' }, { episode: 'asc' }],
-              });
+            if (totalEpsCount === 0) {
+              totalEpsCount = targetShow.episodes.length;
             }
+
+            await prisma.userShow.update({
+              where: { id: userShow.id },
+              data: {
+                totalSeasons: seasons.length || 1,
+                totalEpisodes: totalEpsCount,
+              },
+            });
+            userShow.totalEpisodes = totalEpsCount;
+            userShow.totalSeasons = seasons.length || 1;
           }
-        } catch (tmdbErr) {
-          console.error('Ошибка подтягивания сезонов TMDB:', tmdbErr);
         }
+      } catch (tmdbErr) {
+        console.error('Ошибка подтягивания сезонов TMDB:', tmdbErr);
       }
     }
 
+    // Если это фильм и серий нет — создаем 1 серию (сам фильм)
     if (targetShow.kind === 'movie' && targetShow.episodes.length === 0) {
       await prisma.episode.create({
         data: {
@@ -167,19 +193,32 @@ export async function GET(
       targetShow.episodes = await prisma.episode.findMany({
         where: { showId: targetShow.id },
       });
+      await prisma.userShow.update({
+        where: { id: userShow.id },
+        data: { totalEpisodes: 1, totalSeasons: 1 },
+      });
     }
 
-    // 6. Подсчет прогресса серий
+    // 4. Подсчет прогресса серий
     const episodes = targetShow.episodes || [];
     const watchedEpisodeIds = new Set(
       (userShow.progress || []).filter((p) => p.watched).map((p) => p.episodeId)
     );
 
-    const totalEpisodes = episodes.length;
+    const totalEpisodes =
+      userShow.totalEpisodes > 0
+        ? userShow.totalEpisodes
+        : episodes.length > 0
+        ? episodes.length
+        : targetShow.kind === 'movie'
+        ? 1
+        : Math.max(1, watchedEpisodeIds.size);
+
     const watchedEpisodesCount = watchedEpisodeIds.size;
     const progressPercent =
-      totalEpisodes > 0 ? Math.round((watchedEpisodesCount / totalEpisodes) * 100) : 0;
+      totalEpisodes > 0 ? Math.min(100, Math.round((watchedEpisodesCount / totalEpisodes) * 100)) : 0;
 
+    // Группировка серий по сезонам
     const seasonsMap: Record<number, typeof episodes> = {};
     for (const ep of episodes) {
       if (!seasonsMap[ep.season]) seasonsMap[ep.season] = [];
