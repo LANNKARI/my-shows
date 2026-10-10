@@ -90,6 +90,15 @@ export default function UserMenu() {
           </Link>
 
           <Link
+            href={`/u/${username}/achievements`}
+            onClick={() => setIsOpen(false)}
+            className="flex items-center gap-2.5 px-3 py-2 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+          >
+            <span>🎖️</span>
+            <span>Достижения</span>
+          </Link>
+
+          <Link
             href="/top"
             onClick={() => setIsOpen(false)}
             className="flex items-center gap-2.5 px-3 py-2 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
