@@ -25,6 +25,7 @@ interface TrackerData {
     showId: number;
     status: string;
     kind: string;
+    isFavorite?: boolean;
     dubbing: string | null;
     watchSite: string | null;
     userRating: number | null;
@@ -59,7 +60,6 @@ export default function LibraryTrackerPage({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Локальные состояния для формы заметок
   const [dubbing, setDubbing] = useState<string>('');
   const [watchSite, setWatchSite] = useState<string>('');
   const [status, setStatus] = useState<string>('watching');
@@ -94,12 +94,35 @@ export default function LibraryTrackerPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Переключение одной серии
+  // Быстрое переключение «Любимый сериал» прямо в трекере
+  const toggleFavorite = async () => {
+    if (!data) return;
+    const nextFavorite = !data.userShow.isFavorite;
+
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            userShow: { ...prev.userShow, isFavorite: nextFavorite },
+          }
+        : prev
+    );
+
+    try {
+      await fetch(`/api/user-shows/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFavorite: nextFavorite }),
+      });
+    } catch (err) {
+      console.error('Ошибка сохранения избранного:', err);
+    }
+  };
+
   const toggleEpisode = async (episodeId: number, currentWatched: boolean) => {
     if (!data) return;
     const nextWatched = !currentWatched;
 
-    // Оптимистичное обновление UI
     setData((prev) => {
       if (!prev) return prev;
       let newWatchedTotal = prev.stats.watchedEpisodesCount;
@@ -156,7 +179,6 @@ export default function LibraryTrackerPage({
     }
   };
 
-  // Отметка всего сезона сразу
   const toggleSeasonAll = async (seasonNumber: number, markWatched: boolean) => {
     if (!data) return;
 
@@ -203,7 +225,6 @@ export default function LibraryTrackerPage({
     }
   };
 
-  // Сохранение заметок (озвучка, сайт, статус, оценка)
   const saveNotes = async (newStatus?: string) => {
     const targetStatus = newStatus || status;
     setSavingNotes(true);
@@ -264,7 +285,8 @@ export default function LibraryTrackerPage({
     );
   }
 
-  const { show, stats, seasons } = data;
+  const { show, stats, seasons, userShow } = data;
+  const isFav = Boolean(userShow.isFavorite);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-24">
@@ -279,12 +301,27 @@ export default function LibraryTrackerPage({
             <span>Назад</span>
           </button>
 
-          <Link
-            href={`/show/${show.id}`}
-            className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
-          >
-            Карточка фильма ↗
-          </Link>
+          <div className="flex items-center gap-2">
+            {/* Кнопка «Любимый сериал» в шапке */}
+            <button
+              onClick={toggleFavorite}
+              className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition-all border flex items-center gap-1.5 ${
+                isFav
+                  ? 'bg-amber-400 text-black border-amber-300 shadow-md'
+                  : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
+              }`}
+            >
+              <span>{isFav ? '★' : '☆'}</span>
+              <span>{isFav ? 'Любимый сериал' : 'Сделать любимым'}</span>
+            </button>
+
+            <Link
+              href={`/show/${show.id}`}
+              className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+            >
+              Карточка фильма ↗
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -319,6 +356,12 @@ export default function LibraryTrackerPage({
                 <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
                   {show.kind === 'series' ? 'Сериал' : 'Фильм'}
                 </span>
+
+                {isFav && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                    ★ В профиле
+                  </span>
+                )}
               </div>
 
               <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-1">
@@ -474,7 +517,6 @@ export default function LibraryTrackerPage({
                     </span>
                   </div>
 
-                  {/* Кнопка отметки всего сезона */}
                   <button
                     onClick={() =>
                       toggleSeasonAll(season.seasonNumber, !season.isCompleted)

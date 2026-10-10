@@ -79,6 +79,32 @@ export default function ShowPage({ params }: ShowPageProps) {
     }
   };
 
+  // Переключение флага «Любимый сериал»
+  const handleToggleFavorite = async () => {
+    if (!show) return;
+    const nextFavorite = !userShow?.isFavorite;
+
+    setUserShow((prev: any) => (prev ? { ...prev, isFavorite: nextFavorite } : prev));
+
+    try {
+      const res = await fetch('/api/user-shows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          showId: show.id,
+          isFavorite: nextFavorite,
+        }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setUserShow(updated.item || updated.userShow || updated);
+      }
+    } catch (err) {
+      console.error('Ошибка переключения любимого тайтла:', err);
+    }
+  };
+
   const handleRate = async (score: number) => {
     if (!show) return;
     setUserRating(score);
@@ -136,6 +162,7 @@ export default function ShowPage({ params }: ShowPageProps) {
   const title = show.name || show.title;
   const originalTitle = show.originalName || show.originalTitle;
   const currentStatus = userShow?.status || null;
+  const isFav = Boolean(userShow?.isFavorite);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
@@ -220,12 +247,28 @@ export default function ShowPage({ params }: ShowPageProps) {
                     <span className="text-sm font-semibold text-white">Моя библиотека</span>
                   </div>
 
-                  <Link
-                    href={`/library/${show.id}`}
-                    className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1 self-start sm:self-auto"
-                  >
-                    <span>📖 Открыть трекер серий и заметки →</span>
-                  </Link>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {/* Кнопка «Любимый сериал» */}
+                    <button
+                      type="button"
+                      onClick={handleToggleFavorite}
+                      className={`text-xs px-3 py-1 rounded-xl font-semibold transition-all border flex items-center gap-1.5 ${
+                        isFav
+                          ? 'bg-amber-400 text-black border-amber-300 shadow-md'
+                          : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
+                      }`}
+                    >
+                      <span>{isFav ? '★' : '☆'}</span>
+                      <span>{isFav ? 'Любимый сериал' : 'Сделать любимым'}</span>
+                    </button>
+
+                    <Link
+                      href={`/library/${show.id}`}
+                      className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1 self-start sm:self-auto"
+                    >
+                      <span>📖 Трекер серий →</span>
+                    </Link>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">

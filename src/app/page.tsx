@@ -14,6 +14,7 @@ interface UserShowItem {
   year?: string;
   kind?: string;
   status: string;
+  isFavorite?: boolean;
   totalEpisodes?: number;
   progress?: { episodeId: number; watched: boolean }[];
   show?: {
@@ -43,6 +44,29 @@ export default function HomePage() {
   useEffect(() => {
     fetchShows();
   }, [fetchShows]);
+
+  // Переключение флага «Любимый сериал» прямо на карточке
+  const handleToggleFavorite = async (showId: number, currentFavorite: boolean) => {
+    const nextFavorite = !currentFavorite;
+
+    // Оптимистичное обновление интерфейса
+    setShows((prev) =>
+      prev.map((s) => (s.showId === showId ? { ...s, isFavorite: nextFavorite } : s))
+    );
+
+    try {
+      await fetch('/api/user-shows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          showId,
+          isFavorite: nextFavorite,
+        }),
+      });
+    } catch (err) {
+      console.error('Ошибка переключения избранного:', err);
+    }
+  };
 
   const getProgressStats = (item: UserShowItem) => {
     const totalEps = item.totalEpisodes || item.show?.episodes?.length || (item.kind === 'movie' ? 1 : 0);
@@ -119,14 +143,36 @@ export default function HomePage() {
               const displayTitle = item.title || item.name || 'Без названия';
               const targetShowId = item.showId;
               const isSeries = item.kind === 'series';
+              const isFav = Boolean(item.isFavorite);
               const { totalEps, watchedCount, percent } = getProgressStats(item);
 
               return (
                 <div
                   key={`${item.id}-${item.showId}`}
-                  className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-md"
+                  className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-md relative"
                 >
-                  {/* Клик открывает напрямую страницу трекера */}
+                  {/* Кнопка «Любимый сериал» прямо на карточке */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleToggleFavorite(item.showId, isFav);
+                    }}
+                    className={`absolute top-2 right-2 z-10 px-2 py-1 rounded-lg text-xs font-semibold backdrop-blur-md transition-all flex items-center gap-1 border shadow-md ${
+                      isFav
+                        ? 'bg-amber-400 text-black border-amber-300'
+                        : 'bg-black/75 text-neutral-300 border-neutral-700 hover:text-white hover:bg-black/90'
+                    }`}
+                    title={isFav ? 'Убрать из любимых в профиле' : 'Сделать любимым (добавить в профиль)'}
+                  >
+                    <span>{isFav ? '★' : '☆'}</span>
+                    <span className="text-[10px] hidden sm:inline">
+                      {isFav ? 'Любимый' : 'В любимые'}
+                    </span>
+                  </button>
+
+                  {/* Клик по постеру сразу открывает страницу трекера серий */}
                   <Link
                     href={`/library/${targetShowId}`}
                     className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"

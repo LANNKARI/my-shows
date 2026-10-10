@@ -382,6 +382,7 @@ export async function PATCH(
         ...(body.status ? { status: body.status } : {}),
         ...(body.dubbing !== undefined ? { dubbing: body.dubbing } : {}),
         ...(body.watchSite !== undefined ? { watchSite: body.watchSite } : {}),
+        ...(body.isFavorite !== undefined ? { isFavorite: Boolean(body.isFavorite) } : {}),
         ...(body.status === 'completed' ? { isCompleted: true } : {}),
       },
       create: {
@@ -391,6 +392,7 @@ export async function PATCH(
         status: body.status || 'watching',
         dubbing: body.dubbing || null,
         watchSite: body.watchSite || null,
+        isFavorite: body.isFavorite !== undefined ? Boolean(body.isFavorite) : false,
         isCompleted: body.status === 'completed',
       },
     });

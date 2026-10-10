@@ -147,7 +147,6 @@ export async function POST(request: NextRequest) {
 
     const numShowId = Number(rawShowId);
 
-    // Строгий поиск Show
     let targetShow = await prisma.show.findUnique({
       where: { id: numShowId },
     });
@@ -162,7 +161,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
     }
 
-    const status = body.status || 'watching';
+    // Проверяем текущее состояние записи, чтобы не сбрасывать статус при переключении favorite
+    const existingUserShow = await prisma.userShow.findUnique({
+      where: {
+        userId_showId: {
+          userId: currentUserId,
+          showId: targetShow.id,
+        },
+      },
+    });
+
+    const status = body.status || existingUserShow?.status || 'watching';
 
     const userShow = await prisma.userShow.upsert({
       where: {
@@ -172,8 +181,9 @@ export async function POST(request: NextRequest) {
         },
       },
       update: {
-        status,
-        isCompleted: status === 'completed',
+        ...(body.status ? { status } : {}),
+        ...(status === 'completed' ? { isCompleted: true } : {}),
+        ...(body.isCompleted !== undefined ? { isCompleted: Boolean(body.isCompleted) } : {}),
         ...(body.isFavorite !== undefined ? { isFavorite: Boolean(body.isFavorite) } : {}),
       },
       create: {
@@ -182,7 +192,7 @@ export async function POST(request: NextRequest) {
         kind: targetShow.kind || 'series',
         status,
         isCompleted: status === 'completed',
-        isFavorite: Boolean(body.isFavorite),
+        isFavorite: body.isFavorite !== undefined ? Boolean(body.isFavorite) : false,
       },
       include: {
         ratings: true,
