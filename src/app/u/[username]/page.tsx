@@ -19,6 +19,8 @@ interface Achievement {
   title: string;
   description: string;
   icon: string;
+  tier: string;
+  tierLabel: string;
   unlocked: boolean;
   progress: number;
   maxProgress: number;
@@ -69,7 +71,9 @@ export default function UserProfilePage({
 
   const [activeTab, setActiveTab] = useState<'all' | 'movies' | 'series'>('all');
 
-  // Состояния модального окна настройки обложки
+  // Управление сворачиванием достижений (по умолчанию свернуто: только 4)
+  const [isAchievementsExpanded, setIsAchievementsExpanded] = useState<boolean>(false);
+
   const [isBannerModalOpen, setIsBannerModalOpen] = useState<boolean>(false);
   const [bannerUrlInput, setBannerUrlInput] = useState<string>('');
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -99,7 +103,6 @@ export default function UserProfilePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
-  // Управление дружбой
   const handleFriendshipAction = async () => {
     if (!data?.user) return;
     setFriendshipLoading(true);
@@ -139,7 +142,6 @@ export default function UserProfilePage({
     }
   };
 
-  // Сохранение обложки профиля
   const handleSaveBanner = async () => {
     setSavingBanner(true);
     try {
@@ -225,6 +227,11 @@ export default function UserProfilePage({
   const isOwnProfile = Boolean(data.isOwnProfile);
   const friendshipStatus = data.friendshipStatus || 'none';
 
+  // Показываем только 4 штуки в свернутом режиме, либо все 16 при разворачивании
+  const visibleAchievements = isAchievementsExpanded
+    ? achievements
+    : achievements.slice(0, 4);
+
   const filteredShows = completedShows.filter((s) => {
     if (activeTab === 'movies') return s.kind === 'movie';
     if (activeTab === 'series') return s.kind === 'series';
@@ -233,10 +240,9 @@ export default function UserProfilePage({
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-24">
-      {/* Скругленная шапка профиля с поддержкой обложки */}
+      {/* Скругленная шапка профиля */}
       <div className="max-w-6xl mx-auto px-4 pt-6">
         <div className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-900/80 shadow-2xl">
-          {/* Фоновый баннер */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
             {user.bannerUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -251,7 +257,6 @@ export default function UserProfilePage({
             <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/70 to-neutral-950/40" />
           </div>
 
-          {/* Кнопка смены обложки */}
           {isOwnProfile && (
             <button
               type="button"
@@ -263,7 +268,6 @@ export default function UserProfilePage({
             </button>
           )}
 
-          {/* Содержимое шапки */}
           <div className="relative z-10 p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-start gap-6">
             <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-neutral-800 border-2 border-neutral-700/80 flex items-center justify-center text-3xl font-bold text-neutral-300 overflow-hidden flex-shrink-0 shadow-2xl">
               {user.avatarUrl ? (
@@ -440,45 +444,87 @@ export default function UserProfilePage({
           )}
         </section>
 
-        {/* 2. БЛОК: ДОСТИЖЕНИЯ */}
+        {/* 2. БЛОК: СВОРАЧИВАЕМЫЕ ДОСТИЖЕНИЯ (ПО УМОЛЧАНИЮ ТОЛЬКО 4 КАРТОЧКИ) */}
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>🏆 Достижения</span>
-              <span className="text-xs font-normal text-neutral-500">
-                ({achievements.filter((a) => a.unlocked).length} из {achievements.length})
-              </span>
-            </h2>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <span>🏆 Достижения</span>
+                <span className="text-xs font-normal text-neutral-500">
+                  ({achievements.filter((a) => a.unlocked).length} из {achievements.length})
+                </span>
+              </h2>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                {isAchievementsExpanded
+                  ? 'Отображены все 16 наград профиля'
+                  : 'Свёрнуто до 4 основных наград'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Кнопка сворачивания/разворачивания до 4 наград */}
+              {achievements.length > 4 && (
+                <button
+                  type="button"
+                  onClick={() => setIsAchievementsExpanded(!isAchievementsExpanded)}
+                  className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-xs font-semibold text-neutral-300 hover:text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>{isAchievementsExpanded ? '▴ Свернуть до 4' : '▾ Показать все (16)'}</span>
+                </button>
+              )}
+
+              <Link
+                href={`/u/${username}/achievements`}
+                className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+              >
+                Подробнее →
+              </Link>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-            {achievements.map((ach) => (
+          {/* Сетка: ровно 4 колонки (в свернутом виде — ровно 1 ряд из 4 карточек) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            {visibleAchievements.map((ach) => (
               <div
                 key={ach.id}
                 className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between ${
                   ach.unlocked
-                    ? 'bg-neutral-900/90 border-amber-500/30 text-white shadow-md'
+                    ? 'bg-neutral-900/95 border-amber-500/40 text-white shadow-lg shadow-amber-500/5'
                     : 'bg-neutral-900/30 border-neutral-800/80 text-neutral-500 opacity-60'
                 }`}
               >
                 <div>
-                  <div className="text-2xl mb-2">{ach.icon}</div>
+                  <div className="w-16 h-16 mb-3 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800/80 shadow-inner flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={ach.icon}
+                      alt={ach.title}
+                      className={`w-full h-full object-cover transition-all duration-300 ${
+                        ach.unlocked
+                          ? 'scale-100 filter-none'
+                          : 'grayscale opacity-35 contrast-75'
+                      }`}
+                    />
+                  </div>
+
                   <h3 className="font-bold text-xs text-white line-clamp-1 mb-1">
                     {ach.title}
                   </h3>
-                  <p className="text-[10px] text-neutral-400 line-clamp-2 leading-tight">
+                  <p className="text-[11px] text-neutral-400 line-clamp-2 leading-relaxed">
                     {ach.description}
                   </p>
                 </div>
 
-                <div className="mt-3 pt-2 border-t border-neutral-800">
-                  <div className="flex items-center justify-between text-[10px] mb-1">
-                    <span>{ach.unlocked ? '✓ Получено' : 'В процессе'}</span>
-                    <span className="font-bold">
+                <div className="mt-3.5 pt-2.5 border-t border-neutral-800">
+                  <div className="flex items-center justify-between text-[10px] mb-1.5">
+                    <span className={ach.unlocked ? 'text-amber-400 font-semibold' : 'text-neutral-500'}>
+                      {ach.unlocked ? '✓ Получено' : 'В процессе'}
+                    </span>
+                    <span className="font-bold text-neutral-300">
                       {ach.progress}/{ach.maxProgress}
                     </span>
                   </div>
-                  <div className="w-full h-1 bg-neutral-950 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800/50">
                     <div
                       className={`h-full rounded-full transition-all ${
                         ach.unlocked ? 'bg-amber-400' : 'bg-neutral-700'
@@ -595,7 +641,7 @@ export default function UserProfilePage({
         </section>
       </div>
 
-      {/* Модальное окно загрузки обложки */}
+      {/* Модальное окно настройки обложки */}
       {isBannerModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">

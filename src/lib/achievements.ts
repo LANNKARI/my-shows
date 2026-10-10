@@ -1,188 +1,234 @@
-export type AchievementStats = {
-  totalTitles: number;
-  completedTitles: number;
-  totalWatchedEpisodes: number;
-  totalRatings: number;
-  totalComments: number;
-  totalFriends: number;
-  accountAgeDays: number;
-};
-
-export type Achievement = {
+export interface AchievementDef {
   id: string;
-  name: string;
+  title: string;
   description: string;
   icon: string;
-  tier: "bronze" | "silver" | "gold" | "legendary";
-  progress: { current: number; target: number };
-  unlocked: boolean;
-};
-
-export function calculateAchievements(stats: AchievementStats): Achievement[] {
-  const a: Achievement[] = [
-    // 📚 Коллекционер — по количеству сериалов
-    {
-      id: "titles_1",
-      name: "Первый шаг",
-      description: "Добавлен первый сериал",
-      icon: "🌱",
-      tier: "bronze",
-      progress: { current: stats.totalTitles, target: 1 },
-      unlocked: stats.totalTitles >= 1,
-    },
-    {
-      id: "titles_10",
-      name: "Коллекционер",
-      description: "10 добавленных сериалов",
-      icon: "📚",
-      tier: "silver",
-      progress: { current: stats.totalTitles, target: 10 },
-      unlocked: stats.totalTitles >= 10,
-    },
-    {
-      id: "titles_50",
-      name: "Библиофил",
-      description: "50 добавленных сериалов",
-      icon: "📖",
-      tier: "gold",
-      progress: { current: stats.totalTitles, target: 50 },
-      unlocked: stats.totalTitles >= 50,
-    },
-    {
-      id: "titles_100",
-      name: "Легенда",
-      description: "100 добавленных сериалов",
-      icon: "🏆",
-      tier: "legendary",
-      progress: { current: stats.totalTitles, target: 100 },
-      unlocked: stats.totalTitles >= 100,
-    },
-
-    // 🎬 Просмотренные серии
-    {
-      id: "watched_10",
-      name: "Начинающий",
-      description: "10 просмотренных серий",
-      icon: "▶️",
-      tier: "bronze",
-      progress: { current: stats.totalWatchedEpisodes, target: 10 },
-      unlocked: stats.totalWatchedEpisodes >= 10,
-    },
-    {
-      id: "watched_100",
-      name: "Заядлый",
-      description: "100 просмотренных серий",
-      icon: "🎬",
-      tier: "silver",
-      progress: { current: stats.totalWatchedEpisodes, target: 100 },
-      unlocked: stats.totalWatchedEpisodes >= 100,
-    },
-    {
-      id: "watched_1000",
-      name: "Марафонец",
-      description: "1000 просмотренных серий",
-      icon: "🚀",
-      tier: "legendary",
-      progress: { current: stats.totalWatchedEpisodes, target: 1000 },
-      unlocked: stats.totalWatchedEpisodes >= 1000,
-    },
-
-    // ⭐ Оценки
-    {
-      id: "ratings_10",
-      name: "Критик",
-      description: "10 поставленных оценок",
-      icon: "⭐",
-      tier: "bronze",
-      progress: { current: stats.totalRatings, target: 10 },
-      unlocked: stats.totalRatings >= 10,
-    },
-    {
-      id: "ratings_50",
-      name: "Эксперт",
-      description: "50 поставленных оценок",
-      icon: "🌟",
-      tier: "silver",
-      progress: { current: stats.totalRatings, target: 50 },
-      unlocked: stats.totalRatings >= 50,
-    },
-    {
-      id: "ratings_100",
-      name: "Судья",
-      description: "100 поставленных оценок",
-      icon: "👑",
-      tier: "gold",
-      progress: { current: stats.totalRatings, target: 100 },
-      unlocked: stats.totalRatings >= 100,
-    },
-
-    // 💬 Комментарии
-    {
-      id: "comments_10",
-      name: "Комментатор",
-      description: "10 комментариев",
-      icon: "💬",
-      tier: "bronze",
-      progress: { current: stats.totalComments, target: 10 },
-      unlocked: stats.totalComments >= 10,
-    },
-    {
-      id: "comments_50",
-      name: "Гуру общения",
-      description: "50 комментариев",
-      icon: "🗣️",
-      tier: "silver",
-      progress: { current: stats.totalComments, target: 50 },
-      unlocked: stats.totalComments >= 50,
-    },
-
-    // 🤝 Друзья
-    {
-      id: "friends_5",
-      name: "Компанейский",
-      description: "5 друзей",
-      icon: "🤝",
-      tier: "bronze",
-      progress: { current: stats.totalFriends, target: 5 },
-      unlocked: stats.totalFriends >= 5,
-    },
-    {
-      id: "friends_20",
-      name: "Душа компании",
-      description: "20 друзей",
-      icon: "🎉",
-      tier: "gold",
-      progress: { current: stats.totalFriends, target: 20 },
-      unlocked: stats.totalFriends >= 20,
-    },
-
-    // ✅ Завершённые сериалы
-    {
-      id: "completed_5",
-      name: "Финальный аккорд",
-      description: "5 полностью просмотренных сериалов",
-      icon: "✅",
-      tier: "silver",
-      progress: { current: stats.completedTitles, target: 5 },
-      unlocked: stats.completedTitles >= 5,
-    },
-
-    // 👑 Особые
-    {
-      id: "early_bird",
-      name: "Ранняя пташка",
-      description: "Аккаунт старше года",
-      icon: "🐣",
-      tier: "gold",
-      progress: { current: stats.accountAgeDays, target: 365 },
-      unlocked: stats.accountAgeDays >= 365,
-    },
-  ];
-
-  return a;
+  tier: 'bronze' | 'silver' | 'gold' | 'legend';
+  tierLabel: 'БРОНЗА' | 'СЕРЕБРО' | 'ЗОЛОТО' | 'ЛЕГЕНДА';
+  maxProgress: number;
 }
 
-/** Возвращает только полученные достижения */
-export function getUnlockedAchievements(stats: AchievementStats): Achievement[] {
-  return calculateAchievements(stats).filter((a) => a.unlocked);
+export interface AchievementItem extends AchievementDef {
+  unlocked: boolean;
+  progress: number;
+}
+
+export const ACHIEVEMENTS_CONFIG: AchievementDef[] = [
+  // Добавление сериалов в библиотеку
+  {
+    id: 'first_step',
+    title: 'Первый шаг',
+    description: 'Добавлен первый сериал',
+    icon: '/achievements/first_step.jpg',
+    tier: 'bronze',
+    tierLabel: 'БРОНЗА',
+    maxProgress: 1,
+  },
+  {
+    id: 'collector',
+    title: 'Коллекционер',
+    description: '10 добавленных сериалов',
+    icon: '/achievements/collector.jpg',
+    tier: 'silver',
+    tierLabel: 'СЕРЕБРО',
+    maxProgress: 10,
+  },
+  {
+    id: 'bibliophile',
+    title: 'Библиофил',
+    description: '50 добавленных сериалов',
+    icon: '/achievements/bibliophile.jpg',
+    tier: 'gold',
+    tierLabel: 'ЗОЛОТО',
+    maxProgress: 50,
+  },
+  {
+    id: 'legend',
+    title: 'Легенда',
+    description: '100 добавленных сериалов',
+    icon: '/achievements/legend.jpg',
+    tier: 'legend',
+    tierLabel: 'ЛЕГЕНДА',
+    maxProgress: 100,
+  },
+
+  // Просмотренные серии
+  {
+    id: 'beginner',
+    title: 'Начинающий',
+    description: '10 просмотренных серий',
+    icon: '/achievements/beginner.jpg',
+    tier: 'bronze',
+    tierLabel: 'БРОНЗА',
+    maxProgress: 10,
+  },
+  {
+    id: 'avid',
+    title: 'Заядлый',
+    description: '100 просмотренных серий',
+    icon: '/achievements/avid.jpg',
+    tier: 'silver',
+    tierLabel: 'СЕРЕБРО',
+    maxProgress: 100,
+  },
+  {
+    id: 'marathoner',
+    title: 'Марафонец',
+    description: '1000 просмотренных серий',
+    icon: '/achievements/marathoner.jpg',
+    tier: 'legend',
+    tierLabel: 'ЛЕГЕНДА',
+    maxProgress: 1000,
+  },
+
+  // Полностью просмотренные сериалы
+  {
+    id: 'final_chord',
+    title: 'Финальный аккорд',
+    description: '5 полностью просмотренных сериалов',
+    icon: '/achievements/final_chord.jpg',
+    tier: 'silver',
+    tierLabel: 'СЕРЕБРО',
+    maxProgress: 5,
+  },
+
+  // Личные оценки
+  {
+    id: 'critic',
+    title: 'Критик',
+    description: '10 поставленных оценок',
+    icon: '/achievements/critic.jpg',
+    tier: 'bronze',
+    tierLabel: 'БРОНЗА',
+    maxProgress: 10,
+  },
+  {
+    id: 'expert',
+    title: 'Эксперт',
+    description: '50 поставленных оценок',
+    icon: '/achievements/expert.jpg',
+    tier: 'silver',
+    tierLabel: 'СЕРЕБРО',
+    maxProgress: 50,
+  },
+  {
+    id: 'judge',
+    title: 'Судья',
+    description: '100 поставленных оценок',
+    icon: '/achievements/judge.jpg',
+    tier: 'gold',
+    tierLabel: 'ЗОЛОТО',
+    maxProgress: 100,
+  },
+
+  // Комментарии
+  {
+    id: 'commentator',
+    title: 'Комментатор',
+    description: '10 комментариев',
+    icon: '/achievements/commentator.jpg',
+    tier: 'bronze',
+    tierLabel: 'БРОНЗА',
+    maxProgress: 10,
+  },
+  {
+    id: 'guru',
+    title: 'Гуру общения',
+    description: '50 комментариев',
+    icon: '/achievements/guru.jpg',
+    tier: 'silver',
+    tierLabel: 'СЕРЕБРО',
+    maxProgress: 50,
+  },
+
+  // Друзья
+  {
+    id: 'friendly',
+    title: 'Компанейский',
+    description: '5 друзей',
+    icon: '/achievements/friendly.jpg',
+    tier: 'bronze',
+    tierLabel: 'БРОНЗА',
+    maxProgress: 5,
+  },
+  {
+    id: 'soul_of_party',
+    title: 'Душа компании',
+    description: '20 друзей',
+    icon: '/achievements/soul_of_party.jpg',
+    tier: 'gold',
+    tierLabel: 'ЗОЛОТО',
+    maxProgress: 20,
+  },
+
+  // Стаж аккаунта
+  {
+    id: 'early_bird',
+    title: 'Ранняя пташка',
+    description: 'Аккаунт старше года',
+    icon: '/achievements/early_bird.jpg',
+    tier: 'gold',
+    tierLabel: 'ЗОЛОТО',
+    maxProgress: 365,
+  },
+];
+
+export interface AchievementStats {
+  addedShowsCount: number;
+  watchedEpisodesCount: number;
+  ratingsCount: number;
+  completedSeriesCount: number;
+  commentsCount?: number;
+  friendsCount?: number;
+  daysRegistered?: number;
+}
+
+export function calculateAchievements(stats: AchievementStats): AchievementItem[] {
+  return ACHIEVEMENTS_CONFIG.map((ach) => {
+    let currentVal = 0;
+
+    switch (ach.id) {
+      case 'first_step':
+      case 'collector':
+      case 'bibliophile':
+      case 'legend':
+        currentVal = stats.addedShowsCount;
+        break;
+      case 'beginner':
+      case 'avid':
+      case 'marathoner':
+        currentVal = stats.watchedEpisodesCount;
+        break;
+      case 'final_chord':
+        currentVal = stats.completedSeriesCount;
+        break;
+      case 'critic':
+      case 'expert':
+      case 'judge':
+        currentVal = stats.ratingsCount;
+        break;
+      case 'commentator':
+      case 'guru':
+        currentVal = stats.commentsCount || 0;
+        break;
+      case 'friendly':
+      case 'soul_of_party':
+        currentVal = stats.friendsCount || 0;
+        break;
+      case 'early_bird':
+        currentVal = stats.daysRegistered || 0;
+        break;
+      default:
+        currentVal = 0;
+    }
+
+    const progress = Math.min(currentVal, ach.maxProgress);
+    const unlocked = progress >= ach.maxProgress;
+
+    return {
+      ...ach,
+      progress,
+      unlocked,
+    };
+  });
 }

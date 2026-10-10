@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserId, formatPosterUrl, safeJson } from '@/lib/current-user';
+import { calculateAchievements } from '@/lib/achievements';
 
 export async function GET(
   request: NextRequest,
@@ -29,7 +30,7 @@ export async function GET(
 
     const isOwnProfile = currentUserId === user.id;
 
-    // Корректировка флага isCompleted: не завершенные тайтлы не должны иметь isCompleted: true
+    // Сброс флага isCompleted для не завершенных тайтлов
     await prisma.userShow.updateMany({
       where: {
         userId: user.id,
@@ -41,7 +42,6 @@ export async function GET(
       },
     });
 
-    // Определение статуса дружбы
     let friendshipStatus: 'none' | 'pending_sent' | 'pending_received' | 'friends' = 'none';
 
     if (!isOwnProfile && currentUserId) {
@@ -65,7 +65,7 @@ export async function GET(
       }
     }
 
-    // 1. Загружаем сериалы и фильмы пользователя
+    // 1. Все тайтлы пользователя в библиотеке
     const userShows = await prisma.userShow.findMany({
       where: { userId: user.id },
       include: {
@@ -78,7 +78,7 @@ export async function GET(
       orderBy: { updatedAt: 'desc' },
     });
 
-    // 2. Просмотренные тайтлы: СТРОГО status === 'completed'
+    // 2. Строго завершенные тайтлы (status === 'completed')
     const completedUserShows = userShows.filter(
       (us) => us.status === 'completed'
     );
@@ -145,63 +145,53 @@ export async function GET(
         rating: us.ratings?.[0]?.score || (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
       }));
 
-    // 4. Достижения
-    const achievements = [
-      {
-        id: 'first_watch',
-        title: 'Первый шаг',
-        description: 'Посмотрите свой первый фильм или сериал',
-        icon: '🎬',
-        unlocked: completedShows.length >= 1,
-        progress: Math.min(completedShows.length, 1),
-        maxProgress: 1,
+    // Количество добавленных тайтлов в библиотеку
+    const addedShowsCount = userShows.length;
+
+    // Общее количество просмотренных серий
+    let watchedEpisodesCount = 0;
+    for (const us of userShows) {
+      watchedEpisodesCount += (us.progress || []).filter((p) => p.watched).length;
+    }
+
+    // Количество полностью просмотренных сериалов
+    const completedSeriesCount = userShows.filter(
+      (us) => us.status === 'completed' && (us.kind === 'series' || us.show?.kind === 'series')
+    ).length;
+
+    // Друзья
+    const friendsCount = await prisma.friendship.count({
+      where: {
+        OR: [{ requesterId: user.id }, { addresseeId: user.id }],
+        status: 'accepted',
       },
-      {
-        id: 'cinema_fan',
-        title: 'Киноман',
-        description: 'Посмотрите 10 фильмов',
-        icon: '🍿',
-        unlocked: moviesCount >= 10,
-        progress: Math.min(moviesCount, 10),
-        maxProgress: 10,
-      },
-      {
-        id: 'series_addict',
-        title: 'Сериаломаньяк',
-        description: 'Завершите просмотр 5 сериалов',
-        icon: '📺',
-        unlocked: seriesCount >= 5,
-        progress: Math.min(seriesCount, 5),
-        maxProgress: 5,
-      },
-      {
-        id: 'critic',
-        title: 'Взыскательный критик',
-        description: 'Поставьте 10 личных оценок',
-        icon: '★',
-        unlocked: ratingsCount >= 10,
-        progress: Math.min(ratingsCount, 10),
-        maxProgress: 10,
-      },
-      {
-        id: 'marathoner',
-        title: 'Марафонец',
-        description: 'Проведите за просмотром более 50 часов',
-        icon: '⏱',
-        unlocked: hoursWatched >= 50,
-        progress: Math.min(hoursWatched, 50),
-        maxProgress: 50,
-      },
-      {
-        id: 'golden_top',
-        title: 'Золотая коллекция',
-        description: 'Отметьте свои любимые картины',
-        icon: '⭐',
-        unlocked: favoriteShows.length >= 1,
-        progress: Math.min(favoriteShows.length, 5),
-        maxProgress: 5,
-      },
-    ];
+    });
+
+    // Комментарии
+    let commentsCount = 0;
+    try {
+      commentsCount = await prisma.comment.count({
+        where: { userId: user.id },
+      });
+    } catch {
+      commentsCount = 0;
+    }
+
+    // Возраст аккаунта в днях
+    const daysRegistered = Math.floor(
+      (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    // 4. Расчет 16 достижений по правилам таблицы
+    const achievements = calculateAchievements({
+      addedShowsCount,
+      watchedEpisodesCount,
+      ratingsCount,
+      completedSeriesCount,
+      commentsCount,
+      friendsCount,
+      daysRegistered,
+    });
 
     return NextResponse.json(
       safeJson({
