@@ -1,93 +1,83 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { calculateAchievements } from "@/lib/achievements";
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { calculateAchievements } from '@/lib/achievements';
+import { safeJson } from '@/lib/current-user';
 
 export async function GET(
-  _: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ username: string }> }
 ) {
-  const { username } = await params;
+  try {
+    const { username } = await params;
 
-  const user = await prisma.user.findUnique({
-    where: { username },
-    select: { id: true, createdAt: true },
-  });
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: { id: true, createdAt: true },
+    });
 
-  if (!user) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
 
-  // ── Статистика по НОВОЙ схеме ──
-  const [
-    userShowsCount,
-    completedCount,
-    ratingsCount,
-    commentsCount,
-    watchedEpisodes,
-    friendsCount,
-  ] = await Promise.all([
-    // Сколько сериалов в библиотеке (UserShow)
-    prisma.userShow.count({ where: { userId: user.id } }),
-
-    // Сколько просмотрено полностью
-    prisma.userShow.count({
-      where: { userId: user.id, isCompleted: true },
-    }),
-
-    // Сколько оценок поставлено — через UserShow
-    prisma.rating.count({
-      where: { userShow: { userId: user.id } },
-    }),
-
-    // Сколько комментариев
-    prisma.comment.count({ where: { userId: user.id } }),
-
-    // Сколько серий просмотрено — личный прогресс
-    prisma.episodeProgress.count({
-      where: {
-        userShow: { userId: user.id },
-        watched: true,
+    const userShows = await prisma.userShow.findMany({
+      where: { userId: user.id },
+      include: {
+        ratings: true,
+        progress: true,
+        show: true,
       },
-    }),
+    });
 
-    // Сколько друзей
-    prisma.friendship.count({
+    const totalTitles = userShows.length;
+
+    let watchedEpisodesCount = 0;
+    for (const us of userShows) {
+      watchedEpisodesCount += (us.progress || []).filter((p) => p.watched).length;
+    }
+
+    const completedSeriesCount = userShows.filter(
+      (us) => us.status === 'completed' && (us.kind === 'series' || us.show?.kind === 'series')
+    ).length;
+
+    const ratingsCount = userShows.filter(
+      (us) => us.ratings && us.ratings.length > 0 && us.ratings[0].score > 0
+    ).length;
+
+    let commentsCount = 0;
+    try {
+      commentsCount = await prisma.comment.count({
+        where: { userId: user.id },
+      });
+    } catch {
+      commentsCount = 0;
+    }
+
+    const friendsCount = await prisma.friendship.count({
       where: {
-        status: "accepted",
         OR: [{ requesterId: user.id }, { addresseeId: user.id }],
+        status: 'accepted',
       },
-    }),
-  ]);
+    });
 
-  const accountAgeDays = Math.floor(
-    (Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24)
-  );
+    const daysRegistered = Math.floor(
+      (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+    );
 
-  const achievements = calculateAchievements({
-    totalTitles: userShowsCount,
-    completedTitles: completedCount,
-    totalWatchedEpisodes: watchedEpisodes,
-    totalRatings: ratingsCount,
-    totalComments: commentsCount,
-    totalFriends: friendsCount,
-    accountAgeDays,
-  });
-
-  const unlocked = achievements.filter((a) => a.unlocked);
-  const inProgress = achievements.filter(
-    (a) => !a.unlocked && a.progress.current > 0
-  );
-
-  return NextResponse.json({
-    all: achievements,
-    unlocked,
-    inProgress,
-    stats: {
-      totalTitles: userShowsCount,
-      completedTitles: completedCount,
-      totalWatchedEpisodes: watchedEpisodes,
+    const achievements = calculateAchievements({
+      totalTitles,
+      totalEpisodes: watchedEpisodesCount,
+      watchedEpisodesCount,
       totalRatings: ratingsCount,
-      totalComments: commentsCount,
-      totalFriends: friendsCount,
-      accountAgeDays,
-    },
-  });
+      ratingsCount,
+      completedSeriesCount,
+      commentsCount,
+      friendsCount,
+      daysRegistered,
+    });
+
+    return NextResponse.json(safeJson(achievements));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

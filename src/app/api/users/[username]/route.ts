@@ -145,8 +145,8 @@ export async function GET(
         rating: us.ratings?.[0]?.score || (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
       }));
 
-    // Количество добавленных тайтлов в библиотеку
-    const addedShowsCount = userShows.length;
+    // Количество добавленных тайтлов
+    const totalTitles = userShows.length;
 
     // Общее количество просмотренных серий
     let watchedEpisodesCount = 0;
@@ -182,10 +182,13 @@ export async function GET(
       (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)
     );
 
-    // 4. Расчет 16 достижений по правилам таблицы
+    // 4. Расчет достижений с поддержкой всех ключей
     const achievements = calculateAchievements({
-      addedShowsCount,
+      totalTitles,
+      addedShowsCount: totalTitles,
+      totalEpisodes: watchedEpisodesCount,
       watchedEpisodesCount,
+      totalRatings: ratingsCount,
       ratingsCount,
       completedSeriesCount,
       commentsCount,

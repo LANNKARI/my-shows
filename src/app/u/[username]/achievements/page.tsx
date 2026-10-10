@@ -161,7 +161,17 @@ export default function UserAchievementsPage({
 
             <div className="space-y-2.5">
               {inProgressList.map((ach) => {
-                const percent = Math.min(100, Math.round((ach.progress / ach.maxProgress) * 100));
+                const currentVal =
+                  typeof ach.progress === 'object' && ach.progress !== null
+                    ? ach.progress.current
+                    : ach.current ?? (typeof ach.progress === 'number' ? ach.progress : 0);
+
+                const maxVal =
+                  typeof ach.progress === 'object' && ach.progress !== null
+                    ? ach.progress.target || ach.progress.max || ach.maxProgress || 1
+                    : ach.maxProgress || ach.target || 1;
+
+                const percent = Math.min(100, Math.round((Number(currentVal) / Number(maxVal)) * 100));
 
                 return (
                   <div
@@ -182,7 +192,7 @@ export default function UserAchievementsPage({
                         <span className="font-bold text-white truncate">
                           {ach.title}{' '}
                           <span className="font-normal text-neutral-500 text-[11px]">
-                            {ach.progress} / {ach.maxProgress}
+                            {currentVal} / {maxVal}
                           </span>
                         </span>
                         <span

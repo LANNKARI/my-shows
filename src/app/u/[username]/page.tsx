@@ -16,14 +16,17 @@ interface FavoriteShow {
 
 interface Achievement {
   id: string;
+  name?: string;
   title: string;
   description: string;
   icon: string;
   tier: string;
   tierLabel: string;
   unlocked: boolean;
-  progress: number;
-  maxProgress: number;
+  current?: number;
+  maxProgress?: number;
+  target?: number;
+  progress?: any;
 }
 
 interface UserProfileData {
@@ -71,7 +74,7 @@ export default function UserProfilePage({
 
   const [activeTab, setActiveTab] = useState<'all' | 'movies' | 'series'>('all');
 
-  // Управление сворачиванием достижений (по умолчанию свернуто: только 4)
+  // По умолчанию блок свернут: показываются только первые 4 карточки
   const [isAchievementsExpanded, setIsAchievementsExpanded] = useState<boolean>(false);
 
   const [isBannerModalOpen, setIsBannerModalOpen] = useState<boolean>(false);
@@ -227,7 +230,7 @@ export default function UserProfilePage({
   const isOwnProfile = Boolean(data.isOwnProfile);
   const friendshipStatus = data.friendshipStatus || 'none';
 
-  // Показываем только 4 штуки в свернутом режиме, либо все 16 при разворачивании
+  // В свернутом состоянии отображаем только первые 4 карточки
   const visibleAchievements = isAchievementsExpanded
     ? achievements
     : achievements.slice(0, 4);
@@ -482,61 +485,75 @@ export default function UserProfilePage({
             </div>
           </div>
 
-          {/* Сетка: ровно 4 колонки (в свернутом виде — ровно 1 ряд из 4 карточек) */}
+          {/* Сетка: ровно 4 колонки (в свернутом виде — ровно 1 строка из 4 карточек) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-            {visibleAchievements.map((ach) => (
-              <div
-                key={ach.id}
-                className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between ${
-                  ach.unlocked
-                    ? 'bg-neutral-900/95 border-amber-500/40 text-white shadow-lg shadow-amber-500/5'
-                    : 'bg-neutral-900/30 border-neutral-800/80 text-neutral-500 opacity-60'
-                }`}
-              >
-                <div>
-                  <div className="w-16 h-16 mb-3 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800/80 shadow-inner flex items-center justify-center">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={ach.icon}
-                      alt={ach.title}
-                      className={`w-full h-full object-cover transition-all duration-300 ${
-                        ach.unlocked
-                          ? 'scale-100 filter-none'
-                          : 'grayscale opacity-35 contrast-75'
-                      }`}
-                    />
+            {visibleAchievements.map((ach) => {
+              const currentVal =
+                typeof ach.progress === 'object' && ach.progress !== null
+                  ? ach.progress.current
+                  : ach.current ?? (typeof ach.progress === 'number' ? ach.progress : 0);
+
+              const maxVal =
+                typeof ach.progress === 'object' && ach.progress !== null
+                  ? ach.progress.target || ach.progress.max || ach.maxProgress || 1
+                  : ach.maxProgress || ach.target || 1;
+
+              const percent = Math.min(100, Math.round((Number(currentVal) / Number(maxVal)) * 100));
+
+              return (
+                <div
+                  key={ach.id}
+                  className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between ${
+                    ach.unlocked
+                      ? 'bg-neutral-900/95 border-amber-500/40 text-white shadow-lg shadow-amber-500/5'
+                      : 'bg-neutral-900/30 border-neutral-800/80 text-neutral-500 opacity-60'
+                  }`}
+                >
+                  <div>
+                    <div className="w-16 h-16 mb-3 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800/80 shadow-inner flex items-center justify-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={ach.icon}
+                        alt={ach.title}
+                        className={`w-full h-full object-cover transition-all duration-300 ${
+                          ach.unlocked
+                            ? 'scale-100 filter-none'
+                            : 'grayscale opacity-35 contrast-75'
+                        }`}
+                      />
+                    </div>
+
+                    <h3 className="font-bold text-xs text-white line-clamp-1 mb-1">
+                      {ach.title}
+                    </h3>
+                    <p className="text-[11px] text-neutral-400 line-clamp-2 leading-relaxed">
+                      {ach.description}
+                    </p>
                   </div>
 
-                  <h3 className="font-bold text-xs text-white line-clamp-1 mb-1">
-                    {ach.title}
-                  </h3>
-                  <p className="text-[11px] text-neutral-400 line-clamp-2 leading-relaxed">
-                    {ach.description}
-                  </p>
-                </div>
-
-                <div className="mt-3.5 pt-2.5 border-t border-neutral-800">
-                  <div className="flex items-center justify-between text-[10px] mb-1.5">
-                    <span className={ach.unlocked ? 'text-amber-400 font-semibold' : 'text-neutral-500'}>
-                      {ach.unlocked ? '✓ Получено' : 'В процессе'}
-                    </span>
-                    <span className="font-bold text-neutral-300">
-                      {ach.progress}/{ach.maxProgress}
-                    </span>
-                  </div>
-                  <div className="w-full h-1.5 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800/50">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        ach.unlocked ? 'bg-amber-400' : 'bg-neutral-700'
-                      }`}
-                      style={{
-                        width: `${Math.min(100, (ach.progress / ach.maxProgress) * 100)}%`,
-                      }}
-                    />
+                  <div className="mt-3.5 pt-2.5 border-t border-neutral-800">
+                    <div className="flex items-center justify-between text-[10px] mb-1.5">
+                      <span className={ach.unlocked ? 'text-amber-400 font-semibold' : 'text-neutral-500'}>
+                        {ach.unlocked ? '✓ Получено' : 'В процессе'}
+                      </span>
+                      <span className="font-bold text-neutral-300">
+                        {currentVal}/{maxVal}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800/50">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          ach.unlocked ? 'bg-amber-400' : 'bg-neutral-700'
+                        }`}
+                        style={{
+                          width: `${percent}%`,
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
