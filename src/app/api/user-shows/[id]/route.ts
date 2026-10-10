@@ -19,7 +19,7 @@ export async function GET(
       return NextResponse.json({ error: 'Пользователь не найден' }, { status: 401 });
     }
 
-    // 1. Ищем тайтл в базе данных
+    // 1. Поиск тайтла в базе
     let targetShow = await prisma.show.findUnique({
       where: { id: numId },
       include: {
@@ -91,7 +91,7 @@ export async function GET(
       });
     }
 
-    // 3. АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ СЕРИЙ ИЗ TMDB ДЛЯ СЕРИАЛОВ
+    // 3. Автоматическая генерация серий из TMDB для сериалов
     const apiKey =
       process.env.TMDB_API_KEY ||
       process.env.TMDB_READ_ACCESS_TOKEN ||
@@ -105,7 +105,6 @@ export async function GET(
 
         let tmdbId = targetShow.tmdbId;
 
-        // Если tmdbId не был сохранен — ищем в TMDB по имени
         if (!tmdbId && targetShow.name) {
           let searchUrl = `https://api.themoviedb.org/3/search/tv?query=${encodeURIComponent(targetShow.name)}&language=ru-RU`;
           if (!apiKey.startsWith('eyJ')) searchUrl += `&api_key=${apiKey}`;
@@ -199,12 +198,14 @@ export async function GET(
       });
     }
 
-    // 4. Подсчет прогресса серий
+    // 4. Подсчет прогресса серий и извлечение таймкодов (stoppedAt)
     const episodes = targetShow.episodes || [];
-    const watchedEpisodeIds = new Set(
-      (userShow.progress || []).filter((p) => p.watched).map((p) => p.episodeId)
-    );
+    const progressMap = new Map<number, { watched: boolean; stoppedAt: string | null }>();
+    for (const p of userShow.progress || []) {
+      progressMap.set(p.episodeId, { watched: p.watched, stoppedAt: p.stoppedAt });
+    }
 
+    const watchedEpisodesCount = (userShow.progress || []).filter((p) => p.watched).length;
     const totalEpisodes =
       userShow.totalEpisodes > 0
         ? userShow.totalEpisodes
@@ -212,9 +213,8 @@ export async function GET(
         ? episodes.length
         : targetShow.kind === 'movie'
         ? 1
-        : Math.max(1, watchedEpisodeIds.size);
+        : Math.max(1, watchedEpisodesCount);
 
-    const watchedEpisodesCount = watchedEpisodeIds.size;
     const progressPercent =
       totalEpisodes > 0 ? Math.min(100, Math.round((watchedEpisodesCount / totalEpisodes) * 100)) : 0;
 
@@ -230,18 +230,22 @@ export async function GET(
       .sort((a, b) => a - b)
       .map((sNum) => {
         const sEpisodes = seasonsMap[sNum];
-        const sWatchedCount = sEpisodes.filter((e) => watchedEpisodeIds.has(e.id)).length;
+        const sWatchedCount = sEpisodes.filter((e) => progressMap.get(e.id)?.watched).length;
         return {
           seasonNumber: sNum,
           totalEpisodes: sEpisodes.length,
           watchedEpisodes: sWatchedCount,
           isCompleted: sWatchedCount === sEpisodes.length && sEpisodes.length > 0,
-          episodes: sEpisodes.map((e) => ({
-            id: e.id,
-            season: e.season,
-            episode: e.episode,
-            watched: watchedEpisodeIds.has(e.id),
-          })),
+          episodes: sEpisodes.map((e) => {
+            const prog = progressMap.get(e.id);
+            return {
+              id: e.id,
+              season: e.season,
+              episode: e.episode,
+              watched: prog ? prog.watched : false,
+              stoppedAt: prog?.stoppedAt || null,
+            };
+          }),
         };
       });
 
@@ -297,7 +301,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { episodeId, seasonNumber, markSeasonWatched, watched = true } = body;
+    const { episodeId, seasonNumber, markSeasonWatched, watched, stoppedAt } = body;
 
     let targetShow = await prisma.show.findUnique({
       where: { id: numId },
@@ -331,6 +335,7 @@ export async function POST(
       },
     });
 
+    // 1. Отметка всего сезона
     if (markSeasonWatched !== undefined && seasonNumber !== undefined) {
       const seasonEpisodes = targetShow.episodes.filter(
         (e) => e.season === Number(seasonNumber)
@@ -356,7 +361,12 @@ export async function POST(
       return NextResponse.json(safeJson({ success: true, updatedSeason: seasonNumber }));
     }
 
+    // 2. Отметка серии и/или сохранение времени остановки (stoppedAt)
     if (episodeId) {
+      const updateData: { watched?: boolean; stoppedAt?: string | null } = {};
+      if (watched !== undefined) updateData.watched = Boolean(watched);
+      if (stoppedAt !== undefined) updateData.stoppedAt = stoppedAt ? String(stoppedAt).trim() : null;
+
       const epProgress = await prisma.episodeProgress.upsert({
         where: {
           userShowId_episodeId: {
@@ -364,11 +374,12 @@ export async function POST(
             episodeId: Number(episodeId),
           },
         },
-        update: { watched: Boolean(watched) },
+        update: updateData,
         create: {
           userShowId: userShow.id,
           episodeId: Number(episodeId),
-          watched: Boolean(watched),
+          watched: watched !== undefined ? Boolean(watched) : false,
+          stoppedAt: stoppedAt ? String(stoppedAt).trim() : null,
         },
       });
 
@@ -419,8 +430,8 @@ export async function PATCH(
       },
       update: {
         ...(body.status ? { status: body.status } : {}),
-        ...(body.dubbing !== undefined ? { dubbing: body.dubbing } : {}),
-        ...(body.watchSite !== undefined ? { watchSite: body.watchSite } : {}),
+        ...(body.dubbing !== undefined ? { dubbing: body.dubbing ? String(body.dubbing).trim() : null } : {}),
+        ...(body.watchSite !== undefined ? { watchSite: body.watchSite ? String(body.watchSite).trim() : null } : {}),
         ...(body.isFavorite !== undefined ? { isFavorite: Boolean(body.isFavorite) } : {}),
         ...(body.status === 'completed' ? { isCompleted: true } : {}),
       },
@@ -429,8 +440,8 @@ export async function PATCH(
         showId: targetShow.id,
         kind: targetShow.kind,
         status: body.status || 'watching',
-        dubbing: body.dubbing || null,
-        watchSite: body.watchSite || null,
+        dubbing: body.dubbing ? String(body.dubbing).trim() : null,
+        watchSite: body.watchSite ? String(body.watchSite).trim() : null,
         isFavorite: body.isFavorite !== undefined ? Boolean(body.isFavorite) : false,
         isCompleted: body.status === 'completed',
       },
