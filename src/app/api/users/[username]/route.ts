@@ -28,7 +28,31 @@ export async function GET(
 
     const isOwnProfile = currentUserId === user.id;
 
-    // 1. Загружаем все тайтлы пользователя
+    // Определение текущего статуса дружбы
+    let friendshipStatus: 'none' | 'pending_sent' | 'pending_received' | 'friends' = 'none';
+
+    if (!isOwnProfile && currentUserId) {
+      const relation = await prisma.friendship.findFirst({
+        where: {
+          OR: [
+            { requesterId: currentUserId, addresseeId: user.id },
+            { requesterId: user.id, addresseeId: currentUserId },
+          ],
+        },
+      });
+
+      if (relation) {
+        if (relation.status === 'accepted') {
+          friendshipStatus = 'friends';
+        } else if (relation.requesterId === currentUserId) {
+          friendshipStatus = 'pending_sent';
+        } else {
+          friendshipStatus = 'pending_received';
+        }
+      }
+    }
+
+    // 1. Загружаем сериалы и фильмы пользователя
     const userShows = await prisma.userShow.findMany({
       where: { userId: user.id },
       include: {
@@ -41,7 +65,7 @@ export async function GET(
       orderBy: { updatedAt: 'desc' },
     });
 
-    // 2. Просмотренные тайтлы (status === 'completed' или isCompleted === true)
+    // 2. Просмотренные картины
     const completedUserShows = userShows.filter(
       (us) => us.status === 'completed' || us.isCompleted
     );
@@ -65,12 +89,11 @@ export async function GET(
     const moviesCount = completedShows.filter((s) => s.kind === 'movie').length;
     const seriesCount = completedShows.filter((s) => s.kind === 'series').length;
 
-    // Количество выставленных оценок
     const ratingsCount = userShows.filter(
       (us) => us.ratings && us.ratings.length > 0 && us.ratings[0].score > 0
     ).length;
 
-    // Расчет часов просмотра
+    // Подсчет времени просмотра
     let totalMinutes = 0;
     for (const us of userShows) {
       const isMovie = us.kind === 'movie' || us.show?.kind === 'movie';
@@ -92,7 +115,7 @@ export async function GET(
     }
     const hoursWatched = Math.round(totalMinutes / 60);
 
-    // 3. Любимые сериалы и фильмы (isFavorite = true)
+    // 3. Любимые картины (отмеченные звездочкой)
     const favoriteShows = userShows
       .filter((us) => us.isFavorite)
       .map((us, index) => ({
@@ -107,7 +130,7 @@ export async function GET(
         rating: us.ratings?.[0]?.score || (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
       }));
 
-    // 4. Достижения пользователя
+    // 4. Достижения
     const achievements = [
       {
         id: 'first_watch',
@@ -169,6 +192,7 @@ export async function GET(
       safeJson({
         user,
         isOwnProfile,
+        friendshipStatus,
         stats: {
           totalCompleted: completedShows.length,
           moviesCount,

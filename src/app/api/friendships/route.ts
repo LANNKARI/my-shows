@@ -1,127 +1,200 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/current-user";
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentUserId, safeJson } from '@/lib/current-user';
 
-// GET — список друзей и заявок
+// GET: Получение списка подтвержденных друзей и заявок
 export async function GET() {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const all = await prisma.friendship.findMany({
-    where: {
-      OR: [{ requesterId: me.id }, { addresseeId: me.id }],
-    },
-    include: {
-      requester: { select: { id: true, username: true, name: true, avatarUrl: true } },
-      addressee: { select: { id: true, username: true, name: true, avatarUrl: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
-
-  const friends: any[] = [];
-  const incoming: any[] = [];
-  const outgoing: any[] = [];
-
-  for (const f of all) {
-    const other = f.requesterId === me.id ? f.addressee : f.requester;
-    if (f.status === "accepted") {
-      friends.push(other);
-    } else if (f.status === "pending") {
-      if (f.addresseeId === me.id) incoming.push({ ...other, friendshipId: f.id });
-      else outgoing.push({ ...other, friendshipId: f.id });
+  try {
+    const currentUserId = await getCurrentUserId();
+    if (!currentUserId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-  }
 
-  return NextResponse.json({ friends, incoming, outgoing });
-}
-
-// POST — отправить заявку в друзья
-export async function POST(req: NextRequest) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const { userId } = await req.json();
-  if (!userId || userId === me.id) {
-    return NextResponse.json({ error: "invalid user" }, { status: 400 });
-  }
-
-  // Проверяем, что пользователь существует
-  const target = await prisma.user.findUnique({ where: { id: userId } });
-  if (!target) {
-    return NextResponse.json({ error: "user not found" }, { status: 404 });
-  }
-
-  // Проверяем, что заявки ещё нет
-  const existing = await prisma.friendship.findFirst({
-    where: {
-      OR: [
-        { requesterId: me.id, addresseeId: userId },
-        { requesterId: userId, addresseeId: me.id },
-      ],
-    },
-  });
-
-  if (existing) {
-    return NextResponse.json(
-      { error: "Заявка уже существует или вы друзья" },
-      { status: 409 }
-    );
-  }
-
-  const friendship = await prisma.friendship.create({
-    data: { requesterId: me.id, addresseeId: userId, status: "pending" },
-  });
-
-  return NextResponse.json(friendship, { status: 201 });
-}
-
-// PATCH — принять / отклонить / удалить
-export async function PATCH(req: NextRequest) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const { friendshipId, action } = await req.json();
-  // action: "accept" | "reject" | "remove"
-
-  const f = await prisma.friendship.findUnique({
-    where: { id: Number(friendshipId) },
-  });
-
-  if (!f) {
-    return NextResponse.json({ error: "not found" }, { status: 404 });
-  }
-
-  // Права: только тот, к кому заявка, может принять/отклонить
-  // Или любой из двух — удалить из друзей
-  const isIncoming = f.addresseeId === me.id;
-  const isParticipant = f.requesterId === me.id || f.addresseeId === me.id;
-
-  if (action === "accept") {
-    if (!isIncoming) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    }
-    const updated = await prisma.friendship.update({
-      where: { id: f.id },
-      data: { status: "accepted" },
+    // Подтвержденные друзья (где пользователь либо отправитель, либо получатель)
+    const acceptedFriendships = await prisma.friendship.findMany({
+      where: {
+        OR: [{ requesterId: currentUserId }, { addresseeId: currentUserId }],
+        status: 'accepted',
+      },
+      include: {
+        requester: {
+          select: { id: true, username: true, name: true, avatarUrl: true },
+        },
+        addressee: {
+          select: { id: true, username: true, name: true, avatarUrl: true },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
     });
-    return NextResponse.json(updated);
-  }
 
-  if (action === "reject") {
-    if (!isIncoming) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    const friends = acceptedFriendships.map((f) =>
+      f.requesterId === currentUserId ? f.addressee : f.requester
+    );
+
+    // Входящие заявки, ожидающие ответа
+    const incomingRequests = await prisma.friendship.findMany({
+      where: {
+        addresseeId: currentUserId,
+        status: 'pending',
+      },
+      include: {
+        requester: {
+          select: { id: true, username: true, name: true, avatarUrl: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Исходящие заявки, отправленные текущим пользователем
+    const outgoingRequests = await prisma.friendship.findMany({
+      where: {
+        requesterId: currentUserId,
+        status: 'pending',
+      },
+      include: {
+        addressee: {
+          select: { id: true, username: true, name: true, avatarUrl: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return NextResponse.json(
+      safeJson({
+        friends,
+        incomingRequests: incomingRequests.map((r) => ({
+          friendshipId: r.id,
+          user: r.requester,
+          createdAt: r.createdAt,
+        })),
+        outgoingRequests: outgoingRequests.map((r) => ({
+          friendshipId: r.id,
+          user: r.addressee,
+          createdAt: r.createdAt,
+        })),
+      })
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// POST: Отправка заявки или подтверждение входящей
+export async function POST(request: NextRequest) {
+  try {
+    const currentUserId = await getCurrentUserId();
+    if (!currentUserId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    await prisma.friendship.delete({ where: { id: f.id } });
-    return NextResponse.json({ ok: true });
-  }
 
-  if (action === "remove") {
-    if (!isParticipant) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    const body = await request.json();
+    const { targetUserId, targetUsername, action = 'request' } = body;
+
+    let targetUser = null;
+    if (targetUserId) {
+      targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+    } else if (targetUsername) {
+      targetUser = await prisma.user.findUnique({ where: { username: targetUsername } });
     }
-    await prisma.friendship.delete({ where: { id: f.id } });
-    return NextResponse.json({ ok: true });
-  }
 
-  return NextResponse.json({ error: "invalid action" }, { status: 400 });
+    if (!targetUser) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
+    }
+
+    if (targetUser.id === currentUserId) {
+      return NextResponse.json({ error: 'Нельзя добавить в друзья самого себя' }, { status: 400 });
+    }
+
+    // Проверяем существующие связи между пользователями
+    const existing = await prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { requesterId: currentUserId, addresseeId: targetUser.id },
+          { requesterId: targetUser.id, addresseeId: currentUserId },
+        ],
+      },
+    });
+
+    // 1. Принятие входящей заявки
+    if (action === 'accept' && existing) {
+      const updated = await prisma.friendship.update({
+        where: { id: existing.id },
+        data: { status: 'accepted' },
+      });
+      return NextResponse.json(safeJson({ success: true, status: 'friends', item: updated }));
+    }
+
+    // 2. Если дружба уже подтверждена
+    if (existing?.status === 'accepted') {
+      return NextResponse.json(safeJson({ success: true, status: 'friends' }));
+    }
+
+    // 3. Если встречная заявка уже ждет нашего подтверждения — сразу одобряем её
+    if (existing && existing.addresseeId === currentUserId) {
+      const updated = await prisma.friendship.update({
+        where: { id: existing.id },
+        data: { status: 'accepted' },
+      });
+      return NextResponse.json(safeJson({ success: true, status: 'friends', item: updated }));
+    }
+
+    // 4. Если запрос уже отправлен ранее
+    if (existing && existing.requesterId === currentUserId) {
+      return NextResponse.json(safeJson({ success: true, status: 'pending_sent' }));
+    }
+
+    // 5. Создаем новую заявку в друзья
+    const created = await prisma.friendship.create({
+      data: {
+        requesterId: currentUserId,
+        addresseeId: targetUser.id,
+        status: 'pending',
+      },
+    });
+
+    return NextResponse.json(safeJson({ success: true, status: 'pending_sent', item: created }));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// DELETE: Отмена заявки или удаление из друзей
+export async function DELETE(request: NextRequest) {
+  try {
+    const currentUserId = await getCurrentUserId();
+    if (!currentUserId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const targetUserId = searchParams.get('userId');
+    const targetUsername = searchParams.get('username');
+
+    let targetUser = null;
+    if (targetUserId) {
+      targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+    } else if (targetUsername) {
+      targetUser = await prisma.user.findUnique({ where: { username: targetUsername } });
+    }
+
+    if (!targetUser) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
+    }
+
+    await prisma.friendship.deleteMany({
+      where: {
+        OR: [
+          { requesterId: currentUserId, addresseeId: targetUser.id },
+          { requesterId: targetUser.id, addresseeId: currentUserId },
+        ],
+      },
+    });
+
+    return NextResponse.json({ success: true, status: 'none' });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

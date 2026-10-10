@@ -59,10 +59,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 </div>
 
               <div className="ml-auto flex items-center gap-3">
-                <Link href="/new" className="btn btn-primary">
-                  <span className="text-base leading-none">+</span>
-                  <span className="hidden sm:inline">Добавить</span>
-                </Link>
                 <UserMenu />
               </div>
             </div>

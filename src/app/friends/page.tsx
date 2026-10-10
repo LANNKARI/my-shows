@@ -1,356 +1,304 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 
-type Friend = {
+interface FriendUser {
   id: string;
   username: string;
   name: string | null;
   avatarUrl: string | null;
-  friendshipId?: number;
-};
+}
 
-type SearchUser = {
-  id: string;
-  username: string;
-  name: string | null;
-  avatarUrl: string | null;
-  friendshipStatus: "none" | "pending_out" | "pending_in" | "friends";
-};
+interface IncomingRequest {
+  friendshipId: number;
+  user: FriendUser;
+  createdAt: string;
+}
 
 export default function FriendsPage() {
-  const router = useRouter();
-  const { status } = useSession();
-
-  const [tab, setTab] = useState<"friends" | "requests" | "search">("friends");
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [incoming, setIncoming] = useState<Friend[]>([]);
-  const [outgoing, setOutgoing] = useState<Friend[]>([]);
+  const [friends, setFriends] = useState<FriendUser[]>([]);
+  const [incoming, setIncoming] = useState<IncomingRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
+  // Поиск пользователей
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<FriendUser[]>([]);
   const [searching, setSearching] = useState(false);
 
-  useEffect(() => {
-    if (status === "unauthenticated") router.push("/login");
-  }, [status, router]);
-
-  async function loadFriends() {
+  const fetchFriendships = useCallback(async () => {
     setLoading(true);
-    const r = await fetch("/api/friendships");
-    if (r.ok) {
-      const data = await r.json();
-      setFriends(data.friends || []);
-      setIncoming(data.incoming || []);
-      setOutgoing(data.outgoing || []);
+    try {
+      const res = await fetch('/api/friendships');
+      if (res.ok) {
+        const data = await res.json();
+        setFriends(data.friends || []);
+        setIncoming(data.incomingRequests || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
-    if (status === "authenticated") loadFriends();
-  }, [status]);
+    fetchFriendships();
+  }, [fetchFriendships]);
 
-  // Поиск — debounce
+  // Дебаунс-поиск пользователей
   useEffect(() => {
-    if (query.trim().length < 2) {
+    if (!searchQuery.trim()) {
       setSearchResults([]);
       return;
     }
-    const t = setTimeout(async () => {
+
+    const timer = setTimeout(async () => {
       setSearching(true);
-      const r = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
-      if (r.ok) setSearchResults(await r.json());
-      setSearching(false);
+      try {
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery.trim())}`);
+        if (res.ok) {
+          const list = await res.json();
+          setSearchResults(list);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setSearching(false);
+      }
     }, 300);
-    return () => clearTimeout(t);
-  }, [query]);
 
-  async function sendRequest(userId: string) {
-    await fetch("/api/friendships", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    // Обновляем статус в результатах поиска
-    setSearchResults((prev) =>
-      prev.map((u) =>
-        u.id === userId ? { ...u, friendshipStatus: "pending_out" } : u
-      )
-    );
-    loadFriends();
-  }
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  async function acceptRequest(friendshipId: number) {
-    await fetch("/api/friendships", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ friendshipId, action: "accept" }),
-    });
-    loadFriends();
-  }
+  const handleAccept = async (userId: string) => {
+    try {
+      const res = await fetch('/api/friendships', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: userId, action: 'accept' }),
+      });
+      if (res.ok) {
+        fetchFriendships();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-  async function rejectRequest(friendshipId: number) {
-    await fetch("/api/friendships", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ friendshipId, action: "reject" }),
-    });
-    loadFriends();
-  }
+  const handleRemove = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/friendships?userId=${userId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        fetchFriendships();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-  async function removeFriend(friendshipId: number) {
-    if (!confirm("Удалить из друзей?")) return;
-    await fetch("/api/friendships", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ friendshipId, action: "remove" }),
-    });
-    loadFriends();
-  }
-
-  if (status === "loading" || loading) {
-    return <p className="text-neutral-500">Загрузка...</p>;
-  }
-
-  const incomingCount = incoming.length;
+  const handleSendRequest = async (userId: string) => {
+    try {
+      const res = await fetch('/api/friendships', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: userId, action: 'request' }),
+      });
+      if (res.ok) {
+        alert('Заявка в друзья отправлена!');
+        setSearchQuery('');
+        setSearchResults([]);
+        fetchFriendships();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">Друзья</h1>
-
-      {/* Табы */}
-      <div className="flex gap-2 border-b border-white/5">
-        {(
-          [
-            ["friends", `Мои друзья${friends.length ? ` (${friends.length})` : ""}`],
-            ["requests", `Заявки${incomingCount ? ` (${incomingCount})` : ""}`],
-            ["search", "Поиск"],
-          ] as const
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={`px-4 py-2.5 text-sm font-medium transition border-b-2 -mb-px ${
-              tab === k
-                ? "border-red-500 text-white"
-                : "border-transparent text-neutral-500 hover:text-white"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
+      <div className="border-b border-neutral-800 bg-neutral-900/40 backdrop-blur-md sticky top-0 z-20">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              <span>👥 Мои друзья</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                {friends.length}
+              </span>
+            </h1>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Следите за активностью друзей и делитесь оценками
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Вкладка: Мои друзья */}
-      {tab === "friends" && (
-        <div className="space-y-2">
-          {friends.length === 0 ? (
-            <p className="text-neutral-500 py-12 text-center">
-              Пока нет друзей. Найдите через{" "}
-              <button
-                onClick={() => setTab("search")}
-                className="text-red-500 hover:underline"
-              >
-                поиск
-              </button>
-              .
-            </p>
-          ) : (
-            friends.map((f) => (
-              <UserRow
-                key={f.id}
-                user={f}
-                action={{
-                  label: "Удалить",
-                  variant: "danger",
-                  onClick: () =>
-                    f.friendshipId != null && removeFriend(f.friendshipId),
-                }}
-              />
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Вкладка: Заявки */}
-      {tab === "requests" && (
-        <div className="space-y-4">
-          {incoming.length > 0 && (
-            <div>
-              <h2 className="text-sm uppercase tracking-wider text-neutral-400 mb-2">
-                Входящие
-              </h2>
-              <div className="space-y-2">
-                {incoming.map((f) => (
-                  <UserRow
-                    key={f.id}
-                    user={f}
-                    action={{
-                      label: "Принять",
-                      variant: "primary",
-                      onClick: () =>
-                        f.friendshipId != null && acceptRequest(f.friendshipId),
-                      secondary: {
-                        label: "Отклонить",
-                        onClick: () =>
-                          f.friendshipId != null && rejectRequest(f.friendshipId),
-                      },
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {outgoing.length > 0 && (
-            <div>
-              <h2 className="text-sm uppercase tracking-wider text-neutral-400 mb-2">
-                Исходящие
-              </h2>
-              <div className="space-y-2">
-                {outgoing.map((f) => (
-                  <UserRow
-                    key={f.id}
-                    user={f}
-                    action={{
-                      label: "Отменить",
-                      variant: "secondary",
-                      onClick: () =>
-                        f.friendshipId != null && rejectRequest(f.friendshipId),
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {incoming.length === 0 && outgoing.length === 0 && (
-            <p className="text-neutral-500 py-12 text-center">Заявок нет</p>
-          )}
-        </div>
-      )}
-
-      {/* Вкладка: Поиск */}
-      {tab === "search" && (
-        <div className="space-y-4">
-          <input
-            className="input"
-            placeholder="Поиск по username или имени (мин. 2 символа)"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            autoFocus
-          />
-
-          {searching && <p className="text-sm text-neutral-500">Поиск...</p>}
-
-          {searchResults.map((u) => (
-            <UserRow
-              key={u.id}
-              user={u}
-              action={
-                u.friendshipStatus === "none"
-                  ? {
-                      label: "Добавить",
-                      variant: "primary",
-                      onClick: () => sendRequest(u.id),
-                    }
-                  : u.friendshipStatus === "pending_out"
-                  ? { label: "Заявка отправлена", variant: "secondary", disabled: true }
-                  : u.friendshipStatus === "pending_in"
-                  ? { label: "Входящая заявка", variant: "secondary", disabled: true }
-                  : { label: "✓ В друзьях", variant: "secondary", disabled: true }
-              }
+      <div className="max-w-5xl mx-auto px-4 py-8 space-y-10">
+        {/* Поиск и добавление пользователей */}
+        <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-5 sm:p-6 shadow-xl">
+          <h2 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+            <span>🔍 Найти пользователей</span>
+          </h2>
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Введите имя или @username..."
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition-colors"
             />
-          ))}
+            {searching && (
+              <div className="absolute right-3 top-3 w-4 h-4 border-2 border-neutral-600 border-t-white rounded-full animate-spin" />
+            )}
+          </div>
 
-          {query.length >= 2 && !searching && searchResults.length === 0 && (
-            <p className="text-neutral-500 py-8 text-center">Никого не найдено</p>
-          )}
+          {searchResults.length > 0 && (
+            <div className="mt-3 divide-y divide-neutral-800 border border-neutral-800 rounded-2xl bg-neutral-950 overflow-hidden">
+              {searchResults.map((u) => (
+                <div key={u.id} className="p-3 flex items-center justify-between gap-3">
+                  <Link href={`/u/${u.username}`} className="flex items-center gap-3 group">
+                    <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300">
+                      {u.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={u.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                      ) : (
+                        u.username.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors">
+                        {u.name || u.username}
+                      </p>
+                      <p className="text-[11px] text-neutral-500">@{u.username}</p>
+                    </div>
+                  </Link>
 
-          {query.length < 2 && (
-            <p className="text-neutral-500 py-8 text-center text-sm">
-              Введите минимум 2 символа
-            </p>
+                  <button
+                    onClick={() => handleSendRequest(u.id)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-medium transition-colors"
+                  >
+                    + Добавить
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-      )}
-    </div>
-  );
-}
 
-/* ---------- Универсальный "ряд" с пользователем ---------- */
+        {/* Входящие заявки */}
+        {incoming.length > 0 && (
+          <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-5 sm:p-6 shadow-xl">
+            <h2 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+              <span>📩 Входящие заявки</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold">
+                {incoming.length}
+              </span>
+            </h2>
 
-function UserRow({
-  user,
-  action,
-}: {
-  user: { username: string; name: string | null; avatarUrl: string | null };
-  action: {
-    label: string;
-    variant?: "primary" | "secondary" | "danger";
-    onClick?: () => void;
-    disabled?: boolean;
-    secondary?: { label: string; onClick: () => void };
-  };
-}) {
-  const btnClass =
-    action.variant === "danger"
-      ? "btn btn-danger text-xs"
-      : action.variant === "secondary"
-      ? "btn btn-secondary text-xs"
-      : "btn btn-primary text-xs";
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {incoming.map((req) => (
+                <div
+                  key={req.friendshipId}
+                  className="p-3.5 bg-neutral-950 border border-neutral-800 rounded-2xl flex items-center justify-between gap-3"
+                >
+                  <Link href={`/u/${req.user.username}`} className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0">
+                      {req.user.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={req.user.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                      ) : (
+                        req.user.username.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">{req.user.name || req.user.username}</p>
+                      <p className="text-[10px] text-neutral-500 truncate">@{req.user.username}</p>
+                    </div>
+                  </Link>
 
-  return (
-    <div className="flex items-center gap-3 rounded-xl bg-neutral-900/40 border border-white/5 px-3 py-2.5">
-      <Link
-        href={`/u/${user.username}`}
-        className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 transition"
-      >
-        {user.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={user.avatarUrl}
-            alt=""
-            className="w-10 h-10 rounded-full object-cover shrink-0"
-          />
-        ) : (
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white text-sm font-bold shrink-0">
-            {(user.name || user.username)[0].toUpperCase()}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => handleAccept(req.user.id)}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold"
+                    >
+                      Принять
+                    </button>
+                    <button
+                      onClick={() => handleRemove(req.user.id)}
+                      className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white rounded-lg text-xs"
+                    >
+                      Отклонить
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-        <div className="min-w-0">
-          <div className="text-sm font-medium truncate">
-            {user.name || user.username}
-          </div>
-          <div className="text-xs text-neutral-500 truncate">
-            @{user.username}
-          </div>
+
+        {/* Список текущих друзей */}
+        <div>
+          <h2 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+            <span>Ваши друзья</span>
+            <span className="text-xs font-normal text-neutral-500">({friends.length})</span>
+          </h2>
+
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 animate-pulse">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-20 bg-neutral-900 border border-neutral-800 rounded-2xl" />
+              ))}
+            </div>
+          ) : friends.length === 0 ? (
+            <div className="p-12 text-center bg-neutral-900/40 border border-neutral-800 rounded-3xl">
+              <span className="text-3xl block mb-2">👥</span>
+              <p className="text-sm font-semibold text-white mb-1">Список друзей пуст</p>
+              <p className="text-xs text-neutral-400 max-w-sm mx-auto">
+                Найдите пользователей в поиске выше или перейдите в их профили, чтобы отправить заявку.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {friends.map((f) => (
+                <div
+                  key={f.id}
+                  className="p-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl flex items-center justify-between gap-3 shadow-md hover:border-neutral-700 transition-colors"
+                >
+                  <Link href={`/u/${f.username}`} className="flex items-center gap-3 min-w-0 group">
+                    <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0">
+                      {f.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={f.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                      ) : (
+                        f.username.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors truncate">
+                        {f.name || f.username}
+                      </p>
+                      <p className="text-[11px] text-neutral-500 truncate">@{f.username}</p>
+                    </div>
+                  </Link>
+
+                  <button
+                    onClick={() => {
+                      if (confirm(`Удалить ${f.name || f.username} из друзей?`)) {
+                        handleRemove(f.id);
+                      }
+                    }}
+                    className="text-neutral-500 hover:text-rose-400 p-1.5 rounded-lg text-xs transition-colors"
+                    title="Удалить из друзей"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </Link>
-
-      <div className="flex gap-2 shrink-0">
-        {action.secondary && (
-          <button
-            onClick={action.secondary.onClick}
-            className="btn btn-secondary text-xs"
-            type="button"
-          >
-            {action.secondary.label}
-          </button>
-        )}
-        <button
-          onClick={action.onClick}
-          className={btnClass}
-          type="button"
-          disabled={action.disabled}
-        >
-          {action.label}
-        </button>
       </div>
     </div>
   );

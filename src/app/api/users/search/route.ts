@@ -1,65 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/current-user";
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentUserId, safeJson } from '@/lib/current-user';
 
-export async function GET(req: NextRequest) {
-  const me = await getCurrentUser();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+export async function GET(request: NextRequest) {
+  try {
+    const currentUserId = await getCurrentUserId();
+    const { searchParams } = new URL(request.url);
+    const query = searchParams.get('q') || searchParams.get('query') || '';
 
-  const q = new URL(req.url).searchParams.get("q")?.trim() || "";
-  if (q.length < 2) {
-    return NextResponse.json([]);
+    if (!query.trim()) {
+      return NextResponse.json([]);
+    }
+
+    const users = await prisma.user.findMany({
+      where: {
+        AND: [
+          currentUserId ? { id: { not: currentUserId } } : {},
+          {
+            OR: [
+              { username: { contains: query.trim(), mode: 'insensitive' } },
+              { name: { contains: query.trim(), mode: 'insensitive' } },
+            ],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        avatarUrl: true,
+      },
+      take: 10,
+    });
+
+    return NextResponse.json(safeJson(users));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const users = await prisma.user.findMany({
-    where: {
-      AND: [
-        { id: { not: me.id } },
-        {
-          OR: [
-            { username: { contains: q, mode: "insensitive" } },
-            { name: { contains: q, mode: "insensitive" } },
-          ],
-        },
-      ],
-    },
-    select: {
-      id: true,
-      username: true,
-      name: true,
-      avatarUrl: true,
-    },
-    take: 20,
-  });
-
-  // Для каждого — статус дружбы с текущим пользователем
-  const result = await Promise.all(
-    users.map(async (u) => {
-      const f = await prisma.friendship.findFirst({
-        where: {
-          OR: [
-            { requesterId: me.id, addresseeId: u.id },
-            { requesterId: u.id, addresseeId: me.id },
-          ],
-        },
-      });
-
-      let status: "none" | "pending_out" | "pending_in" | "friends" = "none";
-      if (f) {
-        if (f.status === "accepted") status = "friends";
-        else if (f.requesterId === me.id) status = "pending_out";
-        else status = "pending_in";
-      }
-
-      return {
-        id: u.id,
-        username: u.username,
-        name: u.name,
-        avatarUrl: u.avatarUrl,
-        friendshipStatus: status,
-      };
-    })
-  );
-
-  return NextResponse.json(result);
 }
