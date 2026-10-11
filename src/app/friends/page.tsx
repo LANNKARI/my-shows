@@ -8,6 +8,7 @@ interface FriendUser {
   username: string;
   name: string | null;
   avatarUrl: string | null;
+  friendshipStatus?: 'none' | 'pending_sent' | 'pending_received' | 'friends';
 }
 
 interface IncomingRequest {
@@ -25,6 +26,7 @@ export default function FriendsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<FriendUser[]>([]);
   const [searching, setSearching] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const fetchFriendships = useCallback(async () => {
     setLoading(true);
@@ -46,23 +48,28 @@ export default function FriendsPage() {
     fetchFriendships();
   }, [fetchFriendships]);
 
-  // Дебаунс-поиск пользователей
+  // Дебаунс-поиск с очисткой от @
   useEffect(() => {
-    if (!searchQuery.trim()) {
+    const clean = searchQuery.trim().replace(/^@+/, '');
+    if (!clean) {
       setSearchResults([]);
+      setSearching(false);
       return;
     }
 
+    setSearching(true);
     const timer = setTimeout(async () => {
-      setSearching(true);
       try {
-        const res = await fetch(`/api/users/search?q=${encodeURIComponent(searchQuery.trim())}`);
+        const res = await fetch(`/api/users/search?q=${encodeURIComponent(clean)}`);
         if (res.ok) {
           const list = await res.json();
           setSearchResults(list);
+        } else {
+          setSearchResults([]);
         }
       } catch (err) {
         console.error(err);
+        setSearchResults([]);
       } finally {
         setSearching(false);
       }
@@ -72,6 +79,7 @@ export default function FriendsPage() {
   }, [searchQuery]);
 
   const handleAccept = async (userId: string) => {
+    setActionLoadingId(userId);
     try {
       const res = await fetch('/api/friendships', {
         method: 'POST',
@@ -79,27 +87,39 @@ export default function FriendsPage() {
         body: JSON.stringify({ targetUserId: userId, action: 'accept' }),
       });
       if (res.ok) {
+        setSearchResults((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, friendshipStatus: 'friends' } : u))
+        );
         fetchFriendships();
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
   const handleRemove = async (userId: string) => {
+    setActionLoadingId(userId);
     try {
       const res = await fetch(`/api/friendships?userId=${userId}`, {
         method: 'DELETE',
       });
       if (res.ok) {
+        setSearchResults((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, friendshipStatus: 'none' } : u))
+        );
         fetchFriendships();
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
   const handleSendRequest = async (userId: string) => {
+    setActionLoadingId(userId);
     try {
       const res = await fetch('/api/friendships', {
         method: 'POST',
@@ -107,15 +127,19 @@ export default function FriendsPage() {
         body: JSON.stringify({ targetUserId: userId, action: 'request' }),
       });
       if (res.ok) {
-        alert('Заявка в друзья отправлена!');
-        setSearchQuery('');
-        setSearchResults([]);
+        setSearchResults((prev) =>
+          prev.map((u) => (u.id === userId ? { ...u, friendshipStatus: 'pending_sent' } : u))
+        );
         fetchFriendships();
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setActionLoadingId(null);
     }
   };
+
+  const cleanQuery = searchQuery.trim().replace(/^@+/, '');
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
@@ -136,7 +160,7 @@ export default function FriendsPage() {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-10">
-        {/* Поиск и добавление пользователей */}
+        {/* Поиск пользователей */}
         <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-5 sm:p-6 shadow-xl">
           <h2 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
             <span>🔍 Найти пользователей</span>
@@ -154,35 +178,75 @@ export default function FriendsPage() {
             )}
           </div>
 
+          {/* Результаты поиска */}
+          {cleanQuery.length > 0 && !searching && searchResults.length === 0 && (
+            <div className="mt-3 p-4 text-center border border-neutral-800 rounded-2xl bg-neutral-950 text-xs text-neutral-400">
+              Пользователь «{searchQuery}» не найден
+            </div>
+          )}
+
           {searchResults.length > 0 && (
             <div className="mt-3 divide-y divide-neutral-800 border border-neutral-800 rounded-2xl bg-neutral-950 overflow-hidden">
-              {searchResults.map((u) => (
-                <div key={u.id} className="p-3 flex items-center justify-between gap-3">
-                  <Link href={`/u/${u.username}`} className="flex items-center gap-3 group">
-                    <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300">
-                      {u.avatarUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={u.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+              {searchResults.map((u) => {
+                const isBusy = actionLoadingId === u.id;
+                const status = u.friendshipStatus || 'none';
+
+                return (
+                  <div key={u.id} className="p-3 flex items-center justify-between gap-3">
+                    <Link href={`/u/${u.username}`} className="flex items-center gap-3 group min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0 overflow-hidden">
+                        {u.avatarUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          u.username.charAt(0).toUpperCase()
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors truncate">
+                          {u.name || u.username}
+                        </p>
+                        <p className="text-[11px] text-neutral-500 truncate">@{u.username}</p>
+                      </div>
+                    </Link>
+
+                    <div>
+                      {status === 'friends' ? (
+                        <span className="text-[11px] text-neutral-400 font-medium px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 inline-block">
+                          ✓ В друзьях
+                        </span>
+                      ) : status === 'pending_sent' ? (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleRemove(u.id)}
+                          className="px-3 py-1.5 bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-rose-500/10 hover:text-rose-300 hover:border-rose-500/30 rounded-xl text-xs font-medium transition-colors"
+                        >
+                          {isBusy ? '...' : '⏳ Отправлено (отменить)'}
+                        </button>
+                      ) : status === 'pending_received' ? (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleAccept(u.id)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition-colors"
+                        >
+                          {isBusy ? '...' : 'Принять'}
+                        </button>
                       ) : (
-                        u.username.charAt(0).toUpperCase()
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleSendRequest(u.id)}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-medium transition-colors"
+                        >
+                          {isBusy ? '...' : '+ Добавить'}
+                        </button>
                       )}
                     </div>
-                    <div>
-                      <p className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors">
-                        {u.name || u.username}
-                      </p>
-                      <p className="text-[11px] text-neutral-500">@{u.username}</p>
-                    </div>
-                  </Link>
-
-                  <button
-                    onClick={() => handleSendRequest(u.id)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-medium transition-colors"
-                  >
-                    + Добавить
-                  </button>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -204,10 +268,10 @@ export default function FriendsPage() {
                   className="p-3.5 bg-neutral-950 border border-neutral-800 rounded-2xl flex items-center justify-between gap-3"
                 >
                   <Link href={`/u/${req.user.username}`} className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0 overflow-hidden">
                       {req.user.avatarUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={req.user.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                        <img src={req.user.avatarUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
                         req.user.username.charAt(0).toUpperCase()
                       )}
@@ -220,14 +284,16 @@ export default function FriendsPage() {
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <button
+                      type="button"
                       onClick={() => handleAccept(req.user.id)}
-                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold"
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-colors"
                     >
                       Принять
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleRemove(req.user.id)}
-                      className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white rounded-lg text-xs"
+                      className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white rounded-lg text-xs transition-colors"
                     >
                       Отклонить
                     </button>
@@ -247,7 +313,7 @@ export default function FriendsPage() {
 
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 animate-pulse">
-              {Array.from({ length: 6 }).map((_, i) => (
+              {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="h-20 bg-neutral-900 border border-neutral-800 rounded-2xl" />
               ))}
             </div>
@@ -267,10 +333,10 @@ export default function FriendsPage() {
                   className="p-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl flex items-center justify-between gap-3 shadow-md hover:border-neutral-700 transition-colors"
                 >
                   <Link href={`/u/${f.username}`} className="flex items-center gap-3 min-w-0 group">
-                    <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0 overflow-hidden">
                       {f.avatarUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={f.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                        <img src={f.avatarUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
                         f.username.charAt(0).toUpperCase()
                       )}
@@ -284,6 +350,7 @@ export default function FriendsPage() {
                   </Link>
 
                   <button
+                    type="button"
                     onClick={() => {
                       if (confirm(`Удалить ${f.name || f.username} из друзей?`)) {
                         handleRemove(f.id);

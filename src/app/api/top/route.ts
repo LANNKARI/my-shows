@@ -1,124 +1,123 @@
-import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { calculateAchievements } from "@/lib/achievements";
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { calculateAchievements } from '@/lib/achievements';
+import { safeJson } from '@/lib/current-user';
 
-export async function GET(req: NextRequest) {
-  const category =
-    new URL(req.url).searchParams.get("category") || "active";
-
-  // ── Собираем всех пользователей ──
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      username: true,
-      name: true,
-      avatarUrl: true,
-      createdAt: true,
-    },
-  });
-
-  // ── Для каждого — считаем метрики по НОВОЙ схеме ──
-  const enriched = await Promise.all(
-    users.map(async (u) => {
-      const [
-        userShowsCount,   // сериалов в библиотеке
-        completedCount,   // просмотренных полностью
-        ratingsCount,     // оценок поставлено
-        commentsCount,    // комментариев
-        watchedEpisodes,  // серий просмотрено
-        friendsCount,     // друзей
-      ] = await Promise.all([
-        prisma.userShow.count({ where: { userId: u.id } }),
-        prisma.userShow.count({
-          where: { userId: u.id, isCompleted: true },
-        }),
-        prisma.rating.count({
-          where: { userShow: { userId: u.id } },
-        }),
-        prisma.comment.count({ where: { userId: u.id } }),
-        prisma.episodeProgress.count({
-          where: {
-            userShow: { userId: u.id },
-            watched: true,
+export async function GET() {
+  try {
+    // 1. Загружаем пользователей с их связями
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        avatarUrl: true,
+        createdAt: true,
+        userShows: {
+          select: {
+            id: true,
+            status: true,
+            isCompleted: true,
+            kind: true,
+            ratings: { select: { score: true } },
+            progress: { select: { watched: true } },
           },
-        }),
-        prisma.friendship.count({
-          where: {
-            status: "accepted",
-            OR: [{ requesterId: u.id }, { addresseeId: u.id }],
-          },
-        }),
-      ]);
+        },
+      },
+    });
 
-      const score =
-        userShowsCount * 3 +
-        ratingsCount * 2 +
-        commentsCount * 5 +
-        completedCount * 4;
+    // 2. Подсчёт комментариев пользователей
+    let commentsMap = new Map<string, number>();
+    try {
+      const commentCounts = await prisma.comment.groupBy({
+        by: ['userId'],
+        _count: { id: true },
+      });
+      commentsMap = new Map(commentCounts.map((c) => [c.userId, c._count.id]));
+    } catch {
+      // Игнорируем, если таблица комментариев пуста
+    }
 
-      const accountAgeDays = Math.floor(
-        (Date.now() - u.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+    // 3. Подсчёт подтверждённых друзей
+    const friendsMap = new Map<string, number>();
+    try {
+      const acceptedFriendships = await prisma.friendship.findMany({
+        where: { status: 'accepted' },
+        select: { requesterId: true, addresseeId: true },
+      });
+      for (const f of acceptedFriendships) {
+        friendsMap.set(f.requesterId, (friendsMap.get(f.requesterId) || 0) + 1);
+        friendsMap.set(f.addresseeId, (friendsMap.get(f.addresseeId) || 0) + 1);
+      }
+    } catch {
+      // Игнорируем, если таблица дружбы пуста
+    }
+
+    // 4. Формирование рейтинга для каждого пользователя
+    const result = users.map((u) => {
+      const showsCount = u.userShows.length;
+      const completedCount = u.userShows.filter(
+        (us) => us.status === 'completed' || us.isCompleted
+      ).length;
+
+      let watchedEpisodesCount = 0;
+      let ratingsCount = 0;
+      for (const us of u.userShows) {
+        watchedEpisodesCount += (us.progress || []).filter((p) => p.watched).length;
+        if (us.ratings && us.ratings.length > 0 && us.ratings[0].score > 0) {
+          ratingsCount += 1;
+        }
+      }
+
+      const completedSeriesCount = u.userShows.filter(
+        (us) => (us.status === 'completed' || us.isCompleted) && us.kind === 'series'
+      ).length;
+
+      const commentsCount = commentsMap.get(u.id) || 0;
+      const friendsCount = friendsMap.get(u.id) || 0;
+      const daysRegistered = Math.floor(
+        (Date.now() - new Date(u.createdAt).getTime()) / (1000 * 60 * 60 * 24)
       );
 
-      const badges = calculateAchievements({
-        totalTitles: userShowsCount,
-        completedTitles: completedCount,
-        totalWatchedEpisodes: watchedEpisodes,
+      // Расчёт значков достижений
+      const achievements = calculateAchievements({
+        totalTitles: showsCount,
+        addedShowsCount: showsCount,
+        totalEpisodes: watchedEpisodesCount,
+        watchedEpisodesCount,
         totalRatings: ratingsCount,
-        totalComments: commentsCount,
-        totalFriends: friendsCount,
-        accountAgeDays,
-      })
-        .filter((a) => a.unlocked)
-        .sort((a, b) => {
-          const order: Record<string, number> = {
-            legendary: 0,
-            gold: 1,
-            silver: 2,
-            bronze: 3,
-          };
-          return order[a.tier] - order[b.tier];
-        })
-        .slice(0, 3);
+        ratingsCount,
+        completedSeriesCount,
+        commentsCount,
+        friendsCount,
+        daysRegistered,
+      });
+
+      const badges = achievements.filter((a) => a.unlocked);
+
+      // Формула активных очков: (завершено * 10) + оценки + комментарии (минимум от добавленных тайтлов)
+      const baseScore = completedCount * 10 + ratingsCount + commentsCount * 2;
+      const activeScore = Math.max(baseScore, showsCount);
 
       return {
         id: u.id,
         username: u.username,
-        name: u.name,
+        name: u.name || u.username,
         avatarUrl: u.avatarUrl,
-        createdAt: u.createdAt,
-        metrics: {
-          titles: userShowsCount,
-          ratings: ratingsCount,
-          comments: commentsCount,
-          watchedEpisodes,
-          completed: completedCount,
-          friends: friendsCount,
-          score,
-        },
+        score: activeScore,
+        points: activeScore,
+        showsCount,
+        completedCount,
+        ratingsCount,
+        commentsCount,
         badges,
+        achievements: badges,
       };
-    })
-  );
+    });
 
-  // ── Сортировка по категории ──
-  const sorted = [...enriched].sort((a, b) => {
-    if (category === "titles") return b.metrics.titles - a.metrics.titles;
-    if (category === "ratings") return b.metrics.ratings - a.metrics.ratings;
-    if (category === "comments")
-      return b.metrics.comments - a.metrics.comments;
-    return b.metrics.score - a.metrics.score; // "active"
-  });
-
-  // ── Топ-50, скрываем тех, у кого 0 по категории ──
-  const filtered = sorted
-    .filter((u) => {
-      if (category === "titles") return u.metrics.titles > 0;
-      if (category === "ratings") return u.metrics.ratings > 0;
-      if (category === "comments") return u.metrics.comments > 0;
-      return u.metrics.score > 0;
-    })
-    .slice(0, 50);
-
-  return NextResponse.json(filtered);
+    return NextResponse.json(safeJson(result));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

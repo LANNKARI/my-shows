@@ -1,180 +1,286 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import AchievementBadges, { BadgeData } from "@/components/AchievementBadges";
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 
-type UserRow = {
+interface TopUser {
   id: string;
   username: string;
-  name: string | null;
+  name: string;
   avatarUrl: string | null;
-  createdAt: string;
-  metrics: {
-    titles: number;
-    ratings: number;
-    comments: number;
-    watchedEpisodes: number;
-    completed: number;
-    friends: number;
-    score: number;
-  };
-  badges: BadgeData[];
-};
-
-type Category = "active" | "titles" | "ratings" | "comments";
-
-const CATEGORIES: { key: Category; label: string; icon: string }[] = [
-  { key: "active", label: "Активные", icon: "🏆" },
-  { key: "titles", label: "Коллекционеры", icon: "📚" },
-  { key: "ratings", label: "Критики", icon: "⭐" },
-  { key: "comments", label: "Комментаторы", icon: "💬" },
-];
-
-function metricFor(u: UserRow, cat: Category): { value: number; label: string } {
-  switch (cat) {
-    case "titles":
-      return { value: u.metrics.titles, label: "сериалов" };
-    case "ratings":
-      return { value: u.metrics.ratings, label: "оценок" };
-    case "comments":
-      return { value: u.metrics.comments, label: "комментариев" };
-    default:
-      return { value: u.metrics.score, label: "очков" };
-  }
+  score?: number;
+  points?: number;
+  completedCount?: number;
+  showsCount?: number;
+  ratingsCount?: number;
+  commentsCount?: number;
+  badges?: {
+    id: string;
+    title?: string;
+    name?: string;
+    icon: string;
+  }[];
+  achievements?: {
+    id: string;
+    title?: string;
+    name?: string;
+    icon: string;
+  }[];
 }
 
-function positionStyle(pos: number): string {
-  if (pos === 1)
-    return "bg-gradient-to-br from-yellow-400 to-yellow-600 text-black";
-  if (pos === 2)
-    return "bg-gradient-to-br from-neutral-300 to-neutral-500 text-black";
-  if (pos === 3)
-    return "bg-gradient-to-br from-amber-600 to-amber-800 text-white";
-  return "bg-neutral-800 text-neutral-400";
-}
+type TabType = 'active' | 'collectors' | 'critics' | 'commentators';
 
 export default function TopPage() {
-  const [category, setCategory] = useState<Category>("active");
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabType>('active');
+  const [users, setUsers] = useState<TopUser[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`/api/top?category=${category}`)
-      .then((r) => r.json())
-      .then(setUsers)
-      .catch(() => setUsers([]))
-      .finally(() => setLoading(false));
-  }, [category]);
+    const fetchTopUsers = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/top');
+        if (res.ok) {
+          const data = await res.json();
+          setUsers(Array.isArray(data) ? data : data.users || []);
+        }
+      } catch (err) {
+        console.error('Ошибка загрузки топа:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTopUsers();
+  }, []);
+
+  // Сортировка участников в зависимости от выбранной вкладки
+  const getSortedUsers = () => {
+    const list = [...users];
+
+    switch (activeTab) {
+      case 'collectors':
+        return list.sort(
+          (a, b) =>
+            (b.showsCount ?? b.completedCount ?? 0) -
+            (a.showsCount ?? a.completedCount ?? 0)
+        );
+      case 'critics':
+        return list.sort(
+          (a, b) => (b.ratingsCount ?? 0) - (a.ratingsCount ?? 0)
+        );
+      case 'commentators':
+        return list.sort(
+          (a, b) => (b.commentsCount ?? 0) - (a.commentsCount ?? 0)
+        );
+      case 'active':
+      default:
+        return list.sort(
+          (a, b) =>
+            (b.score ?? b.points ?? 0) - (a.score ?? a.points ?? 0)
+        );
+    }
+  };
+
+  const sortedUsers = getSortedUsers();
+
+  const getScoreDisplay = (user: TopUser) => {
+    switch (activeTab) {
+      case 'collectors':
+        return {
+          val: user.showsCount ?? user.completedCount ?? 0,
+          label: 'тайтлов',
+        };
+      case 'critics':
+        return {
+          val: user.ratingsCount ?? 0,
+          label: 'оценок',
+        };
+      case 'commentators':
+        return {
+          val: user.commentsCount ?? 0,
+          label: 'коммент.',
+        };
+      case 'active':
+      default:
+        return {
+          val: user.score ?? user.points ?? 0,
+          label: 'очков',
+        };
+    }
+  };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Заголовок */}
-      <div>
-        <h1 className="text-3xl font-extrabold tracking-tight">
-          🥇 Топ пользователей
-        </h1>
-        <p className="text-neutral-500 text-sm mt-1">
-          Самые активные участники episyhub
-        </p>
-      </div>
-
-      {/* Табы */}
-      <div className="flex flex-wrap gap-2">
-        {CATEGORIES.map((c) => (
-          <button
-            key={c.key}
-            onClick={() => setCategory(c.key)}
-            className={`px-3.5 py-2 rounded-full text-sm font-medium transition-all ${
-              category === c.key
-                ? "bg-gradient-to-b from-red-500 to-red-600 text-white shadow-lg shadow-red-900/40"
-                : "bg-neutral-900 border border-white/5 text-neutral-400 hover:text-white hover:border-white/10"
-            }`}
-          >
-            {c.icon} {c.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Список */}
-      {loading ? (
-        <p className="text-neutral-500 text-center py-8">Загрузка...</p>
-      ) : users.length === 0 ? (
-        <p className="text-neutral-500 text-center py-12">
-          Пока нет данных в этой категории
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {users.map((u, i) => {
-            const pos = i + 1;
-            const metric = metricFor(u, category);
-            const isTop3 = pos <= 3;
-
-            return (
-              <Link
-                key={u.id}
-                href={`/u/${u.username}`}
-                className={`flex items-center gap-4 rounded-xl border px-4 py-3 transition-all hover:-translate-y-0.5 ${
-                  isTop3
-                    ? "border-yellow-500/20 bg-neutral-900/60 hover:border-yellow-500/40"
-                    : "border-white/5 bg-neutral-900/40 hover:border-white/10"
-                }`}
-              >
-                <div
-                  className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-black ${positionStyle(
-                    pos
-                  )}`}
-                >
-                  {pos}
-                </div>
-
-                <div className="shrink-0">
-                  {u.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={u.avatarUrl}
-                      alt=""
-                      className="w-10 h-10 rounded-full object-cover border border-white/5"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white text-sm font-bold">
-                      {(u.name || u.username)[0].toUpperCase()}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold truncate">
-                      {u.name || u.username}
-                    </span>
-                    {u.badges && u.badges.length > 0 && (
-                      <AchievementBadges
-                        badges={u.badges}
-                        max={3}
-                        size="sm"
-                      />
-                    )}
-                  </div>
-                  <div className="text-xs text-neutral-500 truncate">
-                    @{u.username}
-                  </div>
-                </div>
-
-                <div className="shrink-0 text-right">
-                  <div className="text-lg font-bold tabular-nums">
-                    {metric.value}
-                  </div>
-                  <div className="text-[10px] text-neutral-500 uppercase tracking-wider">
-                    {metric.label}
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-24">
+      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+        {/* Заголовок */}
+        <div>
+          <h1 className="text-3xl font-extrabold text-white flex items-center gap-2.5">
+            <span>🥇</span>
+            <span>Топ пользователей</span>
+          </h1>
+          <p className="text-xs text-neutral-400 mt-1">
+            Самые активные участники episyhub
+          </p>
         </div>
-      )}
+
+        {/* Вкладки */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
+          {[
+            { key: 'active', label: '🏆 Активные' },
+            { key: 'collectors', label: '📚 Коллекционеры' },
+            { key: 'critics', label: '⭐ Критики' },
+            { key: 'commentators', label: '💬 Комментаторы' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key as TabType)}
+              className={`px-4 py-2 rounded-2xl font-semibold transition-all border whitespace-nowrap cursor-pointer ${
+                activeTab === tab.key
+                  ? 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-600/20'
+                  : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Список рейтинга */}
+        {loading ? (
+          <div className="space-y-3 animate-pulse">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-20 bg-neutral-900/60 border border-neutral-800 rounded-3xl"
+              />
+            ))}
+          </div>
+        ) : sortedUsers.length === 0 ? (
+          <div className="p-12 text-center bg-neutral-900/40 border border-neutral-800 rounded-3xl text-xs text-neutral-500">
+            В этой категории пока нет участников.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {sortedUsers.map((user, index) => {
+              const rank = index + 1;
+              const { val, label } = getScoreDisplay(user);
+              const userBadges = user.badges || user.achievements || [];
+
+              const rankBg =
+                rank === 1
+                  ? 'bg-amber-400 text-black'
+                  : rank === 2
+                  ? 'bg-neutral-300 text-black'
+                  : rank === 3
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-neutral-800 text-neutral-400';
+
+              return (
+                <div
+                  key={user.id || index}
+                  className="p-4 bg-neutral-900/70 border border-neutral-800/90 hover:border-neutral-700 rounded-3xl flex items-center justify-between gap-4 transition-all shadow-md"
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    {/* Ранг */}
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 shadow-sm ${rankBg}`}
+                    >
+                      {rank}
+                    </div>
+
+                    {/* Аватар */}
+                    <Link
+                      href={`/u/${user.username}`}
+                      className="w-11 h-11 rounded-full bg-rose-600 flex items-center justify-center font-extrabold text-sm text-white flex-shrink-0 overflow-hidden shadow-inner"
+                    >
+                      {user.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={user.avatarUrl}
+                          alt={user.name || user.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        (user.name || user.username || 'U')
+                          .charAt(0)
+                          .toUpperCase()
+                      )}
+                    </Link>
+
+                    {/* Имя и значки достижений */}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link
+                          href={`/u/${user.username}`}
+                          className="font-bold text-sm text-white hover:text-rose-400 transition-colors truncate"
+                        >
+                          {user.name || user.username}
+                        </Link>
+
+                        {/* Значки достижений */}
+                        {userBadges.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            {userBadges.slice(0, 4).map((badge, bIdx) => {
+                              const bTitle =
+                                badge.name || badge.title || 'Достижение';
+                              const isImg =
+                                badge.icon.startsWith('/') ||
+                                badge.icon.includes('.') ||
+                                badge.icon.startsWith('http');
+
+                              return (
+                                <div
+                                  key={badge.id || bIdx}
+                                  title={bTitle}
+                                  className="w-5 h-5 rounded-full overflow-hidden bg-neutral-950 border border-amber-500/50 flex items-center justify-center flex-shrink-0 shadow-sm"
+                                >
+                                  {isImg ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={badge.icon}
+                                      alt={bTitle}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <span className="text-[10px] leading-none">
+                                      {badge.icon}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-neutral-500 truncate">
+                        @{user.username}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Очки / Показатели */}
+                  <div className="text-right flex-shrink-0 pl-2">
+                    <span className="text-lg font-black text-white block tracking-tight leading-tight">
+                      {val}
+                    </span>
+                    <span className="text-[11px] text-neutral-500 block">
+                      {label}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Футер */}
+        <div className="text-center pt-8 text-xs text-neutral-600">
+          My Shows — личный трекер сериалов
+        </div>
+      </div>
     </div>
   );
 }
