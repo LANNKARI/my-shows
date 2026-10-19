@@ -6,48 +6,68 @@ import Link from 'next/link';
 interface MediaItem {
   id: number;
   title: string;
-  originalTitle: string | null;
+  originalTitle?: string;
   overview: string;
-  posterUrl: string | null;
-  backdropUrl: string | null;
+  posterUrl?: string;
+  backdropUrl?: string;
   year: string;
-  kind: 'movie' | 'series';
-  rating: number | null;
+  kind: string;
+  rating?: number;
   voteCount: number;
-  studio?: string | null;
+  badge?: string;
+}
+
+interface UniverseMeta {
+  id: string;
+  name: string;
+  icon: string;
+}
+
+interface DirectorMeta {
+  id: string;
+  name: string;
+  tag: string;
 }
 
 interface HomeData {
   heroSlides: MediaItem[];
   recentOnline: MediaItem[];
   worldHits: MediaItem[];
-  studiosMovies: {
-    a24: MediaItem[];
-    wb: MediaItem[];
-    marvel: MediaItem[];
-    universal: MediaItem[];
-  };
+  universesMeta: UniverseMeta[];
+  directorsMeta: DirectorMeta[];
+  initialUniverseItems: MediaItem[];
+  initialDirectorItems: MediaItem[];
 }
 
-type StudioTab = 'a24' | 'wb' | 'marvel' | 'universal';
-
 export default function HomePage() {
-  const [data, setData] = useState<HomeData | null>(null);
+  const [data, setData] = useState<HomeData>();
   const [loading, setLoading] = useState(true);
-  const [selectedStudio, setSelectedStudio] = useState<StudioTab>('a24');
 
-  // Управление слайдером
+  const [selectedUniverse, setSelectedUniverse] = useState<string>('marvel');
+  const [universeCache, setUniverseCache] = useState<Record<string, MediaItem[]>>({});
+  const [loadingUniverse, setLoadingUniverse] = useState<boolean>(false);
+
+  const [selectedDirector, setSelectedDirector] = useState<string>('nolan');
+  const [directorCache, setDirectorCache] = useState<Record<string, MediaItem[]>>({});
+  const [loadingDirector, setLoadingDirector] = useState<boolean>(false);
+
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const autoSlideTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSlideTimerRef = useRef<any>(null);
 
   useEffect(() => {
     const fetchHome = async () => {
       try {
         const res = await fetch('/api/home');
         if (res.ok) {
-          const json = await res.json();
+          const json: HomeData = await res.json();
           setData(json);
+          if (json.initialUniverseItems) {
+            setUniverseCache({ marvel: json.initialUniverseItems });
+          }
+          if (json.initialDirectorItems) {
+            setDirectorCache({ nolan: json.initialDirectorItems });
+          }
         }
       } catch (err) {
         console.error('Ошибка загрузки главной страницы:', err);
@@ -58,6 +78,48 @@ export default function HomePage() {
 
     fetchHome();
   }, []);
+
+  const handleSelectUniverse = async (universeId: string) => {
+    setSelectedUniverse(universeId);
+    if (universeCache[universeId]) return;
+
+    setLoadingUniverse(true);
+    try {
+      const res = await fetch(`/api/home?universe=${encodeURIComponent(universeId)}`);
+      if (res.ok) {
+        const json = await res.json();
+        setUniverseCache((prev) => ({
+          ...prev,
+          [universeId]: json.items || [],
+        }));
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки киновселенной:', err);
+    } finally {
+      setLoadingUniverse(false);
+    }
+  };
+
+  const handleSelectDirector = async (directorId: string) => {
+    setSelectedDirector(directorId);
+    if (directorCache[directorId]) return;
+
+    setLoadingDirector(true);
+    try {
+      const res = await fetch(`/api/home?director=${encodeURIComponent(directorId)}`);
+      if (res.ok) {
+        const json = await res.json();
+        setDirectorCache((prev) => ({
+          ...prev,
+          [directorId]: json.items || [],
+        }));
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки фильмов режиссёра:', err);
+    } finally {
+      setLoadingDirector(false);
+    }
+  };
 
   const slides = data?.heroSlides || [];
 
@@ -71,7 +133,6 @@ export default function HomePage() {
     setCurrentSlide((prev) => (prev - 1 + slides.length) % slides.length);
   }, [slides.length]);
 
-  // Автоматическое перелистывание каждые 6 секунд
   useEffect(() => {
     if (slides.length <= 1 || isPaused) return;
 
@@ -87,9 +148,9 @@ export default function HomePage() {
   if (loading) {
     return (
       <div className="space-y-10 animate-pulse pb-16">
-        <div className="w-full h-80 sm:h-[420px] bg-neutral-900/60 rounded-3xl border border-neutral-800" />
-        <div className="h-48 bg-neutral-900/40 rounded-3xl" />
-        <div className="h-48 bg-neutral-900/40 rounded-3xl" />
+        <div className="w-full h-80 sm:h-[440px] bg-neutral-900/60 rounded-3xl border border-neutral-800" />
+        <div className="h-64 bg-neutral-900/40 rounded-3xl" />
+        <div className="h-64 bg-neutral-900/40 rounded-3xl" />
       </div>
     );
   }
@@ -97,23 +158,25 @@ export default function HomePage() {
   const currentHero = slides[currentSlide] || null;
   const recentOnline = data?.recentOnline || [];
   const worldHits = data?.worldHits || [];
-  const currentStudioMovies = data?.studiosMovies?.[selectedStudio] || [];
+  const universesMeta = data?.universesMeta || [];
+  const directorsMeta = data?.directorsMeta || [];
+
+  const currentUniverseMovies = universeCache[selectedUniverse] || [];
+  const currentDirectorMovies = directorCache[selectedDirector] || [];
+  const activeDirectorObj = directorsMeta.find((d) => d.id === selectedDirector);
 
   return (
-    <div className="space-y-12 pb-16">
-      {/* ========================================================
-          1. ИНТЕРАКТИВНЫЙ HERO-БАННЕР (КАРУСЕЛЬ НА 6-8 РЕЛИЗОВ)
-         ======================================================== */}
+    <div className="space-y-14 pb-16">
+      {/* 1. HERO-БАННЕР (ТОЛЬКО РЕЙТИНГ 8.0+, БЕЗ КОРЕИ И АНИМЕ) */}
       {currentHero && (
         <div
           onMouseEnter={() => setIsPaused(true)}
           onMouseLeave={() => setIsPaused(false)}
-          className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-2xl min-h-[380px] sm:min-h-[440px] flex items-end group"
+          className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-2xl min-h-[380px] sm:min-h-[450px] flex items-end group"
         >
-          {/* Фоновые кадры с плавным переходом */}
           {slides.map((slide, idx) => (
             <div
-              key={slide.id}
+              key={`${slide.kind}-${slide.id}`}
               className={`absolute inset-0 pointer-events-none transition-opacity duration-700 ease-in-out ${
                 idx === currentSlide ? 'opacity-100 z-0' : 'opacity-0 z-[-1]'
               }`}
@@ -123,7 +186,7 @@ export default function HomePage() {
                 <img
                   src={slide.backdropUrl}
                   alt={slide.title}
-                  className="w-full h-full object-cover object-top opacity-40 scale-105"
+                  className="w-full h-full object-cover object-top opacity-45 scale-105"
                 />
               ) : slide.posterUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -138,33 +201,31 @@ export default function HomePage() {
             </div>
           ))}
 
-          {/* Стрелки перелистывания (влево / вправо) */}
           {slides.length > 1 && (
             <>
               <button
                 type="button"
                 onClick={prevSlide}
-                className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/50 hover:bg-black/80 backdrop-blur-md border border-white/10 text-white flex items-center justify-center text-lg opacity-0 group-hover:opacity-100 transition-all cursor-pointer shadow-xl hover:scale-110"
-                aria-label="Предыдущий релиз"
+                className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/60 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white flex items-center justify-center text-lg opacity-0 group-hover:opacity-100 transition-all cursor-pointer shadow-xl hover:scale-110"
+                aria-label="Предыдущий слайд"
               >
                 ‹
               </button>
               <button
                 type="button"
                 onClick={nextSlide}
-                className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/50 hover:bg-black/80 backdrop-blur-md border border-white/10 text-white flex items-center justify-center text-lg opacity-0 group-hover:opacity-100 transition-all cursor-pointer shadow-xl hover:scale-110"
-                aria-label="Следующий релиз"
+                className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/60 hover:bg-black/90 backdrop-blur-md border border-white/15 text-white flex items-center justify-center text-lg opacity-0 group-hover:opacity-100 transition-all cursor-pointer shadow-xl hover:scale-110"
+                aria-label="Следующий слайд"
               >
                 ›
               </button>
             </>
           )}
 
-          {/* Информация о текущем тайтле */}
           <div className="relative z-10 p-6 sm:p-10 max-w-2xl space-y-4">
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-md shadow-rose-600/30">
-                🔥 В тренде
+                🔥 Выбор зрителей 8.0+
               </span>
 
               <span
@@ -178,13 +239,13 @@ export default function HomePage() {
               </span>
 
               {currentHero.rating && (
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center gap-1">
                   ★ {currentHero.rating}
                 </span>
               )}
 
               {currentHero.year && (
-                <span className="text-xs font-semibold text-neutral-400">
+                <span className="text-xs font-semibold text-neutral-300">
                   {currentHero.year}
                 </span>
               )}
@@ -205,12 +266,11 @@ export default function HomePage() {
                 href={`/show/${currentHero.id}`}
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-600/30 flex items-center gap-2"
               >
-                <span>Перейти к просмотру</span>
+                <span>Открыть карточку</span>
                 <span>→</span>
               </Link>
             </div>
 
-            {/* Точки-индикаторы карусели */}
             {slides.length > 1 && (
               <div className="pt-3 flex items-center gap-1.5">
                 {slides.map((_, dotIdx) => (
@@ -223,7 +283,7 @@ export default function HomePage() {
                         ? 'w-7 bg-rose-500'
                         : 'w-2 bg-neutral-700 hover:bg-neutral-500'
                     }`}
-                    aria-label={`Перейти к слайду ${dotIdx + 1}`}
+                    aria-label={`Слайд ${dotIdx + 1}`}
                   />
                 ))}
               </div>
@@ -232,25 +292,21 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ========================================================
-          2. СЕКЦИЯ: НЕДАВНО В ОНЛАЙНЕ (ФИЛЬМЫ И СЕРИАЛЫ)
-         ======================================================== */}
+      {/* 2. СВЕЖИЕ ПРЕМЬЕРЫ И СЕЗОНЫ */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
-              <span>⚡ Свежие премьеры и сезоны</span>
-            </h2>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Новые серии и цифровые релизы этой недели
-            </p>
-          </div>
+        <div>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
+            <span>⚡ Свежие премьеры и сезоны</span>
+          </h2>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Мировые блокбастеры и новые сезоны главных сериалов (обновляется автоматически)
+          </p>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {recentOnline.map((item) => (
             <MediaCard
-              key={`${item.kind}-${item.id}`}
+              key={`recent-${item.kind}-${item.id}`}
               item={item}
               badge={item.kind === 'series' ? 'Сериал' : 'Фильм'}
               badgeColor={item.kind === 'series' ? 'indigo' : 'blue'}
@@ -259,19 +315,134 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ========================================================
-          3. СЕКЦИЯ: МИРОВЫЕ ХИТЫ
-         ======================================================== */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
+      {/* 3. 15 КИНОВСЕЛЕННЫХ */}
+      <section className="space-y-5">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
+            <span>🌌 Киновселенные и франшизы</span>
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              15 вселенных
+            </span>
+          </h2>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Выберите киновселенную, чтобы увидеть все связанные между собой картины
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
+          {universesMeta.map((uni) => {
+            const isSelected = selectedUniverse === uni.id;
+            return (
+              <button
+                key={uni.id}
+                type="button"
+                onClick={() => handleSelectUniverse(uni.id)}
+                className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 border ${
+                  isSelected
+                    ? 'bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-600/25 scale-[1.02]'
+                    : 'bg-neutral-900/90 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
+                }`}
+              >
+                <span>{uni.icon}</span>
+                <span>{uni.name}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {loadingUniverse ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="aspect-[2/3] bg-neutral-900 rounded-2xl border border-neutral-800"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {currentUniverseMovies.map((item) => (
+              <MediaCard
+                key={`uni-${selectedUniverse}-${item.id}`}
+                item={item}
+                badge={item.badge || undefined}
+                badgeColor="purple"
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 4. КОЛЛЕКЦИИ КУЛЬТОВЫХ РЕЖИССЁРОВ */}
+      <section className="space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
           <div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
-              <span>🏆 Мировые хиты</span>
+              <span>🎬 Коллекции великих режиссёров</span>
             </h2>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Признанная классика и картины с высочайшим рейтингом
+              Авторский почерк: лучшие фильмы главных мастеров мирового кинематографа
             </p>
           </div>
+          {activeDirectorObj && (
+            <span className="text-xs text-amber-400 font-semibold bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-xl self-start sm:self-auto">
+              ✦ {activeDirectorObj.tag}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
+          {directorsMeta.map((dir) => {
+            const isSelected = selectedDirector === dir.id;
+            return (
+              <button
+                key={dir.id}
+                type="button"
+                onClick={() => handleSelectDirector(dir.id)}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${
+                  isSelected
+                    ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/20'
+                    : 'bg-neutral-900/90 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
+                }`}
+              >
+                {dir.name}
+              </button>
+            );
+          })}
+        </div>
+
+        {loadingDirector ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="aspect-[2/3] bg-neutral-900 rounded-2xl border border-neutral-800"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {currentDirectorMovies.map((item) => (
+              <MediaCard
+                key={`dir-${selectedDirector}-${item.id}`}
+                item={item}
+                badge={item.badge || undefined}
+                badgeColor="amber"
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 5. МИРОВЫЕ ХИТЫ */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
+            <span>🏆 Мировые хиты</span>
+          </h2>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Золотой фонд кино с самыми высокими зрительскими оценками
+          </p>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -280,59 +451,10 @@ export default function HomePage() {
           ))}
         </div>
       </section>
-
-      {/* ========================================================
-          4. СЕКЦИЯ: КИНО ОТ ТОПОВЫХ СТУДИЙ
-         ======================================================== */}
-      <section className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
-              <span>🎬 Кино от культовых студий</span>
-            </h2>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Лучшие работы главных кинематографических домов
-            </p>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-neutral-900 p-1.5 rounded-2xl border border-neutral-800 self-start sm:self-auto overflow-x-auto no-scrollbar text-xs">
-            {[
-              { id: 'a24', label: 'A24' },
-              { id: 'wb', label: 'Warner Bros.' },
-              { id: 'marvel', label: 'Marvel' },
-              { id: 'universal', label: 'Universal' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setSelectedStudio(tab.id as StudioTab)}
-                className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  selectedStudio === tab.id
-                    ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {currentStudioMovies.map((item) => (
-            <MediaCard
-              key={`studio-${item.id}`}
-              item={item}
-              badge={item.studio || undefined}
-              badgeColor="purple"
-            />
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
 
-// Карточка тайтла
 function MediaCard({
   item,
   badge,
@@ -340,7 +462,7 @@ function MediaCard({
 }: {
   item: MediaItem;
   badge?: string;
-  badgeColor?: 'blue' | 'amber' | 'purple' | 'indigo';
+  badgeColor?: string;
 }) {
   const getBadgeStyle = () => {
     switch (badgeColor) {
@@ -378,7 +500,7 @@ function MediaCard({
 
         {badge && (
           <div
-            className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase backdrop-blur-md border ${getBadgeStyle()}`}
+            className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase backdrop-blur-md border max-w-[70%] truncate ${getBadgeStyle()}`}
           >
             {badge}
           </div>
