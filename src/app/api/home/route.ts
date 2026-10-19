@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
-// Идентификаторы топовых мировых киностудий в TMDB
 const STUDIOS = {
   a24: { id: 41077, name: 'A24' },
   wb: { id: 174, name: 'Warner Bros.' },
@@ -37,7 +36,10 @@ export async function GET() {
 
     const fetchTmdb = async (endpoint: string, params: Record<string, string | number> = {}) => {
       try {
-        const res = await fetch(makeTmdbUrl(endpoint, params), { headers, next: { revalidate: 3600 } });
+        const res = await fetch(makeTmdbUrl(endpoint, params), {
+          headers,
+          next: { revalidate: 3600 }, // Автообновление данных каждый час
+        });
         if (!res.ok) return [];
         const json = await res.json();
         return json.results || [];
@@ -49,73 +51,85 @@ export async function GET() {
 
     const now = new Date();
     const today = now.toISOString().split('T')[0];
-    const sixMonthsAgo = new Date(now.setMonth(now.getMonth() - 6)).toISOString().split('T')[0];
+    const fourMonthsAgo = new Date(new Date().setMonth(now.getMonth() - 4)).toISOString().split('T')[0];
 
-    // Параллельная загрузка категорий
-    const [recentRaw, hitsRaw, a24Raw, wbRaw, marvelRaw, universalRaw] = await Promise.all([
-      // 1. Недавно вышли в онлайне
-      fetchTmdb('discover/movie', {
-        sort_by: 'popularity.desc',
-        'primary_release_date.lte': today,
-        'primary_release_date.gte': sixMonthsAgo,
-        'vote_count.gte': 80,
-      }),
-      // 2. Мировые хиты
-      fetchTmdb('movie/top_rated', {
-        page: 1,
-      }),
-      // 3. Топовые студии
-      fetchTmdb('discover/movie', {
-        with_companies: STUDIOS.a24.id,
-        sort_by: 'vote_average.desc',
-        'vote_count.gte': 500,
-      }),
-      fetchTmdb('discover/movie', {
-        with_companies: STUDIOS.wb.id,
-        sort_by: 'popularity.desc',
-        'vote_count.gte': 500,
-      }),
-      fetchTmdb('discover/movie', {
-        with_companies: STUDIOS.marvel.id,
-        sort_by: 'popularity.desc',
-        'vote_count.gte': 500,
-      }),
-      fetchTmdb('discover/movie', {
-        with_companies: STUDIOS.universal.id,
-        sort_by: 'popularity.desc',
-        'vote_count.gte': 500,
-      }),
-    ]);
+    // Параллельная загрузка трендов, онлайна, сериалов и киностудий
+    const [trendingRaw, onTheAirTvRaw, recentMoviesRaw, worldHitsRaw, a24Raw, wbRaw, marvelRaw, universalRaw] =
+      await Promise.all([
+        // 1. Мировые тренды недели (Фильмы + Сериалы одновременно)
+        fetchTmdb('trending/all/day'),
+        // 2. Сериалы с новыми сериями прямо сейчас (выходящие онгоинги)
+        fetchTmdb('tv/on_the_air'),
+        // 3. Свежие фильмы в цифровом прокате
+        fetchTmdb('discover/movie', {
+          sort_by: 'popularity.desc',
+          'primary_release_date.lte': today,
+          'primary_release_date.gte': fourMonthsAgo,
+          'vote_count.gte': 60,
+        }),
+        // 4. Мировые рейтинговые хиты
+        fetchTmdb('movie/top_rated', { page: 1 }),
+        // 5. Фильмы топовых студий
+        fetchTmdb('discover/movie', { with_companies: STUDIOS.a24.id, sort_by: 'vote_average.desc', 'vote_count.gte': 400 }),
+        fetchTmdb('discover/movie', { with_companies: STUDIOS.wb.id, sort_by: 'popularity.desc', 'vote_count.gte': 400 }),
+        fetchTmdb('discover/movie', { with_companies: STUDIOS.marvel.id, sort_by: 'popularity.desc', 'vote_count.gte': 400 }),
+        fetchTmdb('discover/movie', { with_companies: STUDIOS.universal.id, sort_by: 'popularity.desc', 'vote_count.gte': 400 }),
+      ]);
 
-    const formatMovie = (m: any, extraStudio?: string) => ({
-      id: m.id,
-      title: m.title || m.name || 'Без названия',
-      originalTitle: m.original_title || m.original_name || null,
-      overview: m.overview || '',
-      posterUrl: formatPosterUrl(m.poster_path),
-      backdropUrl: m.backdrop_path ? `${TMDB_IMAGE_BASE}${m.backdrop_path}` : null,
-      year: m.release_date ? m.release_date.split('-')[0] : '',
-      rating: m.vote_average ? Number(m.vote_average.toFixed(1)) : null,
-      voteCount: m.vote_count || 0,
-      studio: extraStudio || null,
-    });
-
-    const recentOnline = recentRaw.filter((m: any) => m.poster_path).slice(0, 10).map((m: any) => formatMovie(m));
-    const worldHits = hitsRaw.filter((m: any) => m.poster_path).slice(0, 10).map((m: any) => formatMovie(m));
-
-    const studiosMovies = {
-      a24: a24Raw.filter((m: any) => m.poster_path).slice(0, 8).map((m: any) => formatMovie(m, 'A24')),
-      wb: wbRaw.filter((m: any) => m.poster_path).slice(0, 8).map((m: any) => formatMovie(m, 'Warner Bros.')),
-      marvel: marvelRaw.filter((m: any) => m.poster_path).slice(0, 8).map((m: any) => formatMovie(m, 'Marvel Studios')),
-      universal: universalRaw.filter((m: any) => m.poster_path).slice(0, 8).map((m: any) => formatMovie(m, 'Universal')),
+    const formatMedia = (m: any, defaultKind?: 'movie' | 'series', extraStudio?: string) => {
+      const isTv = m.media_type === 'tv' || defaultKind === 'series' || Boolean(m.first_air_date);
+      const date = m.release_date || m.first_air_date || '';
+      return {
+        id: m.id,
+        title: m.title || m.name || 'Без названия',
+        originalTitle: m.original_title || m.original_name || null,
+        overview: m.overview || '',
+        posterUrl: formatPosterUrl(m.poster_path),
+        backdropUrl: m.backdrop_path ? `${TMDB_IMAGE_BASE}${m.backdrop_path}` : null,
+        year: date ? date.split('-')[0] : '',
+        kind: isTv ? 'series' : 'movie',
+        rating: m.vote_average ? Number(m.vote_average.toFixed(1)) : null,
+        voteCount: m.vote_count || 0,
+        studio: extraStudio || null,
+      };
     };
 
-    // Hero-баннер: самый рейтинговый или свежий хит из новинок
-    const heroMovie = recentOnline.find((m: any) => m.backdropUrl && m.overview) || recentOnline[0] || worldHits[0] || null;
+    // Формируем 8 топовых релизов для карусели Hero-баннера (фильмы + сериалы)
+    const combinedTrending = [...trendingRaw, ...onTheAirTvRaw];
+    const uniqueBannerMap = new Map<number, any>();
+
+    for (const item of combinedTrending) {
+      if (item.backdrop_path && item.overview && !uniqueBannerMap.has(item.id)) {
+        uniqueBannerMap.set(item.id, item);
+      }
+      if (uniqueBannerMap.size >= 8) break;
+    }
+
+    const heroSlides = Array.from(uniqueBannerMap.values()).map((m) => formatMedia(m));
+
+    // Свежие релизы (смесь фильмов и сериалов, вышедших недавно)
+    const recentOnline = [
+      ...recentMoviesRaw.map((m: any) => formatMedia(m, 'movie')),
+      ...onTheAirTvRaw.map((t: any) => formatMedia(t, 'series')),
+    ]
+      .filter((m) => m.posterUrl)
+      .slice(0, 10);
+
+    const worldHits = worldHitsRaw
+      .filter((m: any) => m.poster_path)
+      .slice(0, 10)
+      .map((m: any) => formatMedia(m, 'movie'));
+
+    const studiosMovies = {
+      a24: a24Raw.filter((m: any) => m.poster_path).slice(0, 8).map((m: any) => formatMedia(m, 'movie', 'A24')),
+      wb: wbRaw.filter((m: any) => m.poster_path).slice(0, 8).map((m: any) => formatMedia(m, 'movie', 'Warner Bros.')),
+      marvel: marvelRaw.filter((m: any) => m.poster_path).slice(0, 8).map((m: any) => formatMedia(m, 'movie', 'Marvel')),
+      universal: universalRaw.filter((m: any) => m.poster_path).slice(0, 8).map((m: any) => formatMedia(m, 'movie', 'Universal')),
+    };
 
     return NextResponse.json(
       safeJson({
-        heroMovie,
+        heroSlides: heroSlides.length > 0 ? heroSlides : recentOnline.slice(0, 6),
         recentOnline,
         worldHits,
         studiosMovies,
