@@ -308,9 +308,19 @@ export async function GET(request: NextRequest) {
     }
     const heroSlides = Array.from(bannerMap.values());
 
-    // Свежие премьеры и сезоны
-    const filteredMovies = freshMoviesRaw.filter(isAllowedWesternOrGlobal).map((m: any) => formatMedia(m, 'movie'));
-    const filteredSeries = freshSeriesRaw.filter(isAllowedWesternOrGlobal).map((t: any) => formatMedia(t, 'series'));
+    // Свежие премьеры и сезоны (строго 2025-2026 годы, без старья вроде 1999)
+    const isRecentYear = (item: any) => {
+      const dateStr = item.releaseDate || item.release_date || item.first_air_date || '';
+      return dateStr.startsWith('2025') || dateStr.startsWith('2026');
+    };
+
+    const filteredMovies = freshMoviesRaw
+      .filter((m: any) => isAllowedWesternOrGlobal(m) && isRecentYear(m))
+      .map((m: any) => formatMedia(m, 'movie'));
+
+    const filteredSeries = freshSeriesRaw
+      .filter((t: any) => isAllowedWesternOrGlobal(t) && isRecentYear(t))
+      .map((t: any) => formatMedia(t, 'series'));
 
     const recentOnline: any[] = [];
     const seenRecent = new Set<string>();
