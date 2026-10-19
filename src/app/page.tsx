@@ -1,264 +1,313 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-interface UserShowItem {
+interface Movie {
   id: number;
-  userShowId?: number;
-  showId: number;
   title: string;
-  name?: string;
-  originalTitle?: string;
+  originalTitle: string | null;
+  overview: string;
   posterUrl: string | null;
-  year?: string;
-  kind?: string;
-  status: string;
-  isFavorite?: boolean;
-  totalEpisodes?: number;
-  progress?: { episodeId: number; watched: boolean }[];
-  show?: {
-    episodes?: { id: number; season: number; episode: number }[];
+  backdropUrl: string | null;
+  year: string;
+  rating: number | null;
+  voteCount: number;
+  studio?: string | null;
+}
+
+interface HomeData {
+  heroMovie: Movie | null;
+  recentOnline: Movie[];
+  worldHits: Movie[];
+  studiosMovies: {
+    a24: Movie[];
+    wb: Movie[];
+    marvel: Movie[];
+    universal: Movie[];
   };
 }
 
-export default function HomePage() {
-  const [shows, setShows] = useState<UserShowItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+type StudioTab = 'a24' | 'wb' | 'marvel' | 'universal';
 
-  const fetchShows = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/user-shows?status=watching');
-      if (res.ok) {
-        const data = await res.json();
-        setShows(Array.isArray(data) ? data : []);
-      }
-    } catch (err) {
-      console.error('Ошибка загрузки библиотеки:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+export default function HomePage() {
+  const [data, setData] = useState<HomeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedStudio, setSelectedStudio] = useState<StudioTab>('a24');
 
   useEffect(() => {
-    fetchShows();
-  }, [fetchShows]);
-
-  // Переключение флага «Любимый сериал» прямо на карточке
-  const handleToggleFavorite = async (showId: number, currentFavorite: boolean) => {
-    const nextFavorite = !currentFavorite;
-
-    setShows((prev) =>
-      prev.map((s) => (s.showId === showId ? { ...s, isFavorite: nextFavorite } : s))
-    );
-
-    try {
-      await fetch('/api/user-shows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          showId,
-          isFavorite: nextFavorite,
-        }),
-      });
-    } catch (err) {
-      console.error('Ошибка переключения избранного:', err);
-    }
-  };
-
-  // Расчет прогресса просмотра
-  const getProgressStats = (item: UserShowItem) => {
-    const watchedCount = (item.progress || []).filter((p) => p.watched).length;
-
-    let totalEps =
-      (item.totalEpisodes && item.totalEpisodes > 0 ? item.totalEpisodes : 0) ||
-      (item.show?.episodes?.length && item.show.episodes.length > 0 ? item.show.episodes.length : 0) ||
-      (item.kind === 'movie' ? 1 : 0);
-
-    // Если просмотрено больше, чем было записано
-    if (watchedCount > totalEps && totalEps > 0) {
-      totalEps = watchedCount;
-    }
-
-    if (totalEps <= 0 && watchedCount > 0) {
-      totalEps = watchedCount;
-    }
-
-    const percent =
-      totalEps > 0
-        ? Math.min(100, Math.round((watchedCount / totalEps) * 100))
-        : watchedCount > 0
-        ? 100
-        : 0;
-
-    return {
-      totalEps: totalEps > 0 ? totalEps : 1,
-      watchedCount,
-      percent,
+    const fetchHome = async () => {
+      try {
+        const res = await fetch('/api/home');
+        if (res.ok) {
+          const json = await res.json();
+          setData(json);
+        }
+      } catch (err) {
+        console.error('Ошибка загрузки главной:', err);
+      } finally {
+        setLoading(false);
+      }
     };
-  };
+
+    fetchHome();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-10 animate-pulse pb-16">
+        <div className="w-full h-80 sm:h-96 bg-neutral-900/60 rounded-3xl border border-neutral-800" />
+        <div className="h-48 bg-neutral-900/40 rounded-3xl" />
+        <div className="h-48 bg-neutral-900/40 rounded-3xl" />
+      </div>
+    );
+  }
+
+  const hero = data?.heroMovie;
+  const recentOnline = data?.recentOnline || [];
+  const worldHits = data?.worldHits || [];
+  const currentStudioMovies = data?.studiosMovies?.[selectedStudio] || [];
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
-      <div className="border-b border-neutral-800 bg-neutral-900/40 backdrop-blur-md sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <span>👀 Сейчас смотрю</span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                {shows.length} активных
+    <div className="space-y-12 pb-16">
+      {/* ========================================================
+          1. ГЛАВНЫЙ HERO-БАННЕР
+         ======================================================== */}
+      {hero && (
+        <div className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-900 shadow-2xl min-h-[360px] sm:min-h-[420px] flex items-end">
+          {/* Фоновый кадр */}
+          <div className="absolute inset-0 pointer-events-none z-0">
+            {hero.backdropUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={hero.backdropUrl}
+                alt={hero.title}
+                className="w-full h-full object-cover object-top opacity-40 scale-105"
+              />
+            ) : hero.posterUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={hero.posterUrl}
+                alt={hero.title}
+                className="w-full h-full object-cover opacity-25 blur-sm"
+              />
+            ) : null}
+            <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/80 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/60 to-transparent" />
+          </div>
+
+          {/* Содержимое баннера */}
+          <div className="relative z-10 p-6 sm:p-10 max-w-2xl space-y-4">
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-md shadow-rose-600/30">
+                Новинка в онлайне
               </span>
+              {hero.rating && (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                  ★ {hero.rating}
+                </span>
+              )}
+              {hero.year && (
+                <span className="text-xs font-semibold text-neutral-400">
+                  {hero.year}
+                </span>
+              )}
+            </div>
+
+            <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight drop-shadow-md">
+              {hero.title}
             </h1>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Нажмите на карточку, чтобы открыть трекер серий и отметить просмотр
-            </p>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <Link
-              href="/wishlist"
-              className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 transition-colors flex items-center gap-1.5 border border-neutral-700/60"
-            >
-              <span>🔖</span>
-              <span>В планах</span>
-            </Link>
-            <Link
-              href="/random"
-              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-medium text-white transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-600/20"
-            >
-              <span>🎲</span>
-              <span>Что посмотреть</span>
-            </Link>
-          </div>
-        </div>
-      </div>
+            {hero.overview && (
+              <p className="text-xs sm:text-sm text-neutral-300 line-clamp-3 leading-relaxed drop-shadow-sm max-w-xl">
+                {hero.overview}
+              </p>
+            )}
 
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {loading && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
-            {Array.from({ length: 10 }).map((_, idx) => (
-              <div key={idx} className="bg-neutral-900 rounded-2xl h-80 border border-neutral-800" />
-            ))}
-          </div>
-        )}
-
-        {!loading && shows.length === 0 && (
-          <div className="max-w-md mx-auto text-center py-16 px-4 bg-neutral-900/40 border border-neutral-800 rounded-3xl">
-            <div className="text-4xl mb-3">🎬</div>
-            <h2 className="text-lg font-bold text-white mb-2">Сейчас ничего не отслеживается</h2>
-            <p className="text-xs text-neutral-400 mb-6">
-              Выберите фильм или сериал через поиск или рекомендации, переведите в статус «Смотрю», и он появится здесь вместе с трекером серий.
-            </p>
-            <div className="flex items-center justify-center gap-3">
+            <div className="pt-2 flex items-center gap-3">
               <Link
-                href="/random"
-                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-md shadow-blue-600/20"
+                href={`/show/${hero.id}`}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-600/30 flex items-center gap-2"
               >
-                🎲 Что посмотреть
+                <span>Подробнее</span>
+                <span>→</span>
               </Link>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {!loading && shows.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {shows.map((item) => {
-              const displayTitle = item.title || item.name || 'Без названия';
-              const targetShowId = item.showId;
-              const isSeries = item.kind === 'series';
-              const isFav = Boolean(item.isFavorite);
-              const { totalEps, watchedCount, percent } = getProgressStats(item);
+      {/* ========================================================
+          2. СЕКЦИЯ: НЕДАВНО ПОЯВИЛИСЬ В ОНЛАЙНЕ
+         ======================================================== */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
+              <span>⚡ Недавно появились в онлайне</span>
+            </h2>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Свежие цифровые релизы в отличном качестве
+            </p>
+          </div>
+        </div>
 
-              return (
-                <div
-                  key={`${item.id}-${item.showId}`}
-                  className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-md relative"
-                >
-                  {/* Кнопка «Любимый сериал» */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleToggleFavorite(item.showId, isFav);
-                    }}
-                    className={`absolute top-2 right-2 z-10 px-2 py-1 rounded-lg text-xs font-semibold backdrop-blur-md transition-all flex items-center gap-1 border shadow-md ${
-                      isFav
-                        ? 'bg-amber-400 text-black border-amber-300'
-                        : 'bg-black/75 text-neutral-300 border-neutral-700 hover:text-white hover:bg-black/90'
-                    }`}
-                    title={isFav ? 'Убрать из любимых в профиле' : 'Сделать любимым (добавить в профиль)'}
-                  >
-                    <span>{isFav ? '★' : '☆'}</span>
-                    <span className="text-[10px] hidden sm:inline">
-                      {isFav ? 'Любимый' : 'В любимые'}
-                    </span>
-                  </button>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {recentOnline.map((movie) => (
+            <MovieCard key={movie.id} movie={movie} badge="Новинка" badgeColor="blue" />
+          ))}
+        </div>
+      </section>
 
-                  {/* Клик по постеру открывает страницу трекера серий */}
-                  <Link
-                    href={`/library/${targetShowId}`}
-                    className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
-                  >
-                    {item.posterUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={item.posterUrl}
-                        alt={displayTitle}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center text-xs text-neutral-600">
-                        🎬 Нет постера
-                      </div>
-                    )}
+      {/* ========================================================
+          3. СЕКЦИЯ: МИРОВЫЕ ХИТЫ
+         ======================================================== */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
+              <span>🏆 Мировые хиты</span>
+            </h2>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Культовые картины с высочайшим признанием зрителей
+            </p>
+          </div>
+        </div>
 
-                    <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
-                      {isSeries ? 'Сериал' : 'Фильм'}
-                    </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {worldHits.map((movie) => (
+            <MovieCard key={movie.id} movie={movie} badge="Хит" badgeColor="amber" />
+          ))}
+        </div>
+      </section>
 
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-semibold text-xs gap-1.5">
-                      <span>📖 Трекер серий</span>
-                    </div>
-                  </Link>
+      {/* ========================================================
+          4. СЕКЦИЯ: ФИЛЬМЫ ОТ ТОПОВЫХ СТУДИЙ (С ТАБАМИ)
+         ======================================================== */}
+      <section className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
+              <span>🎬 Кино от культовых студий</span>
+            </h2>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Лучшие работы главных кинематографических домов
+            </p>
+          </div>
 
-                  <div className="p-3 flex-1 flex flex-col justify-between">
-                    <div>
-                      {item.year && (
-                        <div className="text-[11px] text-neutral-500 mb-1">{item.year}</div>
-                      )}
-                      <Link
-                        href={`/library/${targetShowId}`}
-                        className="font-semibold text-sm text-white line-clamp-1 group-hover:text-blue-400 transition-colors block"
-                        title={displayTitle}
-                      >
-                        {displayTitle}
-                      </Link>
-                    </div>
+          {/* Вкладки переключения студий */}
+          <div className="flex items-center gap-1.5 bg-neutral-900 p-1.5 rounded-2xl border border-neutral-800 self-start sm:self-auto overflow-x-auto no-scrollbar text-xs">
+            {[
+              { id: 'a24', label: 'A24' },
+              { id: 'wb', label: 'Warner Bros.' },
+              { id: 'marvel', label: 'Marvel' },
+              { id: 'universal', label: 'Universal' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setSelectedStudio(tab.id as StudioTab)}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  selectedStudio === tab.id
+                    ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-                    {/* Прогресс серий */}
-                    <div className="mt-3 pt-2.5 border-t border-neutral-800/80">
-                      <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1.5">
-                        <span>Прогресс:</span>
-                        <span className="text-blue-400 font-bold">
-                          {watchedCount}/{totalEps}
-                        </span>
-                      </div>
-                      <div className="w-full h-1.5 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800">
-                        <div
-                          className="h-full bg-blue-600 rounded-full transition-all"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          {currentStudioMovies.map((movie) => (
+            <MovieCard
+              key={movie.id}
+              movie={movie}
+              badge={movie.studio || undefined}
+              badgeColor="purple"
+            />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// Карточка фильма
+function MovieCard({
+  movie,
+  badge,
+  badgeColor = 'blue',
+}: {
+  movie: Movie;
+  badge?: string;
+  badgeColor?: 'blue' | 'amber' | 'purple';
+}) {
+  const getBadgeStyle = () => {
+    switch (badgeColor) {
+      case 'amber':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+      case 'purple':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+      case 'blue':
+      default:
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+    }
+  };
+
+  return (
+    <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-lg">
+      <Link
+        href={`/show/${movie.id}`}
+        className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
+      >
+        {movie.posterUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={movie.posterUrl}
+            alt={movie.title}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
+            🎬 Нет постера
           </div>
         )}
+
+        {/* Бейдж новинки / хита / студии */}
+        {badge && (
+          <div
+            className={`absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase backdrop-blur-md border ${getBadgeStyle()}`}
+          >
+            {badge}
+          </div>
+        )}
+
+        {/* Рейтинг */}
+        {movie.rating && movie.rating > 0 && (
+          <div className="absolute top-2 right-2 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5 border border-amber-500/20">
+            <span>★</span>
+            <span>{movie.rating}</span>
+          </div>
+        )}
+      </Link>
+
+      <div className="p-3 flex flex-col justify-between flex-1">
+        <div>
+          {movie.year && (
+            <div className="text-[10px] text-neutral-500 mb-0.5 font-medium">
+              {movie.year}
+            </div>
+          )}
+          <Link
+            href={`/show/${movie.id}`}
+            className="font-bold text-xs text-white line-clamp-1 group-hover:text-rose-400 transition-colors block"
+            title={movie.title}
+          >
+            {movie.title}
+          </Link>
+        </div>
       </div>
     </div>
   );
