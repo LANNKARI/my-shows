@@ -17,39 +17,31 @@ interface MediaItem {
   badge?: string;
 }
 
-interface UniverseMeta {
+interface UniverseBanner {
   id: string;
   name: string;
+  subtitle: string;
   icon: string;
+  accentColor: string;
 }
 
-interface DirectorMeta {
+interface DirectorBanner {
   id: string;
   name: string;
   tag: string;
+  bio: string;
 }
 
 interface HomeData {
   heroSlides: MediaItem[];
   recentOnline: MediaItem[];
-  worldHits: MediaItem[];
-  universesMeta: UniverseMeta[];
-  directorsMeta: DirectorMeta[];
-  initialUniverseItems: MediaItem[];
-  initialDirectorItems: MediaItem[];
+  universes: UniverseBanner[];
+  directors: DirectorBanner[];
 }
 
 export default function HomePage() {
   const [data, setData] = useState<HomeData>();
   const [loading, setLoading] = useState(true);
-
-  const [selectedUniverse, setSelectedUniverse] = useState<string>('marvel');
-  const [universeCache, setUniverseCache] = useState<Record<string, MediaItem[]>>({});
-  const [loadingUniverse, setLoadingUniverse] = useState<boolean>(false);
-
-  const [selectedDirector, setSelectedDirector] = useState<string>('nolan');
-  const [directorCache, setDirectorCache] = useState<Record<string, MediaItem[]>>({});
-  const [loadingDirector, setLoadingDirector] = useState<boolean>(false);
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -62,12 +54,6 @@ export default function HomePage() {
         if (res.ok) {
           const json: HomeData = await res.json();
           setData(json);
-          if (json.initialUniverseItems) {
-            setUniverseCache({ marvel: json.initialUniverseItems });
-          }
-          if (json.initialDirectorItems) {
-            setDirectorCache({ nolan: json.initialDirectorItems });
-          }
         }
       } catch (err) {
         console.error('Ошибка загрузки главной страницы:', err);
@@ -78,48 +64,6 @@ export default function HomePage() {
 
     fetchHome();
   }, []);
-
-  const handleSelectUniverse = async (universeId: string) => {
-    setSelectedUniverse(universeId);
-    if (universeCache[universeId]) return;
-
-    setLoadingUniverse(true);
-    try {
-      const res = await fetch(`/api/home?universe=${encodeURIComponent(universeId)}`);
-      if (res.ok) {
-        const json = await res.json();
-        setUniverseCache((prev) => ({
-          ...prev,
-          [universeId]: json.items || [],
-        }));
-      }
-    } catch (err) {
-      console.error('Ошибка загрузки киновселенной:', err);
-    } finally {
-      setLoadingUniverse(false);
-    }
-  };
-
-  const handleSelectDirector = async (directorId: string) => {
-    setSelectedDirector(directorId);
-    if (directorCache[directorId]) return;
-
-    setLoadingDirector(true);
-    try {
-      const res = await fetch(`/api/home?director=${encodeURIComponent(directorId)}`);
-      if (res.ok) {
-        const json = await res.json();
-        setDirectorCache((prev) => ({
-          ...prev,
-          [directorId]: json.items || [],
-        }));
-      }
-    } catch (err) {
-      console.error('Ошибка загрузки фильмов режиссёра:', err);
-    } finally {
-      setLoadingDirector(false);
-    }
-  };
 
   const slides = data?.heroSlides || [];
 
@@ -157,13 +101,8 @@ export default function HomePage() {
 
   const currentHero = slides[currentSlide] || null;
   const recentOnline = data?.recentOnline || [];
-  const worldHits = data?.worldHits || [];
-  const universesMeta = data?.universesMeta || [];
-  const directorsMeta = data?.directorsMeta || [];
-
-  const currentUniverseMovies = universeCache[selectedUniverse] || [];
-  const currentDirectorMovies = directorCache[selectedDirector] || [];
-  const activeDirectorObj = directorsMeta.find((d) => d.id === selectedDirector);
+  const universes = data?.universes || [];
+  const directors = data?.directors || [];
 
   return (
     <div className="space-y-14 pb-16">
@@ -315,139 +254,89 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 3. 15 КИНОВСЕЛЕННЫХ */}
+      {/* 3. БАННЕРЫ 15 КИНОВСЕЛЕННЫХ И ФРАНШИЗ */}
       <section className="space-y-5">
         <div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
             <span>🌌 Киновселенные и франшизы</span>
             <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              15 вселенных
+              {universes.length} коллекций
             </span>
           </h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Выберите киновселенную, чтобы увидеть все связанные между собой картины
+            Нажмите на баннер вселенной, чтобы открыть все её фильмы и сериалы в хронологическом порядке
           </p>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-          {universesMeta.map((uni) => {
-            const isSelected = selectedUniverse === uni.id;
-            return (
-              <button
-                key={uni.id}
-                type="button"
-                onClick={() => handleSelectUniverse(uni.id)}
-                className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 border ${
-                  isSelected
-                    ? 'bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-600/25 scale-[1.02]'
-                    : 'bg-neutral-900/90 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
-                }`}
-              >
-                <span>{uni.icon}</span>
-                <span>{uni.name}</span>
-              </button>
-            );
-          })}
-        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {universes.map((uni) => (
+            <Link
+              key={uni.id}
+              href={`/universes/${uni.id}`}
+              className={`group relative overflow-hidden rounded-2xl border border-neutral-800 hover:border-neutral-600 bg-gradient-to-br ${uni.accentColor} p-5 transition-all duration-300 hover:-translate-y-0.5 shadow-lg flex items-center justify-between gap-4`}
+            >
+              <div className="flex items-start gap-3.5 min-w-0">
+                <div className="w-12 h-12 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center text-2xl flex-shrink-0 shadow-inner group-hover:scale-110 transition-transform">
+                  {uni.icon}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-sm text-white group-hover:text-rose-400 transition-colors truncate">
+                    {uni.name}
+                  </h3>
+                  <p className="text-[11px] text-neutral-300/80 line-clamp-2 mt-0.5 leading-snug">
+                    {uni.subtitle}
+                  </p>
+                </div>
+              </div>
 
-        {loadingUniverse ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="aspect-[2/3] bg-neutral-900 rounded-2xl border border-neutral-800"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {currentUniverseMovies.map((item) => (
-              <MediaCard
-                key={`uni-${selectedUniverse}-${item.id}`}
-                item={item}
-                badge={item.badge || undefined}
-                badgeColor="purple"
-              />
-            ))}
-          </div>
-        )}
+              <span className="w-8 h-8 rounded-xl bg-white/5 group-hover:bg-rose-600 text-neutral-400 group-hover:text-white flex items-center justify-center text-sm transition-all flex-shrink-0">
+                →
+              </span>
+            </Link>
+          ))}
+        </div>
       </section>
 
-      {/* 4. КОЛЛЕКЦИИ КУЛЬТОВЫХ РЕЖИССЁРОВ */}
+      {/* 4. БАННЕРЫ КОЛЛЕКЦИЙ ВЕЛИКИХ РЕЖИССЁРОВ */}
       <section className="space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
-              <span>🎬 Коллекции великих режиссёров</span>
-            </h2>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Авторский почерк: лучшие фильмы главных мастеров мирового кинематографа
-            </p>
-          </div>
-          {activeDirectorObj && (
-            <span className="text-xs text-amber-400 font-semibold bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-xl self-start sm:self-auto">
-              ✦ {activeDirectorObj.tag}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-          {directorsMeta.map((dir) => {
-            const isSelected = selectedDirector === dir.id;
-            return (
-              <button
-                key={dir.id}
-                type="button"
-                onClick={() => handleSelectDirector(dir.id)}
-                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${
-                  isSelected
-                    ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/20'
-                    : 'bg-neutral-900/90 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
-                }`}
-              >
-                {dir.name}
-              </button>
-            );
-          })}
-        </div>
-
-        {loadingDirector ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="aspect-[2/3] bg-neutral-900 rounded-2xl border border-neutral-800"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {currentDirectorMovies.map((item) => (
-              <MediaCard
-                key={`dir-${selectedDirector}-${item.id}`}
-                item={item}
-                badge={item.badge || undefined}
-                badgeColor="amber"
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* 5. МИРОВЫЕ ХИТЫ */}
-      <section className="space-y-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
-            <span>🏆 Мировые хиты</span>
+            <span>🎬 Коллекции великих режиссёров</span>
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              {directors.length} мастеров
+            </span>
           </h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Золотой фонд кино с самыми высокими зрительскими оценками
+            Выберите режиссёра, чтобы открыть полную хронологию его фильмов и сериалов от новых к старым
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {worldHits.map((item) => (
-            <MediaCard key={`hit-${item.id}`} item={item} badge="Хит" badgeColor="amber" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {directors.map((dir) => (
+            <Link
+              key={dir.id}
+              href={`/directors/${dir.id}`}
+              className="group relative overflow-hidden rounded-2xl border border-neutral-800 hover:border-amber-500/50 bg-gradient-to-br from-amber-500/10 via-neutral-900 to-neutral-950 p-5 transition-all duration-300 hover:-translate-y-0.5 shadow-lg flex flex-col justify-between gap-4"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                    Режиссёр
+                  </span>
+                  <span className="text-xs text-neutral-500 group-hover:text-amber-400 transition-colors">
+                    Все работы →
+                  </span>
+                </div>
+
+                <h3 className="font-extrabold text-base text-white group-hover:text-amber-400 transition-colors">
+                  {dir.name}
+                </h3>
+
+                <p className="text-[11px] text-neutral-400 line-clamp-2 leading-relaxed">
+                  {dir.tag}
+                </p>
+              </div>
+            </Link>
           ))}
         </div>
       </section>

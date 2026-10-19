@@ -1,40 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { formatPosterUrl, safeJson } from '@/lib/current-user';
+import { UNIVERSES_CONFIG, DIRECTORS_CONFIG } from '@/lib/collections-config';
 
 export const dynamic = 'force-dynamic';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
-
-// 15 связанных киновселенных
-const UNIVERSES_CONFIG = [
-  { id: 'marvel', name: 'Marvel (MCU)', icon: '🛡️', collections: [] as number[], companyId: '420' },
-  { id: 'dc', name: 'Вселенная DC', icon: '⚡', collections: [209112, 468552, 531242], companyId: '9993' },
-  { id: 'harry_potter', name: 'Гарри Поттер', icon: '🪄', collections: [1241, 435259], companyId: '' },
-  { id: 'middle_earth', name: 'Средиземье', icon: '💍', collections: [119, 121938], companyId: '' },
-  { id: 'star_wars', name: 'Звёздные войны', icon: '⚔️', collections: [10], companyId: '1' },
-  { id: 'spider_man', name: 'Человек-паук', icon: '🕷️', collections: [531241, 556, 125574, 573436], companyId: '' },
-  { id: 'dark_knight', name: 'Бэтмен / Готэм', icon: '🦇', collections: [263, 948485, 648190, 120794], companyId: '' },
-  { id: 'dune', name: 'Вселенная Дюны', icon: '🏜️', collections: [726871], companyId: '' },
-  { id: 'john_wick', name: 'Джон Уик', icon: '🔫', collections: [404609], companyId: '' },
-  { id: 'x_men', name: 'Люди Икс и Дэдпул', icon: '🧬', collections: [748, 448150, 453993], companyId: '' },
-  { id: 'fast_furious', name: 'Форсаж', icon: '🏎️', collections: [9485, 688042], companyId: '' },
-  { id: 'pirates', name: 'Пираты Карибского моря', icon: '🏴‍☠️', collections: [295], companyId: '' },
-  { id: 'mission_impossible', name: 'Миссия невыполнима', icon: '🕶️', collections: [87359], companyId: '' },
-  { id: 'conjuring', name: 'Вселенная Заклятия', icon: '🕯️', collections: [313086, 402074, 968086], companyId: '' },
-  { id: 'james_bond', name: 'Агент 007', icon: '🍸', collections: [645], companyId: '' },
-];
-
-// 8 культовых режиссёров
-const DIRECTORS_CONFIG = [
-  { id: 'nolan', name: 'Кристофер Нолан', personId: 525, tag: 'Интеллектуальные блокбастеры' },
-  { id: 'ritchie', name: 'Гай Ричи', personId: 956, tag: 'Криминальный драйв и стиль' },
-  { id: 'tarantino', name: 'Квентин Тарантино', personId: 138, tag: 'Острые диалоги и культовое кино' },
-  { id: 'scorsese', name: 'Мартин Скорсезе', personId: 1032, tag: 'Шедевры драмы и гангстерского кино' },
-  { id: 'villeneuve', name: 'Дени Вильнёв', personId: 137427, tag: 'Масштабная научная фантастика' },
-  { id: 'fincher', name: 'Дэвид Финчер', personId: 7467, tag: 'Мрачные психологические триллеры' },
-  { id: 'spielberg', name: 'Стивен Спилберг', personId: 488, tag: 'Легендарная приключенческая классика' },
-  { id: 'cameron', name: 'Джеймс Кэмерон', personId: 2710, tag: 'Эпический размах и технологии' },
-];
 
 export async function GET(request: NextRequest) {
   try {
@@ -85,7 +55,6 @@ export async function GET(request: NextRequest) {
       return json?.results || [];
     };
 
-    // Исключаем аниме (жанр 16), а также корейские ('ko') и японские ('ja') релизы
     const isAllowedWesternOrGlobal = (item: any) => {
       const lang = item.original_language || '';
       if (lang === 'ko' || lang === 'ja') return false;
@@ -105,82 +74,172 @@ export async function GET(request: NextRequest) {
         posterUrl: formatPosterUrl(m.poster_path),
         backdropUrl: m.backdrop_path ? `${TMDB_IMAGE_BASE}${m.backdrop_path}` : null,
         year: date ? date.split('-')[0] : '',
-        releaseDate: date,
+        releaseDate: date || '1900-01-01',
         kind: isTv ? 'series' : 'movie',
         rating: m.vote_average ? Number(m.vote_average.toFixed(1)) : null,
         voteCount: m.vote_count || 0,
-        badge: badgeText || null,
+        badge: badgeText || (isTv ? 'Сериал' : 'Фильм'),
       };
     };
 
-    const loadUniverseMovies = async (universeId: string) => {
-      const uni = UNIVERSES_CONFIG.find((u) => u.id === universeId) || UNIVERSES_CONFIG[0];
-      const map = new Map<number, any>();
+    // Сортировка от самых новых к самым старым
+    const sortNewestFirst = (items: any[]) => {
+      return items.sort((a, b) => {
+        const dateA = a.releaseDate || '0000-00-00';
+        const dateB = b.releaseDate || '0000-00-00';
+        return dateB.localeCompare(dateA);
+      });
+    };
 
-      if (uni.collections && uni.collections.length > 0) {
+    // 1. Загрузка полной киновселенной (все фильмы + сериалы)
+    if (requestedUniverse) {
+      const uni = UNIVERSES_CONFIG.find((u) => u.id === requestedUniverse);
+      if (!uni) {
+        return NextResponse.json({ error: 'Вселенная не найдена' }, { status: 404 });
+      }
+
+      const map = new Map<string, any>();
+
+      // А) Загружаем все кино-коллекции
+      if (uni.collections.length > 0) {
         const colResponses = await Promise.all(
           uni.collections.map((colId) => fetchTmdbJson(`collection/${colId}`))
         );
         for (const col of colResponses) {
           if (col?.parts && Array.isArray(col.parts)) {
             for (const part of col.parts) {
-              if (part.poster_path && (part.vote_count > 10 || part.release_date)) {
-                map.set(part.id, formatMedia(part, 'movie', uni.name));
+              if (part.poster_path) {
+                map.set(`movie-${part.id}`, formatMedia(part, 'movie', 'Фильм'));
               }
             }
           }
         }
       }
 
+      // Б) Если есть студия (Marvel, DC, Lucasfilm) — подгружаем страницы фильмов студии
       if (uni.companyId) {
-        const companyMovies = await fetchTmdbList('discover/movie', {
-          with_companies: uni.companyId,
-          sort_by: 'popularity.desc',
-          'vote_count.gte': 250,
-        });
-        for (const m of companyMovies) {
-          if (m.poster_path && !map.has(m.id)) {
-            map.set(m.id, formatMedia(m, 'movie', uni.name));
+        const [page1, page2] = await Promise.all([
+          fetchTmdbList('discover/movie', {
+            with_companies: uni.companyId,
+            sort_by: 'primary_release_date.desc',
+            'vote_count.gte': 50,
+            page: 1,
+          }),
+          fetchTmdbList('discover/movie', {
+            with_companies: uni.companyId,
+            sort_by: 'primary_release_date.desc',
+            'vote_count.gte': 50,
+            page: 2,
+          }),
+        ]);
+        for (const m of [...page1, ...page2]) {
+          if (m.poster_path && !map.has(`movie-${m.id}`)) {
+            map.set(`movie-${m.id}`, formatMedia(m, 'movie', 'Фильм'));
           }
         }
       }
 
-      const list = Array.from(map.values());
-      return list
-        .sort((a, b) => (b.voteCount || 0) - (a.voteCount || 0))
-        .slice(0, 10);
-    };
-
-    const loadDirectorMovies = async (directorId: string) => {
-      const dir = DIRECTORS_CONFIG.find((d) => d.id === directorId) || DIRECTORS_CONFIG[0];
-      const credits = await fetchTmdbJson(`person/${dir.personId}/movie_credits`);
-      const crew: any[] = credits?.crew || [];
-
-      const directedMap = new Map<number, any>();
-      for (const item of crew) {
-        if (item.job === 'Director' && item.poster_path && (item.vote_count || 0) >= 100) {
-          if (!directedMap.has(item.id)) {
-            directedMap.set(item.id, item);
+      // В) Загружаем отдельные связанные фильмы
+      if (uni.movieIds.length > 0) {
+        const movieDetails = await Promise.all(
+          uni.movieIds.map((mId) => fetchTmdbJson(`movie/${mId}`))
+        );
+        for (const m of movieDetails) {
+          if (m && m.id && m.poster_path && !map.has(`movie-${m.id}`)) {
+            map.set(`movie-${m.id}`, formatMedia(m, 'movie', 'Фильм'));
           }
         }
       }
 
-      return Array.from(directedMap.values())
-        .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0))
-        .slice(0, 10)
-        .map((m) => formatMedia(m, 'movie', dir.name));
-    };
+      // Г) Загружаем все связанные сериалы вселенной
+      if (uni.tvIds.length > 0) {
+        const tvDetails = await Promise.all(
+          uni.tvIds.map((tvId) => fetchTmdbJson(`tv/${tvId}`))
+        );
+        for (const tv of tvDetails) {
+          if (tv && tv.id && tv.poster_path) {
+            map.set(`series-${tv.id}`, formatMedia(tv, 'series', 'Сериал'));
+          }
+        }
+      }
 
-    if (requestedUniverse) {
-      const items = await loadUniverseMovies(requestedUniverse);
-      return NextResponse.json(safeJson({ items }));
+      const items = sortNewestFirst(Array.from(map.values()));
+      return NextResponse.json(
+        safeJson({
+          universe: uni,
+          items,
+        })
+      );
     }
 
+    // 2. Загрузка полной фильмографии и сериалов режиссёра
     if (requestedDirector) {
-      const items = await loadDirectorMovies(requestedDirector);
-      return NextResponse.json(safeJson({ items }));
+      const dir = DIRECTORS_CONFIG.find((d) => d.id === requestedDirector);
+      if (!dir) {
+        return NextResponse.json({ error: 'Режиссёр не найден' }, { status: 404 });
+      }
+
+      const [movieCredits, tvCredits, personInfo] = await Promise.all([
+        fetchTmdbJson(`person/${dir.personId}/movie_credits`),
+        fetchTmdbJson(`person/${dir.personId}/tv_credits`),
+        fetchTmdbJson(`person/${dir.personId}`),
+      ]);
+
+      const map = new Map<string, any>();
+
+      // Фильмы, где персона выступает режиссёром
+      const movieCrew: any[] = movieCredits?.crew || [];
+      for (const item of movieCrew) {
+        if (item.job === 'Director' && item.poster_path && (item.vote_count || 0) >= 20) {
+          const key = `movie-${item.id}`;
+          if (!map.has(key)) {
+            map.set(key, formatMedia(item, 'movie', 'Фильм'));
+          }
+        }
+      }
+
+      // Сериалы из tv_credits
+      const tvCrew: any[] = tvCredits?.crew || [];
+      for (const item of tvCrew) {
+        if (
+          (item.job === 'Director' || item.job === 'Creator' || item.job === 'Executive Producer') &&
+          item.poster_path &&
+          (item.vote_count || 0) >= 30
+        ) {
+          const key = `series-${item.id}`;
+          if (!map.has(key)) {
+            map.set(key, formatMedia(item, 'series', 'Сериал'));
+          }
+        }
+      }
+
+      // Знаковые авторские сериалы режиссёра по ID
+      if (dir.tvIds.length > 0) {
+        const tvDetails = await Promise.all(
+          dir.tvIds.map((tvId) => fetchTmdbJson(`tv/${tvId}`))
+        );
+        for (const tv of tvDetails) {
+          if (tv && tv.id && tv.poster_path) {
+            map.set(`series-${tv.id}`, formatMedia(tv, 'series', 'Сериал'));
+          }
+        }
+      }
+
+      const items = sortNewestFirst(Array.from(map.values()));
+      return NextResponse.json(
+        safeJson({
+          director: {
+            ...dir,
+            profileUrl: personInfo?.profile_path
+              ? `${TMDB_IMAGE_BASE}${personInfo.profile_path}`
+              : null,
+          },
+          items,
+        })
+      );
     }
 
+    // 3. Данные для главной страницы
     const now = new Date();
     const today = now.toISOString().split('T')[0];
     const fourMonthsAgo = new Date(new Date().setMonth(now.getMonth() - 4)).toISOString().split('T')[0];
@@ -192,9 +251,6 @@ export async function GET(request: NextRequest) {
       topRecentMoviesRaw,
       freshMoviesRaw,
       freshSeriesRaw,
-      worldHitsRaw,
-      initialUniverseItems,
-      initialDirectorItems,
     ] = await Promise.all([
       fetchTmdbList('trending/all/week'),
       fetchTmdbList('discover/tv', {
@@ -227,16 +283,9 @@ export async function GET(request: NextRequest) {
         without_genres: '16',
         without_original_language: 'ko,ja',
       }),
-      fetchTmdbList('discover/movie', {
-        sort_by: 'vote_average.desc',
-        'vote_count.gte': 8000,
-        without_genres: '16',
-        without_original_language: 'ko,ja',
-      }),
-      loadUniverseMovies(UNIVERSES_CONFIG[0].id),
-      loadDirectorMovies(DIRECTORS_CONFIG[0].id),
     ]);
 
+    // Слайдер Hero-баннера (строго 8.0+, без Кореи и без аниме)
     const bannerCandidates = [
       ...trendingWeekRaw,
       ...topActiveTvRaw.map((t: any) => ({ ...t, media_type: 'tv' })),
@@ -259,6 +308,7 @@ export async function GET(request: NextRequest) {
     }
     const heroSlides = Array.from(bannerMap.values());
 
+    // Свежие премьеры и сезоны
     const filteredMovies = freshMoviesRaw.filter(isAllowedWesternOrGlobal).map((m: any) => formatMedia(m, 'movie'));
     const filteredSeries = freshSeriesRaw.filter(isAllowedWesternOrGlobal).map((t: any) => formatMedia(t, 'series'));
 
@@ -284,20 +334,12 @@ export async function GET(request: NextRequest) {
       if (recentOnline.length >= 10) break;
     }
 
-    const worldHits = worldHitsRaw
-      .filter((m: any) => m.poster_path && isAllowedWesternOrGlobal(m))
-      .slice(0, 10)
-      .map((m: any) => formatMedia(m, 'movie'));
-
     return NextResponse.json(
       safeJson({
         heroSlides,
         recentOnline,
-        worldHits,
-        universesMeta: UNIVERSES_CONFIG.map(({ id, name, icon }) => ({ id, name, icon })),
-        directorsMeta: DIRECTORS_CONFIG.map(({ id, name, tag }) => ({ id, name, tag })),
-        initialUniverseItems,
-        initialDirectorItems,
+        universes: UNIVERSES_CONFIG,
+        directors: DIRECTORS_CONFIG,
       })
     );
   } catch (error: unknown) {
