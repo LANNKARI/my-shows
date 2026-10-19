@@ -5,6 +5,7 @@ export interface UniverseConfig {
   icon: string;
   accentColor: string;
   collections: number[];
+  companyId?: string;
   movieIds: number[];
   tvIds: number[];
 }
