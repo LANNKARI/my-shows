@@ -107,6 +107,15 @@ export default function UserMenu() {
             <span>Топ</span>
           </Link>
 
+          <Link
+            href="/settings"
+            onClick={() => setIsOpen(false)}
+            className="flex items-center gap-2.5 px-3 py-2 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+          >
+            <span>⚙️</span>
+            <span>Настройки</span>
+          </Link>
+
           <div className="my-1 border-t border-neutral-800/80" />
 
           <button
