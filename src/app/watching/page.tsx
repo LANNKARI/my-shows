@@ -10,18 +10,28 @@ interface EpisodeProgress {
 
 interface ShowItem {
   id: number;
-  tmdbId: number;
-  title: string;
+  tmdbId?: number;
+  title?: string;
+  name?: string;
   posterUrl: string | null;
   year: string | null;
-  kind: string;
-  tmdbRating: number | null;
+  kind?: string;
+  tmdbRating?: number | null;
+  episodes?: any[];
 }
 
 interface WatchingItem {
   id: number;
   showId: number;
-  status: string;
+  userShowId?: number;
+  title: string;
+  posterUrl: string | null;
+  year: string | null;
+  kind: string;
+  totalEpisodes: number; // 🔥 Правильное поле с общим числом серий из API
+  totalSeasons?: number;
+  rating?: number | null;
+  tmdbRating?: number | null;
   show: ShowItem;
   progress?: EpisodeProgress[];
   ratings?: { score: number }[];
@@ -37,7 +47,6 @@ export default function WatchingPage() {
       const res = await fetch('/api/user-shows?status=watching');
       if (res.ok) {
         const data = await res.json();
-        // 🔥 ИСПРАВЛЕНИЕ: Учитываем оба варианта ответа от вашего API (массив напрямую или объект с items)
         const fetchedItems = Array.isArray(data) ? data : (data.items || data.data || []);
         setItems(fetchedItems);
       }
@@ -87,56 +96,93 @@ export default function WatchingPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {items.map((item) => {
-            const show = item.show;
-            if (!show) return null;
-            const targetId = show.tmdbId || show.id;
-            const linkHref = `/show/${targetId}?type=${show.kind === 'series' ? 'tv' : 'movie'}`;
+            const isSeries = item.kind === 'series' || item.show?.kind === 'series';
+            const targetId = item.show?.tmdbId || item.show?.id || item.showId;
+            const linkHref = `/show/${targetId}?type=${isSeries ? 'tv' : 'movie'}`;
+            const title = item.title || item.show?.title || item.show?.name || 'Без названия';
+            const poster = item.posterUrl || item.show?.posterUrl;
+
+            // 🔥 Считаем просмотренные серии
             const watchedCount = (item.progress || []).filter((p) => p.watched).length;
-            const totalCount = item.progress?.length || 0;
+
+            // 🔥 Берём реальное общее количество серий из API
+            const totalCount = item.totalEpisodes > 0 
+              ? item.totalEpisodes 
+              : (item.show?.episodes?.length || 0);
+
             const progressPercent = totalCount > 0 ? (watchedCount / totalCount) * 100 : 0;
-            const userRating = item.ratings?.[0]?.score;
+            const userRating = item.ratings?.[0]?.score || item.rating;
 
             return (
-              <div key={item.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-lg">
+              <div
+                key={item.userShowId || item.id}
+                className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-lg"
+              >
                 <Link href={linkHref} className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block">
-                  {show.posterUrl ? (
-                    <img src={show.posterUrl} alt={show.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+                  {poster ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={poster}
+                      alt={title}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                    />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">Нет постера</div>
+                    <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
+                      Нет постера
+                    </div>
                   )}
 
                   <div className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase backdrop-blur-md border bg-indigo-500/25 text-indigo-200 border-indigo-500/40">
-                    {show.kind === 'series' ? 'Сериал' : 'Фильм'}
+                    {isSeries ? 'Сериал' : 'Фильм'}
                   </div>
 
                   {userRating ? (
                     <div className="absolute top-2 right-2 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5 border border-amber-500/20">
-                      <span>★</span><span>{userRating}</span>
+                      <span>★</span>
+                      <span>{userRating}</span>
                     </div>
-                  ) : show.tmdbRating && show.tmdbRating > 0 ? (
+                  ) : item.tmdbRating && item.tmdbRating > 0 ? (
                     <div className="absolute top-2 right-2 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5 border border-amber-500/20">
-                      <span>★</span><span>{show.tmdbRating.toFixed(1)}</span>
+                      <span>★</span>
+                      <span>{item.tmdbRating.toFixed(1)}</span>
                     </div>
                   ) : null}
 
-                  {show.kind === 'series' && totalCount > 0 && (
+                  {/* Полоска прогресса для сериалов */}
+                  {isSeries && totalCount > 0 && (
                     <div className="absolute bottom-0 left-0 right-0 h-1 bg-neutral-800">
-                      <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+                      <div
+                        className="h-full bg-blue-500 transition-all duration-300"
+                        style={{ width: `${progressPercent}%` }}
+                      />
                     </div>
                   )}
                 </Link>
 
                 <div className="p-3 flex flex-col justify-between flex-1 space-y-2">
                   <div>
-                    {show.year && <div className="text-[10px] text-neutral-500 mb-0.5 font-medium">{show.year}</div>}
-                    <Link href={linkHref} className="font-bold text-xs text-white line-clamp-1 group-hover:text-blue-400 transition-colors block" title={show.title}>
-                      {show.title}
+                    {item.year && (
+                      <div className="text-[10px] text-neutral-500 mb-0.5 font-medium">
+                        {item.year}
+                      </div>
+                    )}
+                    <Link
+                      href={linkHref}
+                      className="font-bold text-xs text-white line-clamp-1 group-hover:text-blue-400 transition-colors block"
+                      title={title}
+                    >
+                      {title}
                     </Link>
                   </div>
-                  {show.kind === 'series' && totalCount > 0 && (
+
+                  {/* Отображение счетчика серий (всегда выводится для сериалов) */}
+                  {isSeries && (
                     <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[11px] text-neutral-400">
                       <span>Прогресс:</span>
-                      <span className="font-semibold text-white">{watchedCount} / {totalCount}</span>
+                      <span className="font-semibold text-white">
+                        {watchedCount} / {totalCount}
+                      </span>
                     </div>
                   )}
                 </div>
