@@ -16,7 +16,12 @@ const STREAK_REWARDS: Record<number, number> = {
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
-// Хелпер для запросов к TMDB
+// Функция проверки: есть ли в названии кириллица
+function hasCyrillic(str: string): boolean {
+  return /[а-яА-ЯёЁ]/.test(str);
+}
+
+// Запросы к TMDB
 async function fetchTmdb(endpoint: string, params: Record<string, any> = {}) {
   const apiKey =
     process.env.TMDB_API_KEY ||
@@ -69,7 +74,6 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
 
-    // Проверяем возможность забрать ежедневный бонус
     let canClaimDaily = true;
     let nextStreak = (user.dailyStreak || 0) + 1;
     if (nextStreak > 7) nextStreak = 1;
@@ -82,7 +86,6 @@ export async function GET(request: NextRequest) {
       } else {
         const diffDays = Math.floor((now.getTime() - new Date(user.lastDailyClaim).getTime()) / (1000 * 3600 * 24));
         if (diffDays > 1) {
-          // Пропустил день - сброс серии
           nextStreak = 1;
         }
       }
@@ -90,16 +93,15 @@ export async function GET(request: NextRequest) {
       nextStreak = 1;
     }
 
-    // Проверяем попытки в викторине
     let quizAttempts = user.quizAttemptsToday || 0;
     if (user.lastQuizDate) {
       const lastQuizStr = new Date(user.lastQuizDate).toISOString().split('T')[0];
       if (lastQuizStr !== todayStr) {
-        quizAttempts = 0; // Новый день — сброс попыток
+        quizAttempts = 0;
       }
     }
 
-    // Запрос вопроса для квиза
+    // --- ЛОГИКА ВИКТОРИНЫ ---
     if (action === 'get-quiz') {
       if (quizAttempts >= 10) {
         return NextResponse.json({
@@ -109,24 +111,106 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // Берём случайную страницу популярных фильмов
-      const randomPage = Math.floor(Math.random() * 8) + 1;
-      const data = await fetchTmdb('movie/popular', { page: randomPage });
-      const movies = (data?.results || []).filter((m: any) => m.backdrop_path && m.title);
+      // Парсим список ID, которые уже показывались в этой сессии
+      const excludeParam = searchParams.get('exclude') || '';
+      const excludedIds = new Set<number>(
+        excludeParam
+          .split(',')
+          .map((id) => Number(id.trim()))
+          .filter((id) => !isNaN(id) && id > 0)
+      );
 
-      if (movies.length < 4) {
-        return NextResponse.json({ error: 'Ошибка подбора фильмов' }, { status: 500 });
+      // Ищем уникальный фильм (пробуем до 5 случайных страниц популярных фильмов)
+      let targetMovie: any = null;
+      let poolOfCandidates: any[] = [];
+
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const randomPage = Math.floor(Math.random() * 8) + 1;
+        const data = await fetchTmdb('movie/popular', { page: randomPage });
+
+        const validMovies = (data?.results || []).filter(
+          (m: any) =>
+            m.backdrop_path &&
+            m.title &&
+            hasCyrillic(m.title) &&
+            !excludedIds.has(m.id)
+        );
+
+        if (validMovies.length > 0) {
+          poolOfCandidates = validMovies;
+          targetMovie = validMovies[Math.floor(Math.random() * validMovies.length)];
+          break;
+        }
       }
 
-      // Перемешиваем
-      const shuffled = movies.sort(() => 0.5 - Math.random());
-      const targetMovie = shuffled[0];
-      const distractors = shuffled.slice(1, 4);
+      // Фолбэк: если всё исключено, берем страницу с топ-рейтингом
+      if (!targetMovie) {
+        const topRated = await fetchTmdb('movie/top_rated', { page: 1 });
+        const validFallback = (topRated?.results || []).filter(
+          (m: any) => m.backdrop_path && m.title && hasCyrillic(m.title) && !excludedIds.has(m.id)
+        );
+        targetMovie = validFallback[0] || (topRated?.results || [])[0];
+      }
 
-      // 4 варианта ответа
-      const options = [targetMovie.title, ...distractors.map((d: any) => d.title)].sort(
-        () => 0.5 - Math.random()
-      );
+      if (!targetMovie) {
+        return NextResponse.json({ error: 'Ошибка подбора фильма' }, { status: 500 });
+      }
+
+      // Подбираем похожие варианты ответов
+      const [recsData, similarData] = await Promise.all([
+        fetchTmdb(`movie/${targetMovie.id}/recommendations`),
+        fetchTmdb(`movie/${targetMovie.id}/similar`),
+      ]);
+
+      const candidates: any[] = [
+        ...(recsData?.results || []),
+        ...(similarData?.results || []),
+      ];
+
+      const uniqueDistractorsMap = new Map<string, any>();
+      for (const item of candidates) {
+        if (
+          item.id !== targetMovie.id &&
+          item.title &&
+          hasCyrillic(item.title) &&
+          item.title.toLowerCase().trim() !== targetMovie.title.toLowerCase().trim()
+        ) {
+          if (!uniqueDistractorsMap.has(item.title)) {
+            uniqueDistractorsMap.set(item.title, item);
+          }
+        }
+      }
+
+      let distractors = Array.from(uniqueDistractorsMap.values());
+
+      // Добор по жанрам, если похожих нашлось мало
+      if (distractors.length < 3 && targetMovie.genre_ids?.length > 0) {
+        const genreId = targetMovie.genre_ids[0];
+        const genreMoviesData = await fetchTmdb('discover/movie', {
+          with_genres: genreId,
+          sort_by: 'popularity.desc',
+          'vote_count.gte': 100,
+        });
+
+        for (const item of genreMoviesData?.results || []) {
+          if (
+            item.id !== targetMovie.id &&
+            item.title &&
+            hasCyrillic(item.title) &&
+            !uniqueDistractorsMap.has(item.title)
+          ) {
+            uniqueDistractorsMap.set(item.title, item);
+          }
+        }
+        distractors = Array.from(uniqueDistractorsMap.values());
+      }
+
+      distractors = distractors.sort(() => 0.5 - Math.random()).slice(0, 3);
+
+      const options = [
+        targetMovie.title,
+        ...distractors.map((d: any) => d.title),
+      ].sort(() => 0.5 - Math.random());
 
       return NextResponse.json(
         safeJson({
@@ -140,7 +224,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Общая информация о балансе и наградах
     return NextResponse.json(
       safeJson({
         popcorn: user.popcorn || 0,
@@ -174,7 +257,6 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
 
-    // 1. Получение ежедневного бонуса
     if (action === 'claim-daily') {
       if (user.lastDailyClaim) {
         const lastStr = new Date(user.lastDailyClaim).toISOString().split('T')[0];
@@ -186,9 +268,7 @@ export async function POST(request: NextRequest) {
       let streak = (user.dailyStreak || 0) + 1;
       if (user.lastDailyClaim) {
         const diffDays = Math.floor((now.getTime() - new Date(user.lastDailyClaim).getTime()) / (1000 * 3600 * 24));
-        if (diffDays > 1) {
-          streak = 1;
-        }
+        if (diffDays > 1) streak = 1;
       }
       if (streak > 7) streak = 1;
 
@@ -213,7 +293,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Проверка ответа викторины
     if (action === 'submit-quiz') {
       const { targetId, selectedTitle } = body;
 
@@ -232,7 +311,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Проверяем фильм по API TMDB
       const targetMovie = await fetchTmdb(`movie/${targetId}`);
       if (!targetMovie) {
         return NextResponse.json({ error: 'Фильм не найден' }, { status: 404 });

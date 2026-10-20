@@ -194,7 +194,7 @@ export default function RewardsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Игра: Угадай фильм по кадру */}
+          {/* Игра 1: Угадай по кадру */}
           <div className="p-6 rounded-3xl bg-neutral-900/70 border border-neutral-800 flex flex-col justify-between hover:border-neutral-700 transition-all shadow-lg group">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -210,7 +210,7 @@ export default function RewardsPage() {
                 Угадай по кадру
               </h3>
               <p className="text-xs text-neutral-400 leading-relaxed">
-                Смотрите случайный кадр из популярного фильма или сериала и выберите верное название из 4 вариантов.
+                Смотрите случайный кадр из популярного фильма или сериала и выберите верное название из 4 похожих вариантов.
               </p>
 
               <div className="text-[11px] text-neutral-500 font-medium">
@@ -225,6 +225,41 @@ export default function RewardsPage() {
                 className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all shadow-md shadow-rose-600/20 cursor-pointer"
               >
                 <span>Играть в викторину</span>
+                <span>→</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Игра 2: Больше или Меньше */}
+          <div className="p-6 rounded-3xl bg-neutral-900/70 border border-neutral-800 flex flex-col justify-between hover:border-neutral-700 transition-all shadow-lg group">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-3xl p-3 bg-neutral-950 rounded-2xl border border-neutral-800">
+                  ⚖️
+                </span>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  До +15 🍿 за победу
+                </span>
+              </div>
+
+              <h3 className="text-base font-bold text-white group-hover:text-amber-400 transition-colors">
+                Больше или Меньше
+              </h3>
+              <p className="text-xs text-neutral-400 leading-relaxed">
+                5 раундов нарастающей сложности! Сравнивайте культовые фильмы по рейтингу и годам выхода. Заберите банк или рискните всем!
+              </p>
+
+              <div className="text-[11px] text-neutral-500 font-medium">
+                Попыток в день: <strong className="text-white">5 жизней</strong>
+              </div>
+            </div>
+
+            <div className="pt-6">
+              <Link
+                href="/rewards/higher-lower"
+                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+              >
+                <span>Играть в дуэль</span>
                 <span>→</span>
               </Link>
             </div>

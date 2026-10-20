@@ -34,6 +34,11 @@ model User {
   lastQuizDate      DateTime?
   quizAttemptsToday Int       @default(0)
 
+  // Поля для игры "Больше или Меньше"
+  lastHigherLowerDate    DateTime?
+  higherLowerAttempts    Int       @default(0)
+  higherLowerCompleted   Boolean   @default(false)
+
   accounts  Account[]
   sessions  Session[]
   titles    Title[]
