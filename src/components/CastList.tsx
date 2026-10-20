@@ -1,111 +1,97 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 
-export interface CastMember {
-  id?: number;
+interface Actor {
+  id: number;
   name: string;
   character?: string;
-  profile_path?: string | null;
   profileUrl?: string | null;
   image?: string | null;
-  photoUrl?: string | null;
-  avatarUrl?: string | null;
 }
 
-export interface CastListProps {
-  cast?: CastMember[] | any;
+interface CastListProps {
+  cast: Actor[];
 }
 
 export default function CastList({ cast }: CastListProps) {
-  let list: CastMember[] = [];
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  if (Array.isArray(cast)) {
-    list = cast;
-  } else if (typeof cast === 'string') {
-    try {
-      const parsed = JSON.parse(cast);
-      if (Array.isArray(parsed)) list = parsed;
-    } catch {
-      list = [];
+  const scroll = (direction: 'left' | 'right') => {
+    if (scrollRef.current) {
+      const scrollAmount = direction === 'left' ? -380 : 380;
+      scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
     }
-  }
-
-  if (!list || list.length === 0) {
-    return (
-      <div className="p-4 rounded-xl bg-neutral-900/50 border border-neutral-800 text-xs text-neutral-500 italic">
-        Информация об актерском составе отсутствует.
-      </div>
-    );
-  }
-
-  const getActorPhoto = (member: CastMember): string | null => {
-    const raw =
-      member.profileUrl ||
-      member.image ||
-      member.photoUrl ||
-      member.avatarUrl ||
-      member.profile_path;
-
-    if (!raw || typeof raw !== 'string') return null;
-    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-    const clean = raw.startsWith('/') ? raw : `/${raw}`;
-    return `https://image.tmdb.org/t/p/w185${clean}`;
   };
 
-  const getInitials = (name: string): string => {
-    if (!name) return '?';
-    const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
+  if (!cast || cast.length === 0) return null;
 
   return (
-    <div className="relative">
-      {/* Горизонтальный скролл-контейнер для мобильных и десктопов */}
-      <div className="flex gap-3.5 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth">
-        {list.map((actor, idx) => {
-          const photoUrl = getActorPhoto(actor);
-          const initials = getInitials(actor.name);
+    <div className="relative group/cast">
+      {/* Кнопки перелистывания сверху/справа */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <span>🎭 В главных ролях</span>
+          <span className="text-xs font-normal text-neutral-500">({cast.length})</span>
+        </h2>
 
+        {cast.length > 5 && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => scroll('left')}
+              className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white flex items-center justify-center text-sm transition-all shadow-md cursor-pointer active:scale-95"
+              aria-label="Назад"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => scroll('right')}
+              className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white flex items-center justify-center text-sm transition-all shadow-md cursor-pointer active:scale-95"
+              aria-label="Вперёд"
+            >
+              ›
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Горизонтальная лента без стандартной серой полосы прокрутки */}
+      <div
+        ref={scrollRef}
+        className="flex gap-4 overflow-x-auto pb-2 scroll-smooth no-scrollbar"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        {cast.map((actor) => {
+          const photo = actor.profileUrl || actor.image;
           return (
             <div
-              key={actor.id ? `${actor.id}-${idx}` : idx}
-              className="w-28 sm:w-32 flex-shrink-0 flex flex-col group"
+              key={actor.id}
+              className="w-32 sm:w-36 flex-shrink-0 bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-2 flex flex-col group hover:border-neutral-700 transition-all shadow-md"
             >
-              <div className="aspect-[2/3] w-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-md relative mb-2">
-                {/* Запасная плашка с инициалами (видна если фото нет или не загрузилось) */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-neutral-850 text-neutral-500 font-bold text-sm select-none">
-                  <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-neutral-400 text-xs mb-1">
-                    {initials}
-                  </div>
-                </div>
-
-                {photoUrl && (
+              <div className="aspect-[3/4] w-full rounded-xl overflow-hidden bg-neutral-950 mb-2 relative">
+                {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={photoUrl}
+                    src={photo}
                     alt={actor.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     loading="lazy"
-                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    onError={(e) => {
-                      // При ошибке скрываем изображение, показывая инициалы под ним
-                      e.currentTarget.style.display = 'none';
-                    }}
                   />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-2xl text-neutral-600 bg-neutral-900">
+                    👤
+                  </div>
                 )}
               </div>
-
-              <span className="font-medium text-xs text-neutral-200 line-clamp-1 group-hover:text-blue-400 transition-colors">
+              <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-blue-400 transition-colors">
                 {actor.name}
-              </span>
-
+              </p>
               {actor.character && (
-                <span className="text-[11px] text-neutral-500 line-clamp-1 mt-0.5">
+                <p className="text-[11px] text-neutral-400 line-clamp-1 mt-0.5">
                   {actor.character}
-                </span>
+                </p>
               )}
             </div>
           );

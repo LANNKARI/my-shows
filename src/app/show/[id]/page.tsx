@@ -170,19 +170,25 @@ export default function ShowPage({ params }: ShowPageProps) {
   const isFav = Boolean(userShow?.isFavorite);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
-      <div className="relative border-b border-neutral-800 bg-neutral-900/60 overflow-hidden">
-        <div className="max-w-6xl mx-auto px-4 py-6 sm:py-10">
-          <button
-            onClick={() => router.back()}
-            className="mb-4 inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
-          >
-            <span>←</span>
-            <span>Назад</span>
-          </button>
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20 space-y-8">
+      {/* Аккуратная кнопка «Назад» в стиле пилюли */}
+      <div className="max-w-6xl mx-auto px-4 pt-2">
+        <button
+          onClick={() => router.back()}
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition-all text-xs font-semibold shadow-sm cursor-pointer group"
+        >
+          <span className="text-sm group-hover:-translate-x-0.5 transition-transform">←</span>
+          <span>Назад</span>
+        </button>
+      </div>
 
+      {/* ========================================================
+          1. ГЛАВНЫЙ БЛОК ТАЙТЛА (СО СКРУГЛЕНИЯМИ rounded-3xl)
+         ======================================================== */}
+      <div className="max-w-6xl mx-auto px-4">
+        <div className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 shadow-2xl backdrop-blur-sm">
           <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-start">
-            {/* Левая колонка: Постер + Компактный трейлер под ним */}
+            {/* Левая колонка: Постер + Трейлер под ним */}
             <div className="w-48 sm:w-64 flex-shrink-0 mx-auto md:mx-0 flex flex-col items-center">
               <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl relative">
                 {show.posterUrl ? (
@@ -198,91 +204,109 @@ export default function ShowPage({ params }: ShowPageProps) {
                   </div>
                 )}
 
-                <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-bold uppercase text-white border border-white/10">
+                <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-bold uppercase text-white border border-white/10">
                   {show.kind === 'movie' ? 'Фильм' : 'Сериал'}
                 </div>
               </div>
 
-              {/* Виджет трейлера под постером */}
+              {/* Трейлер прямо под постером */}
               {show.trailers && (
                 <TrailerPlayer trailers={show.trailers} />
               )}
             </div>
 
-            {/* Правая колонка: Информация о тайтле */}
-            <div className="flex-1 flex flex-col w-full">
-              <div className="flex flex-wrap items-center gap-3 mb-2">
-                {show.year && (
-                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
-                    {show.year}
-                  </span>
-                )}
-                {show.tmdbRating > 0 && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-xs">
-                    <span>★</span>
-                    <span>{show.tmdbRating.toFixed(1)}</span>
-                    <span className="text-neutral-500 text-[11px] font-normal">
-                      ({show.tmdbVotes || 0})
+            {/* Правая колонка: Заголовок, описание и компактная библиотека */}
+            <div className="flex-1 flex flex-col w-full space-y-5">
+              <div>
+                <div className="flex flex-wrap items-center gap-3 mb-2">
+                  {show.year && (
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
+                      {show.year}
                     </span>
+                  )}
+                  {show.tmdbRating > 0 && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-xs">
+                      <span>★</span>
+                      <span>{show.tmdbRating.toFixed(1)}</span>
+                      <span className="text-neutral-500 text-[11px] font-normal">
+                        ({show.tmdbVotes || 0})
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1">
+                  {title}
+                </h1>
+
+                {originalTitle && originalTitle !== title && (
+                  <p className="text-sm text-neutral-400 italic font-normal">
+                    {originalTitle}
+                  </p>
+                )}
+
+                {show.genres && show.genres.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {show.genres.map((g: string) => (
+                      <span
+                        key={g}
+                        className="text-xs px-2.5 py-1 rounded-lg bg-neutral-800/80 text-neutral-300 border border-neutral-700/60"
+                      >
+                        {g}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
 
-              <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1">
-                {title}
-              </h1>
-
-              {originalTitle && originalTitle !== title && (
-                <p className="text-sm text-neutral-400 italic mb-4 font-normal">
-                  {originalTitle}
-                </p>
-              )}
-
-              {show.genres && show.genres.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-5">
-                  {show.genres.map((g: string) => (
-                    <span
-                      key={g}
-                      className="text-xs px-2.5 py-1 rounded-lg bg-neutral-800/80 text-neutral-300 border border-neutral-700/60"
-                    >
-                      {g}
-                    </span>
-                  ))}
+              {/* Описание тайтла (поднято наверх, шрифт увеличен до text-base) */}
+              {show.description && (
+                <div className="space-y-1.5">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                    О тайтле
+                  </h3>
+                  <p className="text-base text-neutral-200 leading-relaxed font-normal">
+                    {show.description}
+                  </p>
                 </div>
               )}
 
-              {/* Блок «Моя библиотека» */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-neutral-900/90 border border-neutral-800 mb-6 shadow-inner">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              {/* Компактный блок «Моя библиотека» аккуратной формы */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-neutral-950/70 border border-neutral-800/90 shadow-inner max-w-lg space-y-4">
+                <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <span className="text-base">📚</span>
-                    <span className="text-sm font-semibold text-white">Моя библиотека</span>
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Моя библиотека
+                    </span>
                   </div>
 
-                  <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={handleToggleFavorite}
-                      className={`text-xs px-3 py-1 rounded-xl font-semibold transition-all border flex items-center gap-1.5 cursor-pointer ${
+                      className={`text-xs px-2.5 py-1 rounded-xl font-semibold transition-all border flex items-center gap-1 cursor-pointer ${
                         isFav
                           ? 'bg-amber-400 text-black border-amber-300 shadow-md'
-                          : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
+                          : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
                       }`}
+                      title={isFav ? 'Убрать из любимых' : 'Добавить в любимые'}
                     >
                       <span>{isFav ? '★' : '☆'}</span>
-                      <span>{isFav ? 'Любимый сериал' : 'Сделать любимым'}</span>
+                      <span>{isFav ? 'Любимый' : 'В любимые'}</span>
                     </button>
 
                     <Link
                       href={`/library/${show.id}`}
-                      className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1 self-start sm:self-auto"
+                      className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1"
                     >
-                      <span>📖 Трекер серий →</span>
+                      <span>Трекер серий →</span>
                     </Link>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                {/* Сетка кнопок статуса 2x2 */}
+                <div className="grid grid-cols-2 gap-2">
                   {[
                     { key: 'watching', label: '👀 Смотрю' },
                     { key: 'planned', label: '🔖 В планах' },
@@ -295,8 +319,8 @@ export default function ShowPage({ params }: ShowPageProps) {
                       onClick={() => handleSetStatus(st.key)}
                       className={`py-2 px-3 rounded-xl text-xs font-medium transition-all border cursor-pointer ${
                         currentStatus === st.key
-                          ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/20'
-                          : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
+                          ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/20 font-bold'
+                          : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
                       }`}
                     >
                       {st.label}
@@ -304,7 +328,8 @@ export default function ShowPage({ params }: ShowPageProps) {
                   ))}
                 </div>
 
-                <div className="flex items-center gap-2 pt-3 border-t border-neutral-800/80 text-xs">
+                {/* Оценка тайтла */}
+                <div className="flex items-center justify-between pt-2.5 border-t border-neutral-800/80 text-xs">
                   <span className="text-neutral-400">Моя оценка:</span>
                   <div className="flex items-center gap-1">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
@@ -319,42 +344,32 @@ export default function ShowPage({ params }: ShowPageProps) {
                         ★
                       </button>
                     ))}
+                    {userRating > 0 && (
+                      <span className="font-bold text-amber-400 ml-1.5">{userRating}/10</span>
+                    )}
                   </div>
-                  {userRating > 0 && (
-                    <span className="font-bold text-amber-400 ml-1">{userRating}/10</span>
-                  )}
                 </div>
               </div>
-
-              {show.description && (
-                <div className="text-sm text-neutral-300 leading-relaxed">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
-                    О тайтле
-                  </h3>
-                  <p className="line-clamp-6">{show.description}</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-10">
+      {/* ========================================================
+          2. НИЖНИЕ СЕКЦИИ: ИНФОРМАЦИЯ, АКТЕРЫ, КОММЕНТАРИИ
+         ======================================================== */}
+      <div className="max-w-6xl mx-auto px-4 space-y-8">
         <section>
           <ShowDetails show={show} />
         </section>
 
         {show.cast && Array.isArray(show.cast) && show.cast.length > 0 && (
-          <section>
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-              <span>🎭 В главных ролях</span>
-              <span className="text-xs font-normal text-neutral-500">({show.cast.length})</span>
-            </h2>
+          <section className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-xl">
             <CastList cast={show.cast} />
           </section>
         )}
 
-        <section className="pt-6 border-t border-neutral-800">
+        <section className="pt-4">
           <CommentSection
             showId={show.id}
             initialComments={show.comments || []}

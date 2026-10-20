@@ -212,3 +212,13 @@ body {
   background: linear-gradient(180deg, #10b981, #059669);
   color: #fff;
 }
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
