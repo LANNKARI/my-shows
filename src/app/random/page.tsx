@@ -147,9 +147,10 @@ export default function WhatToWatchPage() {
     }
   }, [contentType, minRating, yearFrom, selectedGenres, excludeAnimation]);
 
-  // Открытие страницы фильма на сайте с автоимпортом
+  // Открытие страницы фильма на сайте с сохранением типа контента (?type=tv / ?type=movie)
   const handleOpenShow = async (item: MediaItem) => {
     setNavigatingId(item.id);
+    const typeParam = item.type === 'tv' ? 'tv' : 'movie';
     try {
       const res = await fetch('/api/tmdb/import', {
         method: 'POST',
@@ -163,14 +164,13 @@ export default function WhatToWatchPage() {
       if (res.ok) {
         const data = await res.json();
         const targetId = data.show?.id || data.id || item.tmdbId;
-        router.push(`/show/${targetId}`);
+        router.push(`/show/${targetId}?type=${typeParam}`);
         return;
       }
     } catch (err) {
       console.error('Ошибка импорта перед открытием:', err);
     }
-    // Фолбэк: роут /show/[id] сам подтянет и сохранит данные по TMDB ID
-    router.push(`/show/${item.tmdbId}`);
+    router.push(`/show/${item.tmdbId}?type=${typeParam}`);
   };
 
   // Добавление в Wishlist
@@ -210,505 +210,520 @@ export default function WhatToWatchPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20">
-      {/* Шапка раздела */}
-      <div className="border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-md sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <span>🍿 Что посмотреть</span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+    <div className="space-y-8 pb-20">
+      {/* 1. НОВАЯ ШАПКА СО СКРУГЛЕНИЕМ rounded-3xl (В ЕДИНОМ СТИЛЕ ВСЕХ СТРАНИЦ) */}
+      <div className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 shadow-2xl backdrop-blur-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🍿</span>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                Что посмотреть
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 uppercase">
                 TMDB Discovery
               </span>
-            </h1>
-            <p className="text-xs text-neutral-400 mt-0.5">
+            </div>
+            <p className="text-xs sm:text-sm text-neutral-400">
               Подбор фильмов и сериалов с переходом сразу в карточку на сайте
             </p>
           </div>
 
           {/* Переключатель режимов: Рулетка / Подборка */}
-          <div className="flex bg-neutral-800/80 p-1 rounded-xl border border-neutral-700/60 self-start sm:self-auto">
+          <div className="flex bg-neutral-950 p-1.5 rounded-2xl border border-neutral-800 self-start sm:self-auto shadow-inner">
             <button
+              type="button"
               onClick={() => {
                 setActiveTab('roulette');
                 if (!randomItem) spinRoulette();
               }}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'roulette'
-                  ? 'bg-blue-600 text-white shadow-md'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
-              🎲 Рулетка
+              <span>🎲</span>
+              <span>Рулетка</span>
             </button>
             <button
+              type="button"
               onClick={() => {
                 setActiveTab('list');
                 if (itemsList.length === 0) fetchList();
               }}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'list'
-                  ? 'bg-blue-600 text-white shadow-md'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
-              📋 Подборка
+              <span>📋</span>
+              <span>Подборка</span>
             </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        {/* Панель фильтров */}
-        <div className="bg-neutral-900/70 border border-neutral-800 rounded-2xl p-4 sm:p-6 mb-8 shadow-xl">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
-            {/* Тип контента */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-                Тип контента
-              </label>
-              <div className="grid grid-cols-3 gap-2 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
-                <button
-                  type="button"
-                  onClick={() => setContentType('all')}
-                  className={`py-2 text-xs font-medium rounded-lg transition-colors ${
-                    contentType === 'all'
-                      ? 'bg-neutral-800 text-white shadow'
-                      : 'text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  Все
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContentType('movie')}
-                  className={`py-2 text-xs font-medium rounded-lg transition-colors ${
-                    contentType === 'movie'
-                      ? 'bg-neutral-800 text-white shadow'
-                      : 'text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  Фильмы
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContentType('tv')}
-                  className={`py-2 text-xs font-medium rounded-lg transition-colors ${
-                    contentType === 'tv'
-                      ? 'bg-neutral-800 text-white shadow'
-                      : 'text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  Сериалы
-                </button>
-              </div>
-            </div>
-
-            {/* Минимальный рейтинг */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2 flex items-center justify-between">
-                <span>Рейтинг TMDB</span>
-                <span className="text-yellow-400 font-bold">
-                  {minRating > 0 ? `от ${minRating.toFixed(1)} ★` : 'Любой'}
-                </span>
-              </label>
-              <select
-                value={minRating}
-                onChange={(e) => setMinRating(parseFloat(e.target.value))}
-                className="w-full bg-neutral-950 border border-neutral-800 text-neutral-200 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-blue-500"
-              >
-                {RATING_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Год релиза */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-                Год релиза
-              </label>
-              <select
-                value={yearFrom}
-                onChange={(e) => setYearFrom(parseInt(e.target.value, 10))}
-                className="w-full bg-neutral-950 border border-neutral-800 text-neutral-200 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:border-blue-500"
-              >
-                {YEAR_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Аккуратная кнопка-тумблер «Без аниме и мультиков» */}
-          <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => setExcludeAnimation(!excludeAnimation)}
-              className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-medium transition-all border ${
-                excludeAnimation
-                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-sm shadow-rose-500/10'
-                  : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full transition-all ${
-                  excludeAnimation
-                    ? 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.8)]'
-                    : 'bg-neutral-600'
-                }`}
-              />
-              <span>Без аниме и мультиков</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase transition-colors ${
-                  excludeAnimation
-                    ? 'bg-rose-500/25 text-rose-200'
-                    : 'bg-neutral-800 text-neutral-500'
-                }`}
-              >
-                {excludeAnimation ? 'Вкл' : 'Выкл'}
-              </span>
-            </button>
-
-            {minRating >= 8.5 && (
-              <span className="text-xs text-amber-300/80 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg">
-                💡 При оценке 8.5+ ищутся мировые шедевры
-              </span>
-            )}
-          </div>
-
-          {/* Жанры */}
+      {/* 2. ПАНЕЛЬ ФИЛЬТРОВ */}
+      <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Тип контента */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                Жанры (по любому совпадению)
-              </label>
-              {selectedGenres.length > 0 && (
-                <button
-                  type="button"
-                  onClick={clearGenres}
-                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                >
-                  Сбросить ({selectedGenres.length})
-                </button>
-              )}
-            </div>
-
-            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-              {UNIFIED_GENRES.map((genre) => {
-                const isSelected = selectedGenres.includes(genre.key);
-                return (
-                  <button
-                    key={genre.key}
-                    type="button"
-                    onClick={() => toggleGenre(genre.key)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      isSelected
-                        ? 'bg-blue-600 text-white font-semibold shadow-sm border border-blue-400/40'
-                        : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:border-neutral-700 hover:text-neutral-200'
-                    }`}
-                  >
-                    {isSelected && <span className="mr-1">✓</span>}
-                    {genre.name}
-                  </button>
-                );
-              })}
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-2">
+              Тип контента
+            </label>
+            <div className="grid grid-cols-3 gap-2 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setContentType('all')}
+                className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  contentType === 'all'
+                    ? 'bg-neutral-800 text-white shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Все
+              </button>
+              <button
+                type="button"
+                onClick={() => setContentType('movie')}
+                className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  contentType === 'movie'
+                    ? 'bg-neutral-800 text-white shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Фильмы
+              </button>
+              <button
+                type="button"
+                onClick={() => setContentType('tv')}
+                className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                  contentType === 'tv'
+                    ? 'bg-neutral-800 text-white shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Сериалы
+              </button>
             </div>
           </div>
 
-          {/* Кнопка запуска */}
-          <div className="mt-6 pt-5 border-t border-neutral-800/80 flex flex-col sm:flex-row items-center gap-3">
-            {activeTab === 'roulette' ? (
-              <button
-                onClick={spinRoulette}
-                disabled={loading}
-                className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {loading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Ищем фильм...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🎲 Крутить ещё раз</span>
-                  </>
-                )}
-              </button>
-            ) : (
-              <button
-                onClick={fetchList}
-                disabled={loading}
-                className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {loading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Загрузка списка...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🔍 Найти подходящие</span>
-                  </>
-                )}
-              </button>
-            )}
+          {/* Минимальный рейтинг */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-2 flex items-center justify-between">
+              <span>Рейтинг TMDB</span>
+              <span className="text-amber-400 font-bold">
+                {minRating > 0 ? `ОТ ${minRating.toFixed(1)} ★` : 'Любой'}
+              </span>
+            </label>
+            <select
+              value={minRating}
+              onChange={(e) => setMinRating(parseFloat(e.target.value))}
+              className="w-full bg-neutral-950 border border-neutral-800 text-neutral-200 text-xs sm:text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-blue-500 cursor-pointer appearance-none"
+            >
+              {RATING_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Год релиза */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-2">
+              Год релиза
+            </label>
+            <select
+              value={yearFrom}
+              onChange={(e) => setYearFrom(parseInt(e.target.value, 10))}
+              className="w-full bg-neutral-950 border border-neutral-800 text-neutral-200 text-xs sm:text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-blue-500 cursor-pointer appearance-none"
+            >
+              {YEAR_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {/* Сообщение об ошибке */}
-        {errorMsg && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center text-red-300 max-w-xl mx-auto mb-8">
-            <p className="text-base font-medium mb-2">Ничего не найдено</p>
-            <p className="text-sm opacity-80">{errorMsg}</p>
-          </div>
-        )}
+        {/* Тумблер «Без аниме и мультиков» */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => setExcludeAnimation(!excludeAnimation)}
+            className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
+              excludeAnimation
+                ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-sm shadow-rose-500/10'
+                : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full transition-all ${
+                excludeAnimation
+                  ? 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.8)]'
+                  : 'bg-neutral-600'
+              }`}
+            />
+            <span>Без аниме и мультиков</span>
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                excludeAnimation
+                  ? 'bg-rose-500/25 text-rose-200'
+                  : 'bg-neutral-800 text-neutral-500'
+              }`}
+            >
+              {excludeAnimation ? 'Вкл' : 'Выкл'}
+            </span>
+          </button>
 
-        {/* 1. РЕЖИМ РУЛЕТКИ */}
-        {activeTab === 'roulette' && (
-          <div>
-            {loading && !randomItem && (
-              <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-8 max-w-4xl mx-auto animate-pulse flex flex-col md:flex-row gap-6">
-                <div className="w-full md:w-72 h-96 bg-neutral-800 rounded-2xl" />
-                <div className="flex-1 space-y-4">
-                  <div className="h-8 bg-neutral-800 rounded-lg w-3/4" />
-                  <div className="h-4 bg-neutral-800 rounded w-1/2" />
-                  <div className="h-28 bg-neutral-800 rounded-lg" />
-                </div>
-              </div>
+          {minRating >= 8.5 && (
+            <span className="text-xs text-amber-300/80 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl">
+              💡 При оценке 8.5+ ищутся мировые шедевры
+            </span>
+          )}
+        </div>
+
+        {/* Жанры */}
+        <div>
+          <div className="flex items-center justify-between mb-2.5">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+              Жанры (по любому совпадению)
+            </label>
+            {selectedGenres.length > 0 && (
+              <button
+                type="button"
+                onClick={clearGenres}
+                className="text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer font-medium"
+              >
+                Сбросить ({selectedGenres.length})
+              </button>
             )}
+          </div>
 
-            {!loading && randomItem && (
-              <div className="bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden max-w-4xl mx-auto shadow-2xl relative">
-                {randomItem.backdropUrl && (
-                  <div
-                    className="absolute inset-0 bg-cover bg-center opacity-15 blur-xl pointer-events-none"
-                    style={{ backgroundImage: `url(${randomItem.backdropUrl})` }}
-                  />
-                )}
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+            {UNIFIED_GENRES.map((genre) => {
+              const isSelected = selectedGenres.includes(genre.key);
+              return (
+                <button
+                  key={genre.key}
+                  type="button"
+                  onClick={() => toggleGenre(genre.key)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20 border border-blue-400/40'
+                      : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:border-neutral-700 hover:text-neutral-200'
+                  }`}
+                >
+                  {isSelected && <span className="mr-1">✓</span>}
+                  {genre.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-                <div className="relative p-6 sm:p-8 flex flex-col md:flex-row gap-6 sm:gap-8 items-start">
-                  {/* Кликабельный постер */}
-                  <div
-                    onClick={() => handleOpenShow(randomItem)}
-                    className="w-full md:w-72 flex-shrink-0 cursor-pointer group"
-                    title="Открыть страницу тайтла"
-                  >
-                    <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800 shadow-xl relative">
-                      {randomItem.posterUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={randomItem.posterUrl}
-                          alt={randomItem.title}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-neutral-600 text-sm">
-                          Нет постера
-                        </div>
-                      )}
+        {/* Кнопка запуска */}
+        <div className="pt-4 border-t border-neutral-800/80">
+          {activeTab === 'roulette' ? (
+            <button
+              onClick={spinRoulette}
+              disabled={loading}
+              className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer hover:scale-[1.02]"
+            >
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Ищем тайтл...</span>
+                </>
+              ) : (
+                <>
+                  <span>🎲</span>
+                  <span>{randomItem ? 'Крутить ещё раз' : 'Крутить рулетку'}</span>
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={fetchList}
+              disabled={loading}
+              className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer hover:scale-[1.02]"
+            >
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Загрузка подборки...</span>
+                </>
+              ) : (
+                <>
+                  <span>🔍</span>
+                  <span>Найти подходящие</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
 
-                      <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider text-white border border-white/10">
-                        {randomItem.type === 'movie' ? 'Фильм' : 'Сериал'}
+      {/* Сообщение об ошибке */}
+      {errorMsg && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-6 text-center text-rose-300 max-w-xl mx-auto">
+          <p className="text-base font-bold mb-1">Ничего не найдено</p>
+          <p className="text-xs opacity-80 leading-relaxed">{errorMsg}</p>
+        </div>
+      )}
+
+      {/* 3. РЕЖИМ РУЛЕТКИ */}
+      {activeTab === 'roulette' && (
+        <div>
+          {loading && !randomItem && (
+            <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-8 max-w-4xl mx-auto animate-pulse flex flex-col md:flex-row gap-6">
+              <div className="w-full md:w-72 h-96 bg-neutral-800 rounded-2xl" />
+              <div className="flex-1 space-y-4">
+                <div className="h-8 bg-neutral-800 rounded-lg w-3/4" />
+                <div className="h-4 bg-neutral-800 rounded w-1/2" />
+                <div className="h-28 bg-neutral-800 rounded-lg" />
+              </div>
+            </div>
+          )}
+
+          {!loading && randomItem && (
+            <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl overflow-hidden max-w-4xl mx-auto shadow-2xl relative">
+              {randomItem.backdropUrl && (
+                <div
+                  className="absolute inset-0 bg-cover bg-center opacity-15 blur-xl pointer-events-none"
+                  style={{ backgroundImage: `url(${randomItem.backdropUrl})` }}
+                />
+              )}
+
+              <div className="relative p-6 sm:p-8 flex flex-col md:flex-row gap-6 sm:gap-8 items-start">
+                {/* Постер */}
+                <div
+                  onClick={() => handleOpenShow(randomItem)}
+                  className="w-full md:w-72 flex-shrink-0 cursor-pointer group mx-auto md:mx-0"
+                  title="Открыть страницу тайтла"
+                >
+                  <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800 shadow-xl relative">
+                    {randomItem.posterUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={randomItem.posterUrl}
+                        alt={randomItem.title}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-neutral-600 text-sm">
+                        Нет постера
                       </div>
+                    )}
 
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-medium text-sm gap-2">
-                        <span>🎬 Открыть карточку</span>
-                      </div>
+                    <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider text-white border border-white/10">
+                      {randomItem.type === 'movie' ? 'Фильм' : 'Сериал'}
+                    </div>
+
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-medium text-xs gap-2">
+                      <span>🎬 Открыть карточку</span>
                     </div>
                   </div>
+                </div>
 
-                  {/* Информация и кнопки действий */}
-                  <div className="flex-1 flex flex-col h-full">
-                    <div className="flex flex-wrap items-center gap-3 mb-2">
-                      <span className="text-sm font-semibold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
-                        {randomItem.year}
+                {/* Инфо и кнопки */}
+                <div className="flex-1 flex flex-col h-full w-full">
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
+                      {randomItem.year}
+                    </span>
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-xs">
+                      <span>★</span>
+                      <span>{randomItem.voteAverage.toFixed(1)}</span>
+                      <span className="text-neutral-500 text-[11px] font-normal">
+                        ({randomItem.voteCount} оценок)
                       </span>
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-sm">
-                        <span>★</span>
-                        <span>{randomItem.voteAverage.toFixed(1)}</span>
-                        <span className="text-neutral-500 text-xs font-normal">
-                          ({randomItem.voteCount} оценок)
+                    </div>
+                  </div>
+
+                  <h2
+                    onClick={() => handleOpenShow(randomItem)}
+                    className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-1 cursor-pointer hover:text-blue-400 transition-colors"
+                  >
+                    {randomItem.title}
+                  </h2>
+
+                  {randomItem.originalTitle && randomItem.originalTitle !== randomItem.title && (
+                    <p className="text-sm text-neutral-400 mb-4 font-normal italic">
+                      {randomItem.originalTitle}
+                    </p>
+                  )}
+
+                  {randomItem.genres.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {randomItem.genres.map((g) => (
+                        <span
+                          key={g}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-neutral-800/80 text-neutral-300 border border-neutral-700/50"
+                        >
+                          {g}
                         </span>
-                      </div>
+                      ))}
                     </div>
+                  )}
 
-                    <h2
-                      onClick={() => handleOpenShow(randomItem)}
-                      className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-1 cursor-pointer hover:text-blue-400 transition-colors"
+                  <div className="text-sm text-neutral-300 leading-relaxed mb-6 line-clamp-5">
+                    {randomItem.overview}
+                  </div>
+
+                  {/* Кнопки действий */}
+                  <div className="mt-auto pt-4 border-t border-neutral-800/80 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={spinRoulette}
+                      disabled={loading}
+                      className="px-5 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-semibold text-xs sm:text-sm transition-colors flex items-center gap-2 border border-neutral-700 cursor-pointer"
                     >
-                      {randomItem.title}
-                    </h2>
+                      <span>🎲 Крутить ещё</span>
+                    </button>
 
-                    {randomItem.originalTitle && randomItem.originalTitle !== randomItem.title && (
-                      <p className="text-sm text-neutral-400 mb-4 font-normal italic">
-                        {randomItem.originalTitle}
-                      </p>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenShow(randomItem)}
+                      disabled={navigatingId === randomItem.id}
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm transition-all flex items-center gap-2 shadow-md shadow-blue-600/30 disabled:opacity-50 cursor-pointer"
+                    >
+                      {navigatingId === randomItem.id ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Переходим...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>🎬 Открыть на сайте</span>
+                        </>
+                      )}
+                    </button>
 
-                    {randomItem.genres.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mb-4">
-                        {randomItem.genres.map((g) => (
-                          <span
-                            key={g}
-                            className="text-xs px-2.5 py-1 rounded-md bg-neutral-800/80 text-neutral-300 border border-neutral-700/50"
-                          >
-                            {g}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="text-sm text-neutral-300 leading-relaxed mb-6 line-clamp-5">
-                      {randomItem.overview}
-                    </div>
-
-                    {/* Панель кнопок */}
-                    <div className="mt-auto pt-4 border-t border-neutral-800/80 flex flex-wrap items-center gap-3">
-                      <button
-                        onClick={spinRoulette}
-                        disabled={loading}
-                        className="px-5 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-medium text-sm transition-colors flex items-center gap-2 border border-neutral-700"
-                      >
-                        <span>🎲 Крутить ещё</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleOpenShow(randomItem)}
-                        disabled={navigatingId === randomItem.id}
-                        className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors flex items-center gap-2 shadow-md shadow-blue-600/20 disabled:opacity-50"
-                      >
-                        {navigatingId === randomItem.id ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            <span>Создаем страницу...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>🎬 Открыть на сайте</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => handleAddToWishlist(randomItem)}
-                        disabled={wishlistLoadingId === randomItem.id || wishlistedMap[randomItem.id]}
-                        className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 border ${
-                          wishlistedMap[randomItem.id]
-                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 cursor-default'
-                            : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700'
-                        }`}
-                      >
-                        {wishlistLoadingId === randomItem.id ? (
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        ) : wishlistedMap[randomItem.id] ? (
-                          <span>✓ В Wishlist</span>
-                        ) : (
-                          <span>🔖 Хочу посмотреть</span>
-                        )}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAddToWishlist(randomItem)}
+                      disabled={wishlistLoadingId === randomItem.id || wishlistedMap[randomItem.id]}
+                      className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 border cursor-pointer ${
+                        wishlistedMap[randomItem.id]
+                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 cursor-default'
+                          : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700'
+                      }`}
+                    >
+                      {wishlistLoadingId === randomItem.id ? (
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : wishlistedMap[randomItem.id] ? (
+                        <span>✓ В Wishlist</span>
+                      ) : (
+                        <span>🔖 Хочу посмотреть</span>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
+      )}
 
-        {/* 2. РЕЖИМ ПОДБОРКИ */}
-        {activeTab === 'list' && (
-          <div>
-            {loading && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
-                {Array.from({ length: 10 }).map((_, idx) => (
-                  <div key={idx} className="bg-neutral-900 rounded-2xl h-80 border border-neutral-800" />
-                ))}
-              </div>
-            )}
+      {/* 4. РЕЖИМ ПОДБОРКИ */}
+      {activeTab === 'list' && (
+        <div>
+          {loading && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse">
+              {Array.from({ length: 10 }).map((_, idx) => (
+                <div key={idx} className="bg-neutral-900 rounded-2xl h-80 border border-neutral-800" />
+              ))}
+            </div>
+          )}
 
-            {!loading && itemsList.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {itemsList.map((item) => (
+          {!loading && itemsList.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {itemsList.map((item) => (
+                <div
+                  key={`${item.type}-${item.id}`}
+                  className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-lg"
+                >
                   <div
-                    key={`${item.type}-${item.id}`}
-                    className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group"
+                    onClick={() => handleOpenShow(item)}
+                    className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden cursor-pointer"
                   >
-                    <div
-                      onClick={() => handleOpenShow(item)}
-                      className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden cursor-pointer"
-                    >
-                      {item.posterUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.posterUrl}
-                          alt={item.title}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
-                          Нет постера
-                        </div>
-                      )}
-
-                      <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
-                        {item.type === 'movie' ? 'Фильм' : 'Сериал'}
+                    {item.posterUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.posterUrl}
+                        alt={item.title}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
+                        🎬 Нет постера
                       </div>
+                    )}
 
-                      <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5">
-                        <span>★</span>
-                        <span>{item.voteAverage.toFixed(1)}</span>
-                      </div>
+                    <div className="absolute top-2 left-2 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase border border-white/10">
+                      {item.type === 'movie' ? 'Фильм' : 'Сериал'}
                     </div>
 
-                    <div className="p-3 flex-1 flex flex-col">
-                      <div className="text-[11px] text-neutral-500 mb-1">{item.year}</div>
+                    <div className="absolute top-2 right-2 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5 border border-amber-500/20">
+                      <span>★</span>
+                      <span>{item.voteAverage.toFixed(1)}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 flex-1 flex flex-col justify-between">
+                    <div>
+                      <div className="text-[10px] text-neutral-500 font-medium mb-1">{item.year}</div>
                       <h3
                         onClick={() => handleOpenShow(item)}
-                        className="font-semibold text-sm text-white line-clamp-1 cursor-pointer hover:text-blue-400 transition-colors"
+                        className="font-bold text-xs text-white line-clamp-1 cursor-pointer hover:text-blue-400 transition-colors"
+                        title={item.title}
                       >
                         {item.title}
                       </h3>
                       {item.genres.length > 0 && (
-                        <div className="text-[11px] text-neutral-400 line-clamp-1 mt-1">
+                        <div className="text-[11px] text-neutral-400 line-clamp-1 mt-0.5">
                           {item.genres.slice(0, 2).join(', ')}
                         </div>
                       )}
+                    </div>
 
-                      <div className="mt-auto pt-3 border-t border-neutral-800/60 flex items-center justify-between gap-1">
-                        <button
-                          onClick={() => handleOpenShow(item)}
-                          disabled={navigatingId === item.id}
-                          className="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1"
-                        >
-                          {navigatingId === item.id ? 'Создаем...' : 'Карточка →'}
-                        </button>
+                    <div className="mt-3 pt-2.5 border-t border-neutral-800/80 flex items-center justify-between gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenShow(item)}
+                        disabled={navigatingId === item.id}
+                        className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        {navigatingId === item.id ? '...' : 'Карточка →'}
+                      </button>
 
-                        <button
-                          onClick={() => handleAddToWishlist(item)}
-                          disabled={wishlistLoadingId === item.id || wishlistedMap[item.id]}
-                          className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-                            wishlistedMap[item.id]
-                              ? 'bg-emerald-500/20 text-emerald-300 font-semibold'
-                              : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                          }`}
-                          title="Добавить в Wishlist"
-                        >
-                          {wishlistLoadingId === item.id ? '...' : wishlistedMap[item.id] ? '✓ Wishlist' : '🔖 Хочу'}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddToWishlist(item)}
+                        disabled={wishlistLoadingId === item.id || wishlistedMap[item.id]}
+                        className={`text-xs px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                          wishlistedMap[item.id]
+                            ? 'bg-emerald-500/20 text-emerald-300 font-semibold'
+                            : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                        }`}
+                        title="Добавить в Wishlist"
+                      >
+                        {wishlistLoadingId === item.id ? '...' : wishlistedMap[item.id] ? '✓ Wishlist' : '🔖 Хочу'}
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
