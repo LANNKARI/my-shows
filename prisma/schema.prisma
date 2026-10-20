@@ -27,6 +27,13 @@ model User {
   sentRequests     Friendship[] @relation("FriendshipRequester")
   receivedRequests Friendship[] @relation("FriendshipAddressee")
 
+  // Игровая валюта и ежедневные бонусы
+  popcorn           Int       @default(0)
+  lastDailyClaim    DateTime?
+  dailyStreak       Int       @default(0)
+  lastQuizDate      DateTime?
+  quizAttemptsToday Int       @default(0)
+
   accounts  Account[]
   sessions  Session[]
   titles    Title[]

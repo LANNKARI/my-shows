@@ -106,7 +106,7 @@ export default function HomePage() {
 
   return (
     <div className="space-y-14 pb-16">
-      {/* 1. HERO-БАННЕР (ТОЛЬКО РЕЙТИНГ 8.0+, БЕЗ КОРЕИ И АНИМЕ) */}
+      {/* 1. HERO-БАННЕР (8.0+, БЕЗ АНИМЕ И КОРЕИ) */}
       {currentHero && (
         <div
           onMouseEnter={() => setIsPaused(true)}
@@ -202,7 +202,7 @@ export default function HomePage() {
 
             <div className="pt-2 flex items-center gap-3">
               <Link
-                href={`/show/${currentHero.id}`}
+                href={`/show/${currentHero.id}?type=${currentHero.kind === 'series' ? 'tv' : 'movie'}`}
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-600/30 flex items-center gap-2"
               >
                 <span>Открыть карточку</span>
@@ -254,7 +254,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 3. БАННЕРЫ 15 КИНОВСЕЛЕННЫХ И ФРАНШИЗ */}
+      {/* 3. БАННЕРЫ 15 КИНОВСЕЛЕННЫХ */}
       <section className="space-y-5">
         <div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
@@ -297,7 +297,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 4. БАННЕРЫ КОЛЛЕКЦИЙ ВЕЛИКИХ РЕЖИССЁРОВ */}
+      {/* 4. БАННЕРЫ 8 ВЕЛИКИХ РЕЖИССЁРОВ */}
       <section className="space-y-5">
         <div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center gap-2">
@@ -367,10 +367,12 @@ function MediaCard({
     }
   };
 
+  const linkHref = `/show/${item.id}?type=${item.kind === 'series' ? 'tv' : 'movie'}`;
+
   return (
     <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-lg">
       <Link
-        href={`/show/${item.id}`}
+        href={linkHref}
         className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
       >
         {item.posterUrl ? (
@@ -411,7 +413,7 @@ function MediaCard({
             </div>
           )}
           <Link
-            href={`/show/${item.id}`}
+            href={linkHref}
             className="font-bold text-xs text-white line-clamp-1 group-hover:text-rose-400 transition-colors block"
             title={item.title}
           >

@@ -19,6 +19,8 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid ID format' }, { status: 400 });
     }
 
+    const requestedType = request.nextUrl.searchParams.get('type');
+
     const session = await auth();
     let currentUserId = (session?.user as { id?: string })?.id;
     if (!currentUserId && session?.user?.email) {
@@ -29,10 +31,11 @@ export async function GET(
       currentUserId = u?.id;
     }
 
-    // 1. Поиск в Show по id или tmdbId
+    // 1. Поиск в Show по id или tmdbId с учётом типа (если передан)
     let show = await prisma.show.findFirst({
       where: {
         OR: [{ id: numId }, { tmdbId: numId }],
+        ...(requestedType ? { kind: requestedType === 'tv' ? 'series' : 'movie' } : {}),
       },
       include: {
         episodes: true,
@@ -72,53 +75,7 @@ export async function GET(
       }
     }
 
-    // 3. Если не найден — проверяем старую таблицу Title
-    if (!show) {
-      const oldTitle = await prisma.title.findUnique({
-        where: { id: numId },
-      });
-
-      if (oldTitle) {
-        show = await prisma.show.findFirst({
-          where: { name: oldTitle.name },
-          include: {
-            episodes: true,
-            comments: {
-              include: {
-                user: {
-                  select: { id: true, name: true, username: true, avatarUrl: true },
-                },
-              },
-              orderBy: { createdAt: 'desc' },
-            },
-          },
-        });
-
-        if (!show) {
-          show = await prisma.show.create({
-            data: {
-              name: oldTitle.name,
-              originalName: oldTitle.originalName,
-              posterUrl: oldTitle.posterUrl,
-              kind: oldTitle.kind || 'series',
-              genres: [],
-            },
-            include: {
-              episodes: true,
-              comments: {
-                include: {
-                  user: {
-                    select: { id: true, name: true, username: true, avatarUrl: true },
-                  },
-                },
-              },
-            },
-          });
-        }
-      }
-    }
-
-    // 4. Загрузка из TMDB
+    // 3. Загрузка из TMDB
     const apiKey =
       process.env.TMDB_API_KEY ||
       process.env.TMDB_READ_ACCESS_TOKEN ||
@@ -135,15 +92,27 @@ export async function GET(
         return u;
       };
 
-      let tmdbRes = await fetch(buildUrl('movie'), { headers });
+      let tmdbRes: Response | null = null;
       let mediaKind: 'movie' | 'series' = 'movie';
 
-      if (!tmdbRes.ok) {
+      // Если явно запрошен сериал — сначала запрашиваем tv, иначе movie
+      if (requestedType === 'tv' || requestedType === 'series') {
         tmdbRes = await fetch(buildUrl('tv'), { headers });
         mediaKind = 'series';
+        if (!tmdbRes.ok) {
+          tmdbRes = await fetch(buildUrl('movie'), { headers });
+          mediaKind = 'movie';
+        }
+      } else {
+        tmdbRes = await fetch(buildUrl('movie'), { headers });
+        mediaKind = 'movie';
+        if (!tmdbRes.ok) {
+          tmdbRes = await fetch(buildUrl('tv'), { headers });
+          mediaKind = 'series';
+        }
       }
 
-      if (tmdbRes.ok) {
+      if (tmdbRes && tmdbRes.ok) {
         const data = await tmdbRes.json();
         const name = data.title || data.name || 'Без названия';
         const originalName = data.original_title || data.original_name || null;
@@ -222,7 +191,7 @@ export async function GET(
       return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
     }
 
-    // 5. Если в базе фильм есть, но актеры еще не были подгружены — догружаем
+    // 4. Догрузка актёров, если отсутствуют
     const castArray = Array.isArray(show.cast) ? (show.cast as any[]) : [];
     if (show.tmdbId && castArray.length === 0 && apiKey) {
       try {
@@ -276,11 +245,67 @@ export async function GET(
           });
         }
       } catch {
-        // Оставляем текущую запись при недоступности сети
+        // Оставляем как есть при сбое
       }
     }
 
-    // 6. Получаем статус просмотра текущего пользователя в его библиотеке
+    // 5. Загрузка трейлеров (RU + EN)
+    let trailers: {
+      russian: { id: string; key: string; name: string; site: string; type: string } | null;
+      english: { id: string; key: string; name: string; site: string; type: string } | null;
+    } = { russian: null, english: null };
+
+    const targetTmdbId = show.tmdbId || numId;
+    if (targetTmdbId && apiKey) {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (apiKey.startsWith('eyJ')) headers['Authorization'] = `Bearer ${apiKey}`;
+        const type = show.kind === 'series' ? 'tv' : 'movie';
+
+        const makeVideoUrl = (lang: string) => {
+          let u = `https://api.themoviedb.org/3/${type}/${targetTmdbId}/videos?language=${lang}`;
+          if (!apiKey.startsWith('eyJ')) u += `&api_key=${apiKey}`;
+          return u;
+        };
+
+        const [ruRes, enRes] = await Promise.all([
+          fetch(makeVideoUrl('ru-RU'), { headers, next: { revalidate: 3600 } }),
+          fetch(makeVideoUrl('en-US'), { headers, next: { revalidate: 3600 } }),
+        ]);
+
+        const findBestTrailer = (list: any[]) => {
+          if (!Array.isArray(list) || list.length === 0) return null;
+          const yt = list.filter((v: any) => v.site === 'YouTube');
+          const trailer =
+            yt.find((v: any) => v.type === 'Trailer' && v.official) ||
+            yt.find((v: any) => v.type === 'Trailer') ||
+            yt.find((v: any) => v.type === 'Teaser') ||
+            yt[0];
+
+          return trailer
+            ? {
+                id: trailer.id,
+                key: trailer.key,
+                name: trailer.name,
+                site: trailer.site,
+                type: trailer.type,
+              }
+            : null;
+        };
+
+        const ruData = ruRes.ok ? await ruRes.json() : null;
+        const enData = enRes.ok ? await enRes.json() : null;
+
+        trailers = {
+          russian: findBestTrailer(ruData?.results || []),
+          english: findBestTrailer(enData?.results || []),
+        };
+      } catch {
+        // Оставляем пустыми при ошибке
+      }
+    }
+
+    // 6. Статус просмотра текущего пользователя
     let userShow = null;
     if (currentUserId) {
       userShow = await prisma.userShow.findUnique({
@@ -303,6 +328,7 @@ export async function GET(
       originalTitle: show.originalName,
       budget: show.budget ? Number(show.budget) : null,
       revenue: show.revenue ? Number(show.revenue) : null,
+      trailers,
     };
 
     return NextResponse.json({

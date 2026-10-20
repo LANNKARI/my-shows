@@ -2,10 +2,11 @@
 
 import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import CastList from '@/components/CastList';
 import ShowDetails from '@/components/ShowDetails';
 import CommentSection from '@/components/CommentSection';
+import TrailerPlayer from '@/components/TrailerPlayer';
 
 interface ShowPageProps {
   params: Promise<{ id: string }>;
@@ -14,6 +15,8 @@ interface ShowPageProps {
 export default function ShowPage({ params }: ShowPageProps) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const typeParam = searchParams.get('type');
 
   const [show, setShow] = useState<any>(null);
   const [userShow, setUserShow] = useState<any>(null);
@@ -27,7 +30,10 @@ export default function ShowPage({ params }: ShowPageProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/shows/${id}`);
+      const url = typeParam
+        ? `/api/shows/${id}?type=${typeParam}`
+        : `/api/shows/${id}`;
+      const res = await fetch(url);
       if (!res.ok) {
         throw new Error('Карточка фильма или сериала не найдена');
       }
@@ -49,7 +55,7 @@ export default function ShowPage({ params }: ShowPageProps) {
   useEffect(() => {
     loadShow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, typeParam]);
 
   const handleSetStatus = async (newStatus: string) => {
     if (!show) return;
@@ -79,7 +85,6 @@ export default function ShowPage({ params }: ShowPageProps) {
     }
   };
 
-  // Переключение флага «Любимый сериал»
   const handleToggleFavorite = async () => {
     if (!show) return;
     const nextFavorite = !userShow?.isFavorite;
@@ -143,7 +148,7 @@ export default function ShowPage({ params }: ShowPageProps) {
           <div className="flex items-center justify-center gap-3">
             <button
               onClick={() => router.back()}
-              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-xl transition-colors"
+              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-xl transition-colors cursor-pointer"
             >
               ← Назад
             </button>
@@ -170,14 +175,15 @@ export default function ShowPage({ params }: ShowPageProps) {
         <div className="max-w-6xl mx-auto px-4 py-6 sm:py-10">
           <button
             onClick={() => router.back()}
-            className="mb-4 inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
+            className="mb-4 inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
           >
             <span>←</span>
             <span>Назад</span>
           </button>
 
           <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-start">
-            <div className="w-48 sm:w-64 flex-shrink-0 mx-auto md:mx-0">
+            {/* Левая колонка: Постер + Компактный трейлер под ним */}
+            <div className="w-48 sm:w-64 flex-shrink-0 mx-auto md:mx-0 flex flex-col items-center">
               <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl relative">
                 {show.posterUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -196,8 +202,14 @@ export default function ShowPage({ params }: ShowPageProps) {
                   {show.kind === 'movie' ? 'Фильм' : 'Сериал'}
                 </div>
               </div>
+
+              {/* Виджет трейлера под постером */}
+              {show.trailers && (
+                <TrailerPlayer trailers={show.trailers} />
+              )}
             </div>
 
+            {/* Правая колонка: Информация о тайтле */}
             <div className="flex-1 flex flex-col w-full">
               <div className="flex flex-wrap items-center gap-3 mb-2">
                 {show.year && (
@@ -248,11 +260,10 @@ export default function ShowPage({ params }: ShowPageProps) {
                   </div>
 
                   <div className="flex items-center gap-3 flex-wrap">
-                    {/* Кнопка «Любимый сериал» */}
                     <button
                       type="button"
                       onClick={handleToggleFavorite}
-                      className={`text-xs px-3 py-1 rounded-xl font-semibold transition-all border flex items-center gap-1.5 ${
+                      className={`text-xs px-3 py-1 rounded-xl font-semibold transition-all border flex items-center gap-1.5 cursor-pointer ${
                         isFav
                           ? 'bg-amber-400 text-black border-amber-300 shadow-md'
                           : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
@@ -282,7 +293,7 @@ export default function ShowPage({ params }: ShowPageProps) {
                       key={st.key}
                       disabled={updatingLibrary}
                       onClick={() => handleSetStatus(st.key)}
-                      className={`py-2 px-3 rounded-xl text-xs font-medium transition-all border ${
+                      className={`py-2 px-3 rounded-xl text-xs font-medium transition-all border cursor-pointer ${
                         currentStatus === st.key
                           ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/20'
                           : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
@@ -300,7 +311,7 @@ export default function ShowPage({ params }: ShowPageProps) {
                       <button
                         key={star}
                         onClick={() => handleRate(star)}
-                        className={`text-sm transition-transform hover:scale-125 ${
+                        className={`text-sm transition-transform hover:scale-125 cursor-pointer ${
                           userRating >= star ? 'text-amber-400' : 'text-neutral-700 hover:text-neutral-400'
                         }`}
                         title={`Поставить ${star} из 10`}

@@ -6,6 +6,7 @@ import Providers from "./providers";
 import UserMenu from "@/components/UserMenu";
 import SearchBar from "@/components/SearchBar";
 import NavLinks from "@/components/NavLinks";
+import PopcornBadge from "@/components/PopcornBadge";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -47,8 +48,9 @@ export default function RootLayout({
                 <SearchBar />
               </div>
 
-              {/* Меню профиля */}
+              {/* Валюта сайта (Попкорн) и Меню профиля */}
               <div className="flex items-center gap-3 flex-shrink-0">
+                <PopcornBadge />
                 <UserMenu />
               </div>
             </div>
