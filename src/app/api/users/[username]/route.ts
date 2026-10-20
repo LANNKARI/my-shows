@@ -30,7 +30,7 @@ export async function GET(
 
     const isOwnProfile = currentUserId === user.id;
 
-    // Сброс флага isCompleted для не завершенных тайтлов
+    // Сброс флага isCompleted для незавершенных тайтлов
     await prisma.userShow.updateMany({
       where: {
         userId: user.id,
@@ -106,7 +106,7 @@ export async function GET(
       (us) => us.ratings && us.ratings.length > 0 && us.ratings[0].score > 0
     ).length;
 
-    // Расчет часов просмотра (без брошенных)
+    // Расчет времени просмотра (в минутах)
     let totalMinutes = 0;
     for (const us of userShows) {
       if (us.status === 'dropped') continue;
@@ -114,17 +114,22 @@ export async function GET(
       const isMovie = us.kind === 'movie' || us.show?.kind === 'movie';
       const runtime = us.show?.runtime || (isMovie ? 110 : 45);
 
-      if (isMovie) {
-        if (us.status === 'completed') {
+      if (us.status === 'completed') {
+        // Полный хронометраж при завершенном статусе
+        if (isMovie) {
           totalMinutes += runtime;
+        } else {
+          const allEpisodesCount =
+            us.totalEpisodes > 0
+              ? us.totalEpisodes
+              : (us.show?.episodes?.length || 10);
+          totalMinutes += allEpisodesCount * runtime;
         }
       } else {
-        const watchedEpisodes = (us.progress || []).filter((p) => p.watched).length;
-        if (watchedEpisodes > 0) {
+        // При статусе "смотрю" или "в планах" учитываем только отмеченные серии
+        if (!isMovie) {
+          const watchedEpisodes = (us.progress || []).filter((p) => p.watched).length;
           totalMinutes += watchedEpisodes * runtime;
-        } else if (us.status === 'completed') {
-          const epCount = us.totalEpisodes || us.show?.episodes?.length || 10;
-          totalMinutes += epCount * runtime;
         }
       }
     }
@@ -145,8 +150,13 @@ export async function GET(
         rating: us.ratings?.[0]?.score || (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
       }));
 
-    // Количество добавленных тайтлов
-    const totalTitles = userShows.length;
+    // Количество добавленных СЕРИАЛОВ (не включая фильмы и брошенные)
+    const addedSeriesCount = userShows.filter(
+      (us) => us.status !== 'dropped' && (us.kind === 'series' || us.show?.kind === 'series')
+    ).length;
+
+    // Общее количество добавленных тайтлов
+    const totalTitles = userShows.filter((us) => us.status !== 'dropped').length;
 
     // Общее количество просмотренных серий
     let watchedEpisodesCount = 0;
@@ -182,10 +192,10 @@ export async function GET(
       (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)
     );
 
-    // 4. Расчет достижений с поддержкой всех ключей
+    // 4. Расчет достижений с честным количеством сериалов
     const achievements = calculateAchievements({
       totalTitles,
-      addedShowsCount: totalTitles,
+      addedShowsCount: addedSeriesCount, // Передаем 16 сериалов, а не 57
       totalEpisodes: watchedEpisodesCount,
       watchedEpisodesCount,
       totalRatings: ratingsCount,

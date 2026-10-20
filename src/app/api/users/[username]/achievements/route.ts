@@ -20,7 +20,10 @@ export async function GET(
     }
 
     const userShows = await prisma.userShow.findMany({
-      where: { userId: user.id },
+      where: { 
+        userId: user.id,
+        status: { not: 'dropped' }, // Исключаем брошенные тайтлы
+      },
       include: {
         ratings: true,
         progress: true,
@@ -28,21 +31,30 @@ export async function GET(
       },
     });
 
-    const totalTitles = userShows.length;
+    // 1. Считаем ТОЛЬКО сериалы, добавленные пользователем
+    const addedSeriesCount = userShows.filter(
+      (us) => us.kind === 'series' || us.show?.kind === 'series'
+    ).length;
 
+    // 2. Считаем просмотренные серии
     let watchedEpisodesCount = 0;
     for (const us of userShows) {
       watchedEpisodesCount += (us.progress || []).filter((p) => p.watched).length;
     }
 
+    // 3. Полностью завершенные сериалы
     const completedSeriesCount = userShows.filter(
-      (us) => us.status === 'completed' && (us.kind === 'series' || us.show?.kind === 'series')
+      (us) =>
+        us.status === 'completed' &&
+        (us.kind === 'series' || us.show?.kind === 'series')
     ).length;
 
+    // 4. Оценки
     const ratingsCount = userShows.filter(
       (us) => us.ratings && us.ratings.length > 0 && us.ratings[0].score > 0
     ).length;
 
+    // 5. Комментарии
     let commentsCount = 0;
     try {
       commentsCount = await prisma.comment.count({
@@ -52,6 +64,7 @@ export async function GET(
       commentsCount = 0;
     }
 
+    // 6. Друзья
     const friendsCount = await prisma.friendship.count({
       where: {
         OR: [{ requesterId: user.id }, { addresseeId: user.id }],
@@ -59,12 +72,13 @@ export async function GET(
       },
     });
 
+    // 7. Дни регистрации
     const daysRegistered = Math.floor(
       (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24)
     );
 
     const achievements = calculateAchievements({
-      totalTitles,
+      addedShowsCount: addedSeriesCount, // Передаем честное число сериалов (16)
       totalEpisodes: watchedEpisodesCount,
       watchedEpisodesCount,
       totalRatings: ratingsCount,
