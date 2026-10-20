@@ -19,7 +19,6 @@ export async function GET(request: NextRequest) {
       currentUserId = firstUser?.id;
     }
 
-    // Загружаем записи из UserShow
     const userShows = currentUserId
       ? await prisma.userShow.findMany({
           where: { userId: currentUserId },

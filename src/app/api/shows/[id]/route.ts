@@ -23,6 +23,7 @@ export async function GET(
 
     const requestedType = request.nextUrl.searchParams.get('type');
 
+    // Определение сессии пользователя
     const session = await auth();
     let currentUserId = (session?.user as { id?: string })?.id;
     if (!currentUserId && session?.user?.email) {
@@ -33,51 +34,42 @@ export async function GET(
       currentUserId = u?.id;
     }
 
-    // 1. Поиск в Show по id или tmdbId с учётом переданного типа
+    // 1. ПРИОРИТЕТ 1: Если тайтл с таким id уже есть в базе данных Show
     let show = await prisma.show.findFirst({
       where: {
-        OR: [{ id: numId }, { tmdbId: numId }],
+        id: numId,
         ...(requestedType ? { kind: requestedType === 'tv' ? 'series' : 'movie' } : {}),
       },
       include: {
         episodes: true,
         comments: {
           include: {
-            user: {
-              select: { id: true, name: true, username: true, avatarUrl: true },
-            },
+            user: { select: { id: true, name: true, username: true, avatarUrl: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
       },
     });
 
-    // 2. Если не найден в Show — проверяем UserShow.id
+    // 2. ПРИОРИТЕТ 2: Поиск по tmdbId в Show
     if (!show) {
-      const userShowItem = await prisma.userShow.findUnique({
-        where: { id: numId },
+      show = await prisma.show.findFirst({
+        where: {
+          tmdbId: numId,
+          ...(requestedType ? { kind: requestedType === 'tv' ? 'series' : 'movie' } : {}),
+        },
         include: {
-          show: {
+          episodes: true,
+          comments: {
             include: {
-              episodes: true,
-              comments: {
-                include: {
-                  user: {
-                    select: { id: true, name: true, username: true, avatarUrl: true },
-                  },
-                },
-                orderBy: { createdAt: 'desc' },
-              },
+              user: { select: { id: true, name: true, username: true, avatarUrl: true } },
             },
+            orderBy: { createdAt: 'desc' },
           },
         },
       });
-      if (userShowItem?.show) {
-        show = userShowItem.show;
-      }
     }
 
-    // 3. Загрузка из TMDB при первом открытии тайтла
     const apiKey =
       process.env.TMDB_API_KEY ||
       process.env.TMDB_READ_ACCESS_TOKEN ||
@@ -87,33 +79,27 @@ export async function GET(
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (apiKey.startsWith('eyJ')) headers['Authorization'] = `Bearer ${apiKey}`;
 
-    const buildUrl = (type: 'movie' | 'tv') => {
+    const buildTmdbUrl = (type: 'movie' | 'tv') => {
       let u = `https://api.themoviedb.org/3/${type}/${numId}?language=ru-RU&append_to_response=credits`;
       if (!apiKey.startsWith('eyJ')) u += `&api_key=${apiKey}`;
       return u;
     };
 
-    // Вспомогательная функция для сборки каста с гарантированной подгрузкой фото
     const processCast = async (rawCastList: any[]) => {
       return await Promise.all(
         rawCastList.slice(0, 25).map(async (a: any) => {
           let profilePath = a.profile_path;
-
-          // Если фото нет в объекте фильма, пробуем достать из прямого профиля персоны TMDB
           if (!profilePath && a.id && apiKey) {
             try {
-              let pUrl = `https://api.themoviedb.org/3/person/${a.id}`;
-              if (!apiKey.startsWith('eyJ')) pUrl += `?api_key=${apiKey}`;
+              let pUrl = `https://api.themoviedb.org/3/person/${a.id}?language=ru-RU`;
+              if (!apiKey.startsWith('eyJ')) pUrl += `&api_key=${apiKey}`;
               const pRes = await fetch(pUrl, { headers, next: { revalidate: 86400 } });
               if (pRes.ok) {
                 const pData = await pRes.json();
                 profilePath = pData.profile_path || null;
               }
-            } catch {
-              // Игнорируем сетевые сбои единичного профиля
-            }
+            } catch {}
           }
-
           return {
             id: a.id,
             name: a.name,
@@ -126,24 +112,35 @@ export async function GET(
       );
     };
 
+    // 3. ПРИОРИТЕТ 3: Если в базе тайтла нет — запрашиваем TMDB
     if (!show && apiKey) {
       let tmdbRes: Response | null = null;
-      let mediaKind: 'movie' | 'series' = 'movie';
+      let targetKind: 'movie' | 'series' = 'movie';
 
-      // Проверяем тип, переданный в URL (tv или movie)
+      // Если явно указан тип сериала или в TMDB это сериал
       if (requestedType === 'tv' || requestedType === 'series') {
-        tmdbRes = await fetch(buildUrl('tv'), { headers });
-        mediaKind = 'series';
-        if (!tmdbRes.ok) {
-          tmdbRes = await fetch(buildUrl('movie'), { headers });
-          mediaKind = 'movie';
+        const resTv = await fetch(buildTmdbUrl('tv'), { headers });
+        if (resTv.ok) {
+          tmdbRes = resTv;
+          targetKind = 'series';
+        } else {
+          const resMovie = await fetch(buildTmdbUrl('movie'), { headers });
+          if (resMovie.ok) {
+            tmdbRes = resMovie;
+            targetKind = 'movie';
+          }
         }
       } else {
-        tmdbRes = await fetch(buildUrl('movie'), { headers });
-        mediaKind = 'movie';
-        if (!tmdbRes.ok) {
-          tmdbRes = await fetch(buildUrl('tv'), { headers });
-          mediaKind = 'series';
+        const resMovie = await fetch(buildTmdbUrl('movie'), { headers });
+        if (resMovie.ok) {
+          tmdbRes = resMovie;
+          targetKind = 'movie';
+        } else {
+          const resTv = await fetch(buildTmdbUrl('tv'), { headers });
+          if (resTv.ok) {
+            tmdbRes = resTv;
+            targetKind = 'series';
+          }
         }
       }
 
@@ -159,11 +156,9 @@ export async function GET(
           : null;
         const tmdbRating = data.vote_average ? Math.round(data.vote_average * 10) / 10 : 0;
         const tmdbVotes = data.vote_count || 0;
-
         const runtime = data.runtime || data.episode_run_time?.[0] || null;
         const budget = data.budget && data.budget > 0 ? BigInt(data.budget) : null;
         const revenue = data.revenue && data.revenue > 0 ? BigInt(data.revenue) : null;
-
         const countries = (data.production_countries || []).map((c: { name: string }) => c.name);
         const studios = (data.production_companies || []).map((c: { name: string }) => c.name);
 
@@ -180,11 +175,12 @@ export async function GET(
 
         show = await prisma.show.create({
           data: {
+            id: numId,
             tmdbId: numId,
             name,
             originalName,
             description,
-            kind: mediaKind,
+            kind: targetKind,
             posterUrl,
             year,
             releaseDate: releaseDate ? new Date(releaseDate) : null,
@@ -204,9 +200,7 @@ export async function GET(
             episodes: true,
             comments: {
               include: {
-                user: {
-                  select: { id: true, name: true, username: true, avatarUrl: true },
-                },
+                user: { select: { id: true, name: true, username: true, avatarUrl: true } },
               },
             },
           },
@@ -218,61 +212,10 @@ export async function GET(
       return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
     }
 
-    // 4. Если в существующей записи нет фотографий актёров — обновляем их
-    const castArray = Array.isArray(show.cast) ? (show.cast as any[]) : [];
-    const hasAnyPhoto = castArray.some((a: any) => Boolean(a.profileUrl || a.image || a.profile_path));
+    // 4. Трейлеры (RU / EN)
+    let trailers: { russian: any; english: any } = { russian: null, english: null };
+    const targetTmdbId = show.tmdbId || show.id;
 
-    if (show.tmdbId && (!hasAnyPhoto || castArray.length === 0) && apiKey) {
-      try {
-        const type = show.kind === 'series' ? 'tv' : 'movie';
-        let creditsUrl = `https://api.themoviedb.org/3/${type}/${show.tmdbId}/credits?language=ru-RU`;
-        if (!apiKey.startsWith('eyJ')) creditsUrl += `&api_key=${apiKey}`;
-
-        let creditsRes = await fetch(creditsUrl, { headers });
-        let creditsData = creditsRes.ok ? await creditsRes.json() : null;
-
-        // Если с ru-RU каст пустой или без фото, делаем fallback на глобальный запрос
-        if (!creditsData?.cast?.some((c: any) => c.profile_path)) {
-          let fallbackUrl = `https://api.themoviedb.org/3/${type}/${show.tmdbId}/credits`;
-          if (!apiKey.startsWith('eyJ')) fallbackUrl += `&api_key=${apiKey}`;
-          const fallbackRes = await fetch(fallbackUrl, { headers });
-          if (fallbackRes.ok) creditsData = await fallbackRes.json();
-        }
-
-        if (creditsData?.cast && creditsData.cast.length > 0) {
-          const cast = await processCast(creditsData.cast);
-          const director =
-            creditsData.crew?.find((c: { job: string; name: string }) => c.job === 'Director')?.name ||
-            show.director;
-
-          show = await prisma.show.update({
-            where: { id: show.id },
-            data: { cast, director },
-            include: {
-              episodes: true,
-              comments: {
-                include: {
-                  user: {
-                    select: { id: true, name: true, username: true, avatarUrl: true },
-                  },
-                },
-                orderBy: { createdAt: 'desc' },
-              },
-            },
-          });
-        }
-      } catch {
-        // Оставляем текущую запись при недоступности сети
-      }
-    }
-
-    // 5. Загрузка трейлеров (RU + EN) из TMDB
-    let trailers: {
-      russian: { id: string; key: string; name: string; site: string; type: string } | null;
-      english: { id: string; key: string; name: string; site: string; type: string } | null;
-    } = { russian: null, english: null };
-
-    const targetTmdbId = show.tmdbId || numId;
     if (targetTmdbId && apiKey) {
       try {
         const type = show.kind === 'series' ? 'tv' : 'movie';
@@ -307,19 +250,14 @@ export async function GET(
             : null;
         };
 
-        const ruData = ruRes.ok ? await ruRes.json() : null;
-        const enData = enRes.ok ? await enRes.json() : null;
-
         trailers = {
-          russian: findBestTrailer(ruData?.results || []),
-          english: findBestTrailer(enData?.results || []),
+          russian: findBestTrailer(ruRes.ok ? (await ruRes.json()).results : []),
+          english: findBestTrailer(enRes.ok ? (await enRes.json()).results : []),
         };
-      } catch {
-        // Оставляем пустыми при ошибке TMDB
-      }
+      } catch {}
     }
 
-    // 6. Получение пользовательского статуса
+    // 5. Статус пользователя в библиотеке
     let userShow = null;
     if (currentUserId) {
       userShow = await prisma.userShow.findUnique({
@@ -329,10 +267,7 @@ export async function GET(
             showId: show.id,
           },
         },
-        include: {
-          ratings: true,
-          progress: true,
-        },
+        include: { ratings: true, progress: true },
       });
     }
 
