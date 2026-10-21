@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { validateLibraryInput } from '@/lib/library-validation';
 import { getCurrentUserId, formatPosterUrl, safeJson } from '@/lib/current-user';
 
 export async function GET(
@@ -363,6 +364,9 @@ export async function POST(
 
     // 2. Отметка серии и/или сохранение времени остановки (stoppedAt)
     if (episodeId) {
+      if (!targetShow.episodes.some((episode) => episode.id === Number(episodeId))) {
+        return NextResponse.json({ error: 'Серия не принадлежит этому тайтлу' }, { status: 404 });
+      }
       const updateData: { watched?: boolean; stoppedAt?: string | null } = {};
       if (watched !== undefined) updateData.watched = Boolean(watched);
       if (stoppedAt !== undefined) updateData.stoppedAt = stoppedAt ? String(stoppedAt).trim() : null;
@@ -407,6 +411,9 @@ export async function PATCH(
     }
 
     const body = await request.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ error: 'Некорректный запрос' }, { status: 400 });
+    const validationError = validateLibraryInput(body);
+    if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
     let targetShow = await prisma.show.findUnique({
       where: { id: numId },
     });
@@ -433,7 +440,7 @@ export async function PATCH(
         ...(body.dubbing !== undefined ? { dubbing: body.dubbing ? String(body.dubbing).trim() : null } : {}),
         ...(body.watchSite !== undefined ? { watchSite: body.watchSite ? String(body.watchSite).trim() : null } : {}),
         ...(body.isFavorite !== undefined ? { isFavorite: Boolean(body.isFavorite) } : {}),
-        ...(body.status === 'completed' ? { isCompleted: true } : {}),
+        ...(body.status !== undefined ? { isCompleted: body.status === 'completed' } : {}),
       },
       create: {
         userId: currentUserId,
@@ -447,7 +454,7 @@ export async function PATCH(
       },
     });
 
-    if (body.score !== undefined) {
+    if (body.score !== undefined && body.score !== null) {
       const score = Number(body.score);
       const existingRating = await prisma.rating.findFirst({
         where: { userShowId: userShow.id, episodeId: null },

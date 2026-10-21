@@ -72,10 +72,8 @@ export default function WishlistPage() {
 
   const handleRemove = async (showId: number) => {
     try {
-      const res = await fetch('/api/user-shows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ showId, status: null }),
+      const res = await fetch(`/api/user-shows?showId=${showId}`, {
+        method: 'DELETE',
       });
       if (res.ok) {
         setItems((prev) => prev.filter((i) => i.show?.id !== showId && i.showId !== showId));

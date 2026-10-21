@@ -1,17 +1,20 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 
 interface MovieData {
   id: number;
   title: string;
   posterUrl: string;
-  rating: number;
-  year: string;
+  rating?: number;
+  year?: string;
 }
 
 interface GameRoundData {
+  roundId: string;
+  bank: number;
+  phase: "question" | "answered" | "failed" | "paid";
   limitReached: boolean;
   message?: string;
   attemptsLeft: number;
@@ -20,6 +23,13 @@ interface GameRoundData {
   rewardForRound: number;
   leftMovie: MovieData;
   rightMovie: MovieData;
+}
+
+async function fetchGameRound(signal?: AbortSignal): Promise<GameRoundData> {
+  const res = await fetch('/api/higher-lower', { signal });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Не удалось загрузить игру');
+  return json;
 }
 
 export default function HigherLowerPage() {
@@ -33,143 +43,79 @@ export default function HigherLowerPage() {
   const [submitting, setSubmitting] = useState(false);
   const [cashoutDone, setCashoutDone] = useState(false);
 
-  // Хранилище показанных фильмов для предотвращения дубликатов
-  const usedIdsRef = useRef<number[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const loadRound = useCallback(async (roundNum: number) => {
-    setLoading(true);
-    setHasAnswered(false);
-    setIsCorrect(null);
-
-    const excludeParam = usedIdsRef.current.length > 0
-      ? `&exclude=${usedIdsRef.current.join(',')}`
-      : '';
-
-    try {
-      const res = await fetch(`/api/higher-lower?round=${roundNum}${excludeParam}`);
-      if (res.ok) {
-        const json: GameRoundData = await res.json();
-        setData(json);
-
-        // Запоминаем фильмы из текущего раунда
-        if (json.leftMovie?.id && !usedIdsRef.current.includes(json.leftMovie.id)) {
-          usedIdsRef.current.push(json.leftMovie.id);
-        }
-        if (json.rightMovie?.id && !usedIdsRef.current.includes(json.rightMovie.id)) {
-          usedIdsRef.current.push(json.rightMovie.id);
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+  const applyRound = useCallback((json: GameRoundData) => {
+    setData(json);
+    setCurrentRound(json.round || 1);
+    setAccumulatedBank(json.bank || 0);
+    setHasAnswered(['answered', 'failed', 'paid'].includes(json.phase));
+    setIsCorrect(json.phase === 'question' ? null : json.phase !== 'failed');
+    setCashoutDone(json.phase === 'paid');
   }, []);
 
+  const loadRound = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const json = await fetchGameRound(signal);
+      if (!signal?.aborted) applyRound(json);
+    } catch (e) {
+      if (!signal?.aborted) setError(e instanceof Error ? e.message : 'Ошибка сети');
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  }, [applyRound]);
+
   useEffect(() => {
-    loadRound(currentRound);
-  }, [currentRound, loadRound]);
+    const controller = new AbortController();
+    fetchGameRound(controller.signal)
+      .then((json) => { if (!controller.signal.aborted) applyRound(json); })
+      .catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [applyRound]);
 
-  const handleChoice = async (choice: 'higher' | 'lower') => {
-    if (hasAnswered || submitting || !data) return;
-
+  const requestAction = async (action: string, choice?: 'higher' | 'lower') => {
+    if (submitting || !data) return;
     setSubmitting(true);
-    const { questionType, leftMovie, rightMovie, rewardForRound } = data;
-
-    let correct = false;
-
-    if (questionType === 'rating') {
-      if (choice === 'higher') {
-        correct = rightMovie.rating >= leftMovie.rating;
-      } else {
-        correct = rightMovie.rating <= leftMovie.rating;
-      }
-    } else {
-      const yearLeft = parseInt(leftMovie.year, 10);
-      const yearRight = parseInt(rightMovie.year, 10);
-      if (choice === 'higher') {
-        correct = yearRight >= yearLeft;
-      } else {
-        correct = yearRight <= yearLeft;
-      }
-    }
-
-    setIsCorrect(correct);
-    setHasAnswered(true);
-
-    if (correct) {
-      const nextBank = accumulatedBank + rewardForRound;
-      setAccumulatedBank(nextBank);
-
-      if (currentRound === 5) {
-        try {
-          await fetch('/api/higher-lower', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'cashout', currentBank: nextBank }),
-          });
-          window.dispatchEvent(new Event('popcorn-updated'));
-          setCashoutDone(true);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    } else {
-      try {
-        const res = await fetch('/api/higher-lower', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'fail-attempt' }),
-        });
-        if (res.ok) {
-          const resJson = await res.json();
-          setData((prev) => (prev ? { ...prev, attemptsLeft: resJson.attemptsLeft } : null));
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    setSubmitting(false);
-  };
-
-  const handleCashout = async () => {
-    if (submitting || accumulatedBank <= 0) return;
-    setSubmitting(true);
+    setError(null);
     try {
       const res = await fetch('/api/higher-lower', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cashout', currentBank: accumulatedBank }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, roundId: data.roundId, choice }),
       });
-      if (res.ok) {
-        window.dispatchEvent(new Event('popcorn-updated'));
-        setCashoutDone(true);
-      }
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Не удалось выполнить действие');
+      applyRound(json);
+      if (json.phase === 'paid') window.dispatchEvent(new Event('popcorn-updated'));
     } catch (e) {
-      console.error(e);
+      setError(e instanceof Error ? e.message : 'Ошибка сети');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleRestart = () => {
-    setAccumulatedBank(0);
-    setCurrentRound(1);
-    usedIdsRef.current = [];
+  const handleChoice = (choice: 'higher' | 'lower') => {
+    if (!hasAnswered) void requestAction('answer', choice);
   };
-
-  const handleNextRound = () => {
-    if (currentRound < 5) {
-      setCurrentRound((prev) => prev + 1);
-    }
-  };
+  const handleCashout = () => { void requestAction('cashout'); };
+  const handleRestart = () => { void requestAction('restart'); };
+  const handleNextRound = () => { void requestAction('next'); };
 
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto py-20 px-4 text-center space-y-4">
         <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
         <p className="text-xs text-neutral-400">Подбираем сбалансированную пару фильмов...</p>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="max-w-md mx-auto py-16 text-center space-y-5">
+        <p role="alert" className="text-neutral-300">{error || 'Не удалось загрузить игру'}</p>
+        <button type="button" onClick={() => { setLoading(true); setError(null); void loadRound(); }} className="btn btn-primary">Попробовать ещё раз</button>
+        <Link href="/rewards" className="block text-blue-400">Вернуться в центр наград</Link>
       </div>
     );
   }

@@ -1,23 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { getCurrentUserId } from '@/lib/current-user';
 import { prisma } from '@/lib/prisma';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const session = await auth();
-    let currentUserId = (session?.user as { id?: string })?.id;
-    if (!currentUserId && session?.user?.email) {
-      const u = await prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true },
-      });
-      currentUserId = u?.id;
-    }
-
-    if (!currentUserId) {
-      const firstUser = await prisma.user.findFirst({ select: { id: true } });
-      currentUserId = firstUser?.id;
-    }
+    const currentUserId = await getCurrentUserId();
+    if (!currentUserId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
     const userShows = currentUserId
       ? await prisma.userShow.findMany({

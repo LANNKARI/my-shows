@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:security": "node --import tsx --test --test-concurrency=1 tests/security.test.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -18,7 +19,8 @@
     "next-auth": "^5.0.0-beta.32",
     "prisma": "^6.19.3",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
