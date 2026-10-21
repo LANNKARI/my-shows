@@ -12,6 +12,9 @@ export async function PATCH(
   const { id: idStr, epId: epIdStr } = await params;
   const userShowId = Number(idStr);
   const progressId = Number(epIdStr);
+  if (!Number.isSafeInteger(userShowId) || userShowId <= 0 || !Number.isSafeInteger(progressId) || progressId <= 0) {
+    return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  }
 
   // Проверяем, что UserShow — мой
   const userShow = await prisma.userShow.findFirst({
@@ -20,27 +23,28 @@ export async function PATCH(
   if (!userShow) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const body = await req.json();
-  const data: any = {};
+  const data: { watched?: boolean; watchedAt?: Date | null; stoppedAt?: string | null } = {};
   if ("watched" in body) {
+    if (typeof body.watched !== 'boolean') return NextResponse.json({ error: 'invalid watched' }, { status: 400 });
     data.watched = !!body.watched;
     data.watchedAt = body.watched ? new Date() : null;
   }
   if ("stoppedAt" in body) data.stoppedAt = body.stoppedAt || null;
 
-  const updated = await prisma.episodeProgress.update({
-    where: { id: progressId },
-    data,
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.episodeProgress.updateMany({
+      where: { id: progressId, userShowId }, data,
+    });
+    if (!result.count) return null;
+    const all = await tx.episodeProgress.findMany({ where: { userShowId } });
+    const allWatched = all.length > 0 && all.every((e) => e.watched);
+    await tx.userShow.update({
+      where: { id: userShowId },
+      data: { isCompleted: allWatched, status: allWatched ? 'completed' : userShow.status === 'completed' ? 'watching' : userShow.status },
+    });
+    return tx.episodeProgress.findUnique({ where: { id: progressId } });
   });
-
-  // Обновляем isCompleted
-  const all = await prisma.episodeProgress.findMany({
-    where: { userShowId },
-  });
-  const allWatched = all.length > 0 && all.every((e) => e.watched);
-  await prisma.userShow.update({
-    where: { id: userShowId },
-    data: { isCompleted: allWatched },
-  });
+  if (!updated) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   return NextResponse.json(updated);
 }

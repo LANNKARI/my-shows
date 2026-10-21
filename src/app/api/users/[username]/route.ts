@@ -30,18 +30,6 @@ export async function GET(
 
     const isOwnProfile = currentUserId === user.id;
 
-    // Сброс флага isCompleted для незавершенных тайтлов
-    await prisma.userShow.updateMany({
-      where: {
-        userId: user.id,
-        status: { not: 'completed' },
-        isCompleted: true,
-      },
-      data: {
-        isCompleted: false,
-      },
-    });
-
     let friendshipStatus: 'none' | 'pending_sent' | 'pending_received' | 'friends' = 'none';
 
     if (!isOwnProfile && currentUserId) {

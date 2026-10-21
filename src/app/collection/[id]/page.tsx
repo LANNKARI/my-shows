@@ -17,14 +17,23 @@ type C = {
 
 export default function CollectionPage() {
   const { id } = useParams<{ id: string }>();
-  const [c, setC] = useState<C | null>(null);
+  const [result, setResult] = useState<{ id: string; collection: C | null; error: string | null } | null>(null);
+  const c = result?.id === id ? result.collection : null;
+  const error = result?.id === id ? result.error : null;
 
   useEffect(() => {
-    fetch(`/api/collections/${id}`)
-      .then((r) => r.json())
-      .then(setC);
+    const controller = new AbortController();
+    fetch(`/api/collections/${id}`, { signal: controller.signal })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(r.status === 401 ? 'Войдите, чтобы открыть коллекцию.' : r.status === 404 ? 'Коллекция не найдена или недоступна.' : 'Не удалось загрузить коллекцию.');
+        return r.json();
+      })
+      .then((collection: C) => { if (!controller.signal.aborted) setResult({ id, collection, error: null }); })
+      .catch((err: Error) => { if (!controller.signal.aborted) setResult({ id, collection: null, error: err.message }); });
+    return () => controller.abort();
   }, [id]);
 
+  if (error) return <p role="alert" className="text-neutral-400">{error}</p>;
   if (!c) return <p className="text-neutral-400">Загрузка...</p>;
 
   return (

@@ -21,7 +21,7 @@ export default function NavLinks() {
     }
 
     try {
-      const res = await fetch('/api/user/counts', { cache: 'no-store' });
+      const res = await fetch('/api/users/counts', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setCounts({
