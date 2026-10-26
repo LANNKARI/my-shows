@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import CastList from "@/components/CastList";
 import ShowDetails from "@/components/ShowDetails";
-import CommentSection from "@/components/CommentSection";
+import CommentSection, { type CommentRecord } from "@/components/CommentSection";
 import TrailerPlayer, { type TrailerItem } from "@/components/TrailerPlayer";
 import {
   PersonalNotes,
@@ -47,7 +47,7 @@ type ShowData = {
     profileUrl?: string | null;
     image?: string | null;
   }[];
-  comments?: unknown[];
+  comments?: CommentRecord[];
 };
 
 export default function ShowPage({
