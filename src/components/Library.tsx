@@ -1,10 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import NavigationIcon from './NavigationIcon';
+import useQuickProgress, { type ProgressPatch } from './useQuickProgress';
 import {
   filterLibrary,
   libraryProgress,
@@ -50,9 +57,17 @@ function Poster({ item, large }: { item: LibraryItem; large: boolean }) {
 function LibraryCard({
   item,
   posters,
+  mark,
+  disabled,
+  saving,
+  notice,
 }: {
   item: LibraryItem;
   posters: boolean;
+  mark: (item: LibraryItem) => void;
+  disabled: boolean;
+  saving: boolean;
+  notice?: ReactNode;
 }) {
   const progress = libraryProgress(item);
   const rating = personalRating(item);
@@ -71,7 +86,7 @@ function LibraryCard({
   return (
     <article
       aria-label={item.title}
-      className={`rounded-2xl border border-neutral-800 bg-neutral-900/60 ${posters ? 'flex flex-col overflow-hidden' : 'grid grid-cols-[4rem_minmax(0,1fr)] gap-4 p-4 sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:items-center sm:gap-5 sm:p-5'}`}
+      className={`scroll-mt-20 rounded-2xl border border-neutral-800 bg-neutral-900/60 ${posters ? 'flex flex-col overflow-hidden' : 'grid grid-cols-[4rem_minmax(0,1fr)] gap-4 p-4 sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:items-center sm:gap-5 sm:p-5'}`}
     >
       <div className={posters ? 'p-3 pb-0' : ''}>
         <Poster item={item} large={posters} />
@@ -125,7 +140,7 @@ function LibraryCard({
             )}
           </div>
         )}
-        {progress.stopped && (
+        {progress.stopped && item.status !== 'completed' && (
           <p className="inline-block rounded-lg border border-neutral-700 bg-neutral-800/50 px-2 py-1 text-xs text-neutral-300">
             {!progress.movie && progress.stoppedEpisode
               ? `С${progress.stoppedEpisode.season} · Э${progress.stoppedEpisode.episode} · `
@@ -133,6 +148,7 @@ function LibraryCard({
             Остановились на {progress.stopped.stoppedAt}
           </p>
         )}
+        {notice}
       </div>
       <div
         className={
@@ -141,6 +157,24 @@ function LibraryCard({
             : 'col-span-2 flex flex-wrap items-center gap-3 sm:col-span-1 sm:flex-col sm:items-stretch'
         }
       >
+        {((progress.movie && ['watching', 'planned'].includes(item.status)) ||
+          (!progress.movie && item.status === 'watching' && progress.next)) && (
+          <button
+            type="button"
+            disabled={disabled}
+            data-quick-progress={item.userShowId}
+            aria-busy={saving}
+            aria-label={`${progress.movie ? 'Отметить фильм просмотренным' : 'Отметить следующую серию'}: ${item.title}`}
+            onClick={() => mark(item)}
+            className={`min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-wait disabled:opacity-60 ${posters ? 'mb-2 w-full' : 'flex-1 sm:flex-none'}`}
+          >
+            {saving
+              ? 'Сохраняем…'
+              : progress.movie
+                ? 'Просмотрено'
+                : 'Отметить серию'}
+          </button>
+        )}
         <Link
           href={`/library/${item.showId}`}
           aria-label={`Открыть трекер: ${item.title}`}
@@ -188,6 +222,39 @@ export default function Library() {
     sessionStatus === 'loading' ||
     (sessionStatus === 'authenticated' && !current);
   const items = current?.items || [];
+  const applyProgress = useCallback(
+    (patch: ProgressPatch) => {
+      setResource((previous) =>
+        previous && previous.userId === userId
+          ? {
+              ...previous,
+              items: previous.items.map((item) =>
+                item.userShowId === patch.userShowId
+                  ? { ...item, ...patch }
+                  : item,
+              ),
+            }
+          : previous,
+      );
+    },
+    [userId],
+  );
+  const quick = useQuickProgress(userId, applyProgress);
+  const undoButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!quick.undo) return;
+    const markButton = document.querySelector<HTMLButtonElement>(`[data-quick-progress="${quick.undo.id}"]`);
+    if (document.activeElement !== document.body && document.activeElement !== markButton) return;
+    (quick.undo.focus ? undoButton.current : markButton)?.focus({ preventScroll: true });
+    const card = undoButton.current?.closest('article');
+    if (card) {
+      const rect = card.getBoundingClientRect();
+      const headerBottom = document.querySelector('header')?.getBoundingClientRect().bottom || 0;
+      const bar = document.querySelector('nav[aria-label="Мобильная навигация"]')?.getBoundingClientRect();
+      const bottom = bar?.height ? bar.top : window.innerHeight;
+      if (rect.top < headerBottom || rect.bottom > bottom) card.scrollIntoView({ block: 'start' });
+    }
+  }, [quick.undo]);
 
   useEffect(() => {
     const nav = tabsRef.current;
@@ -195,8 +262,10 @@ export default function Library() {
     if (!nav || !active) return;
     const bounds = nav.getBoundingClientRect();
     const selected = active.getBoundingClientRect();
-    if (selected.left < bounds.left) nav.scrollLeft += selected.left - bounds.left;
-    else if (selected.right > bounds.right) nav.scrollLeft += selected.right - bounds.right;
+    if (selected.left < bounds.left)
+      nav.scrollLeft += selected.left - bounds.left;
+    else if (selected.right > bounds.right)
+      nav.scrollLeft += selected.right - bounds.right;
   }, [status.value, current?.items.length]);
 
   useEffect(() => {
@@ -243,7 +312,10 @@ export default function Library() {
   }, [userId, sessionStatus, attempt]);
 
   useEffect(() => {
-    const refresh = () => setAttempt((value) => value + 1);
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent).detail?.source !== 'quick-progress')
+        setAttempt((value) => value + 1);
+    };
     window.addEventListener('user-shows-updated', refresh);
     return () => window.removeEventListener('user-shows-updated', refresh);
   }, []);
@@ -270,8 +342,80 @@ export default function Library() {
     (item) => item.status === status.value,
   ).length;
 
+  const inlineUndo = Boolean(
+    quick.undo &&
+      !quick.error &&
+      visible.some((item) => item.userShowId === quick.undo?.id),
+  );
+  const renderNotice = (inline: boolean) => (
+    <aside
+      aria-label="Последнее изменение прогресса"
+      className={
+        inline
+          ? 'mt-3 space-y-2 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3'
+          : 'fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-40 space-y-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-4 shadow-2xl xl:inset-x-auto xl:bottom-5 xl:right-6 xl:w-96'
+      }
+    >
+      {quick.error ? (
+        <>
+          <p role="alert" className="text-sm text-neutral-200">
+            {quick.error}
+          </p>
+          <button
+            type="button"
+            disabled={Boolean(quick.pending)}
+            onClick={() => {
+              quick.dismiss();
+              setAttempt((value) => value + 1);
+            }}
+            className={primaryLink}
+          >
+            Обновить библиотеку
+          </button>
+        </>
+      ) : (
+        quick.undo && (
+          <>
+            <p role="status" className="text-sm font-semibold text-neutral-100">
+              {quick.undo.message}
+            </p>
+            {!inline && (
+              <p className="line-clamp-2 text-xs text-neutral-400">
+                {quick.undo.title} · Отмена доступна 10 минут
+              </p>
+            )}
+          </>
+        )
+      )}
+      <div className="flex flex-wrap gap-3">
+        {quick.undo && (
+          <button
+            ref={undoButton}
+            type="button"
+            disabled={Boolean(quick.pending)}
+            aria-label={`Отменить отметку: ${quick.undo.title}`}
+            onClick={() => void quick.undoLast()}
+            className={primaryLink}
+          >
+            {quick.pending?.action === 'undo' ? 'Отменяем…' : 'Отменить'}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={Boolean(quick.pending)}
+          onClick={quick.dismiss}
+          className="min-h-11 rounded-xl px-3 text-sm text-neutral-400 hover:text-white focus-visible:outline-2 focus-visible:outline-rose-400"
+        >
+          Закрыть
+        </button>
+      </div>
+    </aside>
+  );
+
   return (
-    <section className="space-y-6 pb-4">
+    <section
+      className={`space-y-6 ${(quick.undo || quick.error) && !inlineUndo ? 'pb-48' : 'pb-4'}`}
+    >
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
@@ -453,6 +597,17 @@ export default function Library() {
                   key={item.userShowId}
                   item={item}
                   posters={posters}
+                  notice={
+                    inlineUndo && quick.undo?.id === item.userShowId
+                      ? renderNotice(true)
+                      : undefined
+                  }
+                  mark={(item) => void quick.mark(item)}
+                  disabled={Boolean(quick.pending)}
+                  saving={
+                    quick.pending?.action === 'mark' &&
+                    quick.pending.id === item.userShowId
+                  }
                 />
               ))}
             </div>
@@ -485,6 +640,10 @@ export default function Library() {
           )}
         </>
       )}
+      {(quick.error || quick.undo) &&
+        !inlineUndo &&
+        sessionStatus === 'authenticated' &&
+        renderNotice(false)}
     </section>
   );
 }
