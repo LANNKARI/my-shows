@@ -17,12 +17,12 @@ async function mockApi(page: Page, signedIn = false) {
 const navigation = (page: Page) => page.getByRole('navigation', { name: 'Мобильная навигация', exact: true });
 const searchInput = (page: Page) => page.getByRole('main').getByRole('searchbox', { name: 'Поиск фильмов и сериалов' });
 
-test('mobile navigation provides all four destinations, library sections and guest login', async ({ page }, testInfo) => {
+test('mobile navigation provides all five destinations, library sections and guest login', async ({ page }, testInfo) => {
   await mockApi(page);
   await page.goto('/');
   const nav = navigation(page);
   await expect(nav).toBeVisible();
-  await expect(nav.getByRole('link')).toHaveCount(4);
+  await expect(nav.getByRole('link')).toHaveCount(5);
   await expect(nav.getByRole('link', { name: 'Главная' })).toHaveAttribute('aria-current', 'page');
   await nav.getByRole('link', { name: 'Поиск', exact: true }).click();
   await expect(page).toHaveURL(/\/search$/);

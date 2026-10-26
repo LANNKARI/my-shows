@@ -1,6 +1,8 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
+import ReleaseFollowButton from "@/components/ReleaseFollowButton";
+import "@/components/releases.css";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
@@ -34,6 +36,7 @@ type TrackerData = {
     id: number;
     showId: number;
     kind: string;
+    notifyReleases?: boolean;
     status: string;
     updatedAt: string;
   };
@@ -547,6 +550,16 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
               collapsible
             />
           </div>
+          {show.kind === "series" && (
+            <div className="release-ui">
+              <ReleaseFollowButton
+                key={`${userShow.id}:${userShow.notifyReleases}`}
+                userShowId={userShow.id}
+                enabled={!!userShow.notifyReleases}
+                title={show.title}
+              />
+            </div>
+          )}
           <section aria-label="Сезоны и серии">
             <h2>Сезоны и серии</h2>
             {seasons.length > 1 && (

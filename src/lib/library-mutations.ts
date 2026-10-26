@@ -1,3 +1,4 @@
+import { releaseDefaults } from "@/lib/release-defaults";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -33,10 +34,21 @@ async function lockedEntry(tx: Tx, userId: string, showId: number) {
   let show = await tx.show.findUnique({ where: { id: showId } });
   if (!show) show = await tx.show.findFirst({ where: { tmdbId: showId } });
   if (!show) throw new ProgressError(404, "Тайтл не найден");
+  const existing = await tx.userShow.findUnique({
+    where: { userId_showId: { userId, showId: show.id } },
+    select: { id: true },
+  });
+  const defaults = existing ? {} : await releaseDefaults(userId, show.kind, tx);
   const entry = await tx.userShow.upsert({
     where: { userId_showId: { userId, showId: show.id } },
     update: {},
-    create: { userId, showId: show.id, kind: show.kind, status: "watching" },
+    create: {
+      userId,
+      showId: show.id,
+      kind: show.kind,
+      status: "watching",
+      ...defaults,
+    },
   });
   await tx.$queryRaw`SELECT id FROM "UserShow" WHERE id = ${entry.id} AND "userId" = ${userId} FOR UPDATE`;
   return tx.userShow.findUniqueOrThrow({ where: { id: entry.id }, include });
