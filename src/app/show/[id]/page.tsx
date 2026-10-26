@@ -1,381 +1,346 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState, use } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import CastList from '@/components/CastList';
-import ShowDetails from '@/components/ShowDetails';
-import CommentSection from '@/components/CommentSection';
-import TrailerPlayer from '@/components/TrailerPlayer';
+import { use, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import CastList from "@/components/CastList";
+import ShowDetails from "@/components/ShowDetails";
+import CommentSection from "@/components/CommentSection";
+import TrailerPlayer, { type TrailerItem } from "@/components/TrailerPlayer";
+import {
+  PersonalNotes,
+  TitleControls,
+  TitleRatings,
+} from "@/components/TitlePersonal";
+import "@/components/title-detail.css";
 
-interface ShowPageProps {
+type PersonalRecord = {
+  id: number;
+  status: string;
+  isFavorite: boolean;
+  dubbing?: string | null;
+  watchSite?: string | null;
+  userRating?: number | null;
+  ratings?: { episodeId: number | null; score: number }[];
+};
+
+type ShowData = {
+  id: number;
+  name?: string;
+  title?: string;
+  originalName?: string | null;
+  originalTitle?: string | null;
+  kind: string;
+  posterUrl?: string | null;
+  backdropUrl?: string | null;
+  year?: string;
+  genres?: string[];
+  runtime?: number;
+  tmdbRating?: number | null;
+  description?: string;
+  trailers?: { russian: TrailerItem | null; english: TrailerItem | null };
+  cast?: {
+    id: number;
+    name: string;
+    character?: string;
+    profileUrl?: string | null;
+    image?: string | null;
+  }[];
+  comments?: unknown[];
+};
+
+export default function ShowPage({
+  params,
+}: {
   params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
+  const type = useSearchParams().get("type");
+  const { data: session, status: authStatus } = useSession();
+  return (
+    <ShowContent
+      key={`${id}:${type}:${authStatus}:${session?.user?.id}`}
+      id={id}
+      type={type}
+      authStatus={authStatus}
+    />
+  );
 }
 
-export default function ShowPage({ params }: ShowPageProps) {
-  const { id } = use(params);
+function ShowContent({
+  id,
+  type,
+  authStatus,
+}: {
+  id: string;
+  type: string | null;
+  authStatus: string;
+}) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const typeParam = searchParams.get('type');
-
-  const [show, setShow] = useState<any>(null);
-  const [userShow, setUserShow] = useState<any>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [updatingLibrary, setUpdatingLibrary] = useState<boolean>(false);
-  const [userRating, setUserRating] = useState<number>(0);
-
-  const loadShow = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const url = typeParam
-        ? `/api/shows/${id}?type=${typeParam}`
-        : `/api/shows/${id}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error('Карточка фильма или сериала не найдена');
-      }
-      const data = await res.json();
-      setShow(data.show);
-      setUserShow(data.userShow || null);
-
-      if (data.userShow?.ratings?.[0]?.score) {
-        setUserRating(data.userShow.ratings[0].score);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Ошибка загрузки';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [show, setShow] = useState<ShowData | null>(null);
+  const [personal, setPersonal] = useState<PersonalRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const [section, setSection] = useState("about");
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
-    loadShow();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, typeParam]);
+    const abort = new AbortController();
+    fetch(
+      `/api/shows/${encodeURIComponent(id)}${type ? `?type=${encodeURIComponent(type)}` : ""}`,
+      { signal: abort.signal },
+    )
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Не удалось загрузить карточку");
+        return response.json();
+      })
+      .then((data) => {
+        setShow(data.show);
+        const record = data.userShow;
+        setPersonal(
+          record
+            ? {
+                ...record,
+                userRating:
+                  record.ratings?.find(
+                    (rating: { episodeId: number | null }) =>
+                      rating.episodeId === null,
+                  )?.score ?? null,
+              }
+            : null,
+        );
+      })
+      .catch((error) => {
+        if (!abort.signal.aborted) setLoadError(error.message);
+      })
+      .finally(() => {
+        if (!abort.signal.aborted) setLoading(false);
+      });
+    return () => abort.abort();
+  }, [id, type, reload, authStatus]);
 
-  const handleSetStatus = async (newStatus: string) => {
-    if (!show) return;
-    setUpdatingLibrary(true);
+  async function save(values: Record<string, unknown>) {
+    if (authStatus !== "authenticated") {
+      if (authStatus === "unauthenticated") router.push("/login");
+      return false;
+    }
+    if (!show || lock.current) return false;
+    lock.current = true;
+    setBusy(true);
+    setSaveError("");
     try {
-      const res = await fetch('/api/user-shows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch(`/api/user-shows/${show.id}`, {
+        method: "PATCH",
+        signal: AbortSignal.timeout(15000),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          showId: show.id,
-          status: newStatus,
+          ...(!personal ? { status: "planned" } : {}),
+          ...values,
         }),
       });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || errData.details || 'Не удалось обновить статус');
-      }
-
-      const updated = await res.json();
-      setUserShow(updated.item || updated.userShow || updated);
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || 'Ошибка при сохранении в библиотеку');
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(
+          response.status === 401
+            ? "Войдите в аккаунт, чтобы сохранить изменения."
+            : result.error || "Не удалось сохранить изменения",
+        );
+      setPersonal((previous) => ({
+        ...previous,
+        ...result.item,
+        ...(values.score !== undefined
+          ? { userRating: Number(values.score) }
+          : {}),
+      }));
+      window.dispatchEvent(new Event("user-shows-updated"));
+      return true;
+    } catch (error) {
+      setSaveError(
+        error instanceof Error && error.name === "Error"
+          ? error.message
+          : "Не удалось подтвердить сохранение. Обновите страницу перед повтором.",
+      );
+      return false;
     } finally {
-      setUpdatingLibrary(false);
+      lock.current = false;
+      setBusy(false);
     }
-  };
-
-  const handleToggleFavorite = async () => {
-    if (!show) return;
-    const nextFavorite = !userShow?.isFavorite;
-
-    setUserShow((prev: any) => (prev ? { ...prev, isFavorite: nextFavorite } : prev));
-
-    try {
-      const res = await fetch('/api/user-shows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          showId: show.id,
-          isFavorite: nextFavorite,
-        }),
-      });
-
-      if (res.ok) {
-        const updated = await res.json();
-        setUserShow(updated.item || updated.userShow || updated);
-      }
-    } catch (err) {
-      console.error('Ошибка переключения любимого тайтла:', err);
-    }
-  };
-
-  const handleRate = async (score: number) => {
-    if (!show) return;
-    setUserRating(score);
-    try {
-      await fetch('/api/user-shows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          showId: show.id,
-          score,
-        }),
-      });
-    } catch (err) {
-      console.error('Ошибка выставления оценки:', err);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-neutral-400">Загрузка карточки...</p>
-        </div>
-      </div>
-    );
   }
 
-  if (error || !show) {
+  if (loading)
     return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 text-center shadow-xl">
-          <div className="text-4xl mb-3">🎬</div>
-          <h1 className="text-xl font-bold text-white mb-2">Тайтл не найден</h1>
-          <p className="text-sm text-neutral-400 mb-6">{error || 'Не удалось загрузить информацию о тайтле.'}</p>
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={() => router.back()}
-              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-xl transition-colors cursor-pointer"
-            >
-              ← Назад
-            </button>
-            <Link
-              href="/"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors"
-            >
-              На главную
-            </Link>
-          </div>
-        </div>
+      <div className="title-detail td-panel" role="status">
+        Загрузка карточки…
       </div>
     );
-  }
-
-  const title = show.name || show.title;
-  const originalTitle = show.originalName || show.originalTitle;
-  const currentStatus = userShow?.status || null;
-  const isFav = Boolean(userShow?.isFavorite);
-
-  return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-20 space-y-8">
-      {/* Аккуратная кнопка «Назад» в стиле пилюли */}
-      <div className="max-w-6xl mx-auto px-4 pt-2">
+  if (loadError || !show)
+    return (
+      <div className="title-detail td-panel">
+        <h1>Карточка недоступна</h1>
+        <p className="td-description">{loadError || "Тайтл не найден"}</p>
         <button
-          onClick={() => router.back()}
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition-all text-xs font-semibold shadow-sm cursor-pointer group"
+          className="td-button"
+          onClick={() => {
+            setLoading(true);
+            setLoadError("");
+            setReload(reload + 1);
+          }}
         >
-          <span className="text-sm group-hover:-translate-x-0.5 transition-transform">←</span>
-          <span>Назад</span>
+          Повторить загрузку
         </button>
       </div>
-
-      {/* ========================================================
-          1. ГЛАВНЫЙ БЛОК ТАЙТЛА (СО СКРУГЛЕНИЯМИ rounded-3xl)
-         ======================================================== */}
-      <div className="max-w-6xl mx-auto px-4">
-        <div className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 shadow-2xl backdrop-blur-sm">
-          <div className="flex flex-col md:flex-row gap-6 sm:gap-8 items-start">
-            {/* Левая колонка: Постер + Трейлер под ним */}
-            <div className="w-48 sm:w-64 flex-shrink-0 mx-auto md:mx-0 flex flex-col items-center">
-              <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl relative">
-                {show.posterUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={show.posterUrl}
-                    alt={title}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
-                    Нет постера
-                  </div>
-                )}
-
-                <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-bold uppercase text-white border border-white/10">
-                  {show.kind === 'movie' ? 'Фильм' : 'Сериал'}
-                </div>
-              </div>
-
-              {/* Трейлер прямо под постером */}
-              {show.trailers && (
-                <TrailerPlayer trailers={show.trailers} />
-              )}
-            </div>
-
-            {/* Правая колонка: Заголовок, описание и компактная библиотека */}
-            <div className="flex-1 flex flex-col w-full space-y-5">
-              <div>
-                <div className="flex flex-wrap items-center gap-3 mb-2">
-                  {show.year && (
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
-                      {show.year}
-                    </span>
-                  )}
-                  {show.tmdbRating > 0 && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-xs">
-                      <span>★</span>
-                      <span>{show.tmdbRating.toFixed(1)}</span>
-                      <span className="text-neutral-500 text-[11px] font-normal">
-                        ({show.tmdbVotes || 0})
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1">
-                  {title}
-                </h1>
-
-                {originalTitle && originalTitle !== title && (
-                  <p className="text-sm text-neutral-400 italic font-normal">
-                    {originalTitle}
-                  </p>
-                )}
-
-                {show.genres && show.genres.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    {show.genres.map((g: string) => (
-                      <span
-                        key={g}
-                        className="text-xs px-2.5 py-1 rounded-lg bg-neutral-800/80 text-neutral-300 border border-neutral-700/60"
-                      >
-                        {g}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Описание тайтла (поднято наверх, шрифт увеличен до text-base) */}
-              {show.description && (
-                <div className="space-y-1.5">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                    О тайтле
-                  </h3>
-                  <p className="text-base text-neutral-200 leading-relaxed font-normal">
-                    {show.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Компактный блок «Моя библиотека» аккуратной формы */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-neutral-950/70 border border-neutral-800/90 shadow-inner max-w-lg space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">📚</span>
-                    <span className="text-xs font-bold text-white uppercase tracking-wider">
-                      Моя библиотека
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleToggleFavorite}
-                      className={`text-xs px-2.5 py-1 rounded-xl font-semibold transition-all border flex items-center gap-1 cursor-pointer ${
-                        isFav
-                          ? 'bg-amber-400 text-black border-amber-300 shadow-md'
-                          : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
-                      }`}
-                      title={isFav ? 'Убрать из любимых' : 'Добавить в любимые'}
-                    >
-                      <span>{isFav ? '★' : '☆'}</span>
-                      <span>{isFav ? 'Любимый' : 'В любимые'}</span>
-                    </button>
-
-                    <Link
-                      href={`/library/${show.id}`}
-                      className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors flex items-center gap-1"
-                    >
-                      <span>Трекер серий →</span>
-                    </Link>
-                  </div>
-                </div>
-
-                {/* Сетка кнопок статуса 2x2 */}
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { key: 'watching', label: '👀 Смотрю' },
-                    { key: 'planned', label: '🔖 В планах' },
-                    { key: 'completed', label: '✓ Просмотрено' },
-                    { key: 'dropped', label: '✕ Брошено' },
-                  ].map((st) => (
-                    <button
-                      key={st.key}
-                      disabled={updatingLibrary}
-                      onClick={() => handleSetStatus(st.key)}
-                      className={`py-2 px-3 rounded-xl text-xs font-medium transition-all border cursor-pointer ${
-                        currentStatus === st.key
-                          ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/20 font-bold'
-                          : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-neutral-700 hover:text-white'
-                      }`}
-                    >
-                      {st.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Оценка тайтла */}
-                <div className="flex items-center justify-between pt-2.5 border-t border-neutral-800/80 text-xs">
-                  <span className="text-neutral-400">Моя оценка:</span>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
-                      <button
-                        key={star}
-                        onClick={() => handleRate(star)}
-                        className={`text-sm transition-transform hover:scale-125 cursor-pointer ${
-                          userRating >= star ? 'text-amber-400' : 'text-neutral-700 hover:text-neutral-400'
-                        }`}
-                        title={`Поставить ${star} из 10`}
-                      >
-                        ★
-                      </button>
-                    ))}
-                    {userRating > 0 && (
-                      <span className="font-bold text-amber-400 ml-1.5">{userRating}/10</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================
-          2. НИЖНИЕ СЕКЦИИ: ИНФОРМАЦИЯ, АКТЕРЫ, КОММЕНТАРИИ
-         ======================================================== */}
-      <div className="max-w-6xl mx-auto px-4 space-y-8">
-        <section>
-          <ShowDetails show={show} />
-        </section>
-
-        {show.cast && Array.isArray(show.cast) && show.cast.length > 0 && (
-          <section className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-xl">
-            <CastList cast={show.cast} />
-          </section>
-        )}
-
-        <section className="pt-4">
-          <CommentSection
-            showId={show.id}
-            initialComments={show.comments || []}
+    );
+  const title = show.name || show.title;
+  const original = show.originalName || show.originalTitle;
+  const movie = show.kind === "movie";
+  const disabled = busy || authStatus === "loading";
+  return (
+    <div className="title-detail">
+      <nav className="td-breadcrumb" aria-label="Навигация карточки">
+        <Link href="/watching">Библиотека</Link>
+        <span aria-hidden="true">/</span>
+        <span>{movie ? "Фильм" : "Сериал"}</span>
+      </nav>
+      <section className="td-hero td-panel" aria-label="Карточка тайтла">
+        {show.backdropUrl && (
+          <div
+            className="td-backdrop"
+            style={{
+              backgroundImage: `url(${JSON.stringify(show.backdropUrl)})`,
+            }}
           />
-        </section>
-      </div>
+        )}
+        {show.posterUrl /* eslint-disable-next-line @next/next/no-img-element */ ? (
+          <img
+            className="td-poster"
+            src={show.posterUrl}
+            alt={`Постер: ${title}`}
+          />
+        ) : (
+          <div className="td-poster td-poster-empty">Нет постера</div>
+        )}
+        <div>
+          <h1>{title}</h1>
+          {original && original !== title && (
+            <p className="td-original">{original}</p>
+          )}
+          <div className="td-meta">
+            <span>{movie ? "Фильм" : "Сериал"}</span>
+            {show.year && <span>{show.year}</span>}
+            {!!show.genres?.length && <span>{show.genres.join(", ")}</span>}
+            {(show.runtime ?? 0) > 0 && (
+              <span>
+                {Math.floor((show.runtime ?? 0) / 60) > 0
+                  ? `${Math.floor((show.runtime ?? 0) / 60)} ч `
+                  : ""}
+                {(show.runtime ?? 0) % 60
+                  ? `${(show.runtime ?? 0) % 60} мин`
+                  : ""}
+              </span>
+            )}
+          </div>
+          <TitleRatings
+            tmdb={show.tmdbRating}
+            rating={personal?.userRating}
+            busy={disabled}
+            save={save}
+          />
+        </div>
+        <div className="td-actions">
+          {movie ? (
+            <button
+              className="td-button td-primary"
+              disabled={disabled || personal?.status === "completed"}
+              onClick={() => void save({ status: "completed" })}
+            >
+              {personal?.status === "completed"
+                ? "✓ Просмотрено"
+                : busy
+                  ? "Сохранение…"
+                  : "Отметить просмотренным"}
+            </button>
+          ) : (
+            <Link
+              className="td-button td-primary"
+              href={
+                authStatus === "authenticated"
+                  ? `/library/${show.id}`
+                  : "/login"
+              }
+            >
+              Открыть трекер серий →
+            </Link>
+          )}
+          <TitleControls value={personal} busy={disabled} save={save} />
+          {show.trailers && <TrailerPlayer trailers={show.trailers} compact />}
+        </div>
+        {authStatus === "authenticated" && (
+          <PersonalNotes
+            key={show.id}
+            value={personal}
+            busy={disabled}
+            save={save}
+          />
+        )}
+      </section>
+      {saveError && (
+        <div className="td-alert" role="alert">
+          {saveError}
+        </div>
+      )}
+      {authStatus === "unauthenticated" && (
+        <p className="td-muted mt-5">
+          <Link className="underline" href="/login">
+            Войдите
+          </Link>
+          , чтобы сохранять прогресс, оценки и заметки.
+        </p>
+      )}
+      <nav className="td-tabs" aria-label="Разделы карточки">
+        {[
+          ["about", movie ? "О фильме" : "О сериале"],
+          ["cast", "Актёры"],
+          ["comments", "Обсуждение"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            aria-pressed={section === key}
+            aria-controls={`title-section-${key}`}
+            onClick={() => setSection(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+      <section id="title-section-about" hidden={section !== "about"}>
+        <h2>{movie ? "О фильме" : "О сериале"}</h2>
+        <p className="td-description">
+          {show.description || "Описание пока не добавлено."}
+        </p>
+        <ShowDetails show={show} />
+      </section>
+      <section
+        id="title-section-cast"
+        hidden={section !== "cast"}
+        className="td-panel"
+      >
+        {show.cast?.length ? (
+          <CastList cast={show.cast} />
+        ) : (
+          <p className="td-muted">Информация об актёрах пока недоступна.</p>
+        )}
+      </section>
+      <section id="title-section-comments" hidden={section !== "comments"}>
+        <CommentSection
+          key={show.id}
+          showId={show.id}
+          initialComments={show.comments || []}
+        />
+      </section>
     </div>
   );
 }
