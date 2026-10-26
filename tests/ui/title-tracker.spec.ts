@@ -156,6 +156,13 @@ async function setup(
           },
         });
       }
+      if (body.status === "completed")
+        data.seasons.forEach((season) =>
+          season.episodes.forEach((episode) => {
+            episode.watched = true;
+            episode.stoppedAt = null;
+          }),
+        );
       if (body.episodeId) {
         const episode = data.seasons
           .flatMap((season) => season.episodes)
@@ -170,6 +177,17 @@ async function setup(
           .episodes.forEach((episode) => {
             episode.watched = !!body.markSeasonWatched;
           });
+      if (
+        request.method() === "POST" &&
+        (body.watched !== undefined || body.markSeasonWatched !== undefined)
+      ) {
+        const all = data.seasons.every((season) =>
+          season.episodes.every((episode) => episode.watched),
+        );
+        if (all) data.userShow.status = "completed";
+        else if (data.userShow.status === "completed")
+          data.userShow.status = "watching";
+      }
       data.userShow = {
         ...data.userShow,
         ...body,
@@ -188,7 +206,21 @@ async function setup(
       data.stats.progressPercent = Math.round(
         (data.stats.watchedEpisodesCount / 16) * 100,
       );
-      return route.fulfill({ json: { success: true, item: data.userShow } });
+      return route.fulfill({
+        json: {
+          success: true,
+          item: {
+            ...data.userShow,
+            progress: data.seasons.flatMap((season) =>
+              season.episodes.map((episode) => ({
+                episodeId: episode.id,
+                watched: episode.watched,
+                stoppedAt: episode.stoppedAt,
+              })),
+            ),
+          },
+        },
+      });
     }
     return route.fulfill({ status: 404, json: { error: "Test fixture" } });
   });
@@ -524,4 +556,73 @@ test("guest cannot see private tracker data", async ({ page }) => {
   ).toBeVisible();
   await expect(main(page).getByText("Дубляж", { exact: true })).toHaveCount(0);
   expect(calls).toHaveLength(0);
+});
+
+test("explicit completion updates all tracker checkboxes and counts immediately", async ({
+  page,
+}) => {
+  const calls = await setup(page);
+  await page.goto("/library/10");
+  await main(page)
+    .getByRole("combobox", { name: "Статус просмотра" })
+    .selectOption("completed");
+  await expect(main(page).getByRole("progressbar")).toHaveAttribute(
+    "aria-valuenow",
+    "100",
+  );
+  await expect(
+    current(page).getByRole("heading", {
+      name: "Все доступные серии просмотрены",
+    }),
+  ).toBeVisible();
+  const first = main(page).getByRole("region", {
+    name: "Сезон 1",
+    exact: true,
+  });
+  await expect(first.getByRole("checkbox").first()).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(
+    first.getByRole("button", {
+      name: "Изменить время: сезон 1, серия 1",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  expect(calls[0]).toEqual({
+    path: "/api/user-shows/10",
+    body: { status: "completed" },
+  });
+});
+
+test("unmarking a completed episode resumes watching and status selection preserves marks", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/library/10");
+  const status = main(page).getByRole("combobox", { name: "Статус просмотра" });
+  await status.selectOption("completed");
+  await expect(main(page).getByRole("progressbar")).toHaveAttribute(
+    "aria-valuenow",
+    "100",
+  );
+  await status.selectOption("watching");
+  await expect(status).toHaveValue("watching");
+  await expect(main(page).getByRole("progressbar")).toHaveAttribute(
+    "aria-valuenow",
+    "100",
+  );
+  await status.selectOption("completed");
+  await main(page)
+    .getByRole("checkbox", {
+      name: "Сезон 1, серия 1: просмотрено",
+      exact: true,
+    })
+    .click();
+  await expect(status).toHaveValue("watching");
+  await expect(current(page).getByText("Сезон 1 · Серия 1")).toBeVisible();
+  await expect(main(page).getByRole("progressbar")).toHaveAttribute(
+    "aria-valuenow",
+    "94",
+  );
 });

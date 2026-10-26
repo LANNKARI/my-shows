@@ -213,20 +213,27 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
         throw new Error(result.error || "Не удалось сохранить изменения");
       quick.dismiss();
       if (method === "PATCH") {
-        setData((previous) =>
-          previous
-            ? {
-                ...previous,
-                userShow: {
-                  ...previous.userShow,
-                  ...result.item,
-                  ...(body.score !== undefined
-                    ? { userRating: Number(body.score) }
-                    : {}),
-                },
-              }
-            : previous,
-        );
+        setData((previous) => {
+          if (!previous) return previous;
+          const updated = {
+            ...previous,
+            userShow: {
+              ...previous.userShow,
+              ...result.item,
+              ...(body.score !== undefined
+                ? { userRating: Number(body.score) }
+                : {}),
+            },
+          };
+          return result.item.progress
+            ? withProgress(updated, {
+                userShowId: result.item.id,
+                status: result.item.status,
+                updatedAt: result.item.updatedAt,
+                progress: result.item.progress,
+              })
+            : updated;
+        });
       } else {
         const fresh = await fetch(`/api/user-shows/${data.show.id}`, {
           signal: AbortSignal.timeout(15000),
@@ -694,7 +701,12 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
                           <button
                             className="td-text-button"
                             aria-label={`Изменить время: сезон ${episode.season}, серия ${episode.episode}`}
-                            disabled={disabled}
+                            title={
+                              episode.watched
+                                ? "Снимите отметку просмотра, чтобы указать время"
+                                : "Изменить время"
+                            }
+                            disabled={disabled || episode.watched}
                             onClick={() => editTime(episode)}
                           >
                             {episode.stoppedAt || "+ Время"}

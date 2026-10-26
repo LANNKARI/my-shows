@@ -1,58 +1,79 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { LIBRARY_STATUSES, validateLibraryInput } from '@/lib/library-validation';
-import { getCurrentUserId, formatPosterUrl, safeJson } from '@/lib/current-user';
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { summarizeProgress } from "@/lib/progress";
+import { LIBRARY_STATUSES } from "@/lib/library-validation";
+import { saveLibrary, mutationErrorResponse } from "@/lib/library-mutations";
+import {
+  getCurrentUserId,
+  formatPosterUrl,
+  safeJson,
+} from "@/lib/current-user";
 
 export async function GET(request: NextRequest) {
   try {
     const currentUserId = await getCurrentUserId();
     if (!currentUserId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
-    const statusParam = searchParams.get('status') || 'watching';
-    if (![...LIBRARY_STATUSES, 'all', 'library'].includes(statusParam)) {
-      return NextResponse.json({ error: 'Некорректный статус просмотра' }, { status: 400 });
+    const statusParam = searchParams.get("status") || "watching";
+    if (![...LIBRARY_STATUSES, "all", "library"].includes(statusParam)) {
+      return NextResponse.json(
+        { error: "Некорректный статус просмотра" },
+        { status: 400 },
+      );
     }
 
     const userShows = await prisma.userShow.findMany({
       where: {
         userId: currentUserId,
-        ...(statusParam === 'library' ? {} : statusParam === 'all'
-          ? { status: { not: 'dropped' } }
-          : { status: statusParam }),
+        ...(statusParam === "library"
+          ? {}
+          : statusParam === "all"
+            ? { status: { not: "dropped" } }
+            : { status: statusParam }),
       },
       include: {
         show: {
-          include: { episodes: { orderBy: [{ season: 'asc' }, { episode: 'asc' }, { id: 'asc' }] } },
+          include: {
+            episodes: {
+              orderBy: [{ season: "asc" }, { episode: "asc" }, { id: "asc" }],
+            },
+          },
         },
         ratings: true,
         progress: true,
       },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { updatedAt: "desc" },
     });
 
     const apiKey =
       process.env.TMDB_API_KEY ||
       process.env.TMDB_READ_ACCESS_TOKEN ||
       process.env.NEXT_PUBLIC_TMDB_API_KEY ||
-      '';
+      "";
 
-    if (apiKey && statusParam !== 'library') {
+    if (apiKey && statusParam !== "library") {
       for (const us of userShows) {
-        const isSeries = us.kind === 'series' || us.show?.kind === 'series';
+        const isSeries = us.kind === "series" || us.show?.kind === "series";
 
-        if (isSeries && (us.totalEpisodes <= 0 || (us.show?.episodes?.length || 0) === 0)) {
+        if (
+          isSeries &&
+          (us.totalEpisodes <= 0 || (us.show?.episodes?.length || 0) === 0)
+        ) {
           try {
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (apiKey.startsWith('eyJ')) headers['Authorization'] = `Bearer ${apiKey}`;
+            const headers: Record<string, string> = {
+              "Content-Type": "application/json",
+            };
+            if (apiKey.startsWith("eyJ"))
+              headers["Authorization"] = `Bearer ${apiKey}`;
 
             let tmdbId = us.show?.tmdbId;
 
             if (!tmdbId && us.show?.name) {
               let searchUrl = `https://api.themoviedb.org/3/search/tv?query=${encodeURIComponent(us.show.name)}&language=ru-RU`;
-              if (!apiKey.startsWith('eyJ')) searchUrl += `&api_key=${apiKey}`;
+              if (!apiKey.startsWith("eyJ")) searchUrl += `&api_key=${apiKey}`;
 
               const searchRes = await fetch(searchUrl, { headers });
               if (searchRes.ok) {
@@ -69,7 +90,7 @@ export async function GET(request: NextRequest) {
 
             if (tmdbId) {
               let detailsUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?language=ru-RU`;
-              if (!apiKey.startsWith('eyJ')) detailsUrl += `&api_key=${apiKey}`;
+              if (!apiKey.startsWith("eyJ")) detailsUrl += `&api_key=${apiKey}`;
 
               const tvRes = await fetch(detailsUrl, { headers });
               if (tvRes.ok) {
@@ -89,8 +110,15 @@ export async function GET(request: NextRequest) {
                   us.totalSeasons = totalSeasonsCount;
                 }
 
-                if (us.show.episodes.length === 0 && Array.isArray(tvData.seasons)) {
-                  const episodesToCreate: { showId: number; season: number; episode: number }[] = [];
+                if (
+                  us.show.episodes.length === 0 &&
+                  Array.isArray(tvData.seasons)
+                ) {
+                  const episodesToCreate: {
+                    showId: number;
+                    season: number;
+                    episode: number;
+                  }[] = [];
                   for (const s of tvData.seasons) {
                     if (s.season_number > 0 && s.episode_count > 0) {
                       for (let ep = 1; ep <= s.episode_count; ep++) {
@@ -117,44 +145,45 @@ export async function GET(request: NextRequest) {
               }
             }
           } catch (e) {
-            console.error('Ошибка синхронизации серий с TMDB:', e);
+            console.error("Ошибка синхронизации серий с TMDB:", e);
           }
         }
       }
     }
 
     const normalized = userShows.map((us) => {
-      const isMovie = us.kind === 'movie' || us.show?.kind === 'movie';
-      const watchedCount = (us.progress || []).filter((p) => p.watched).length;
-
-      let totalEpisodes = us.totalEpisodes > 0 ? us.totalEpisodes : us.show?.episodes?.length || 0;
-      if (isMovie && totalEpisodes <= 0) {
-        totalEpisodes = 1;
-      }
-      if (watchedCount > totalEpisodes && totalEpisodes > 0) {
-        totalEpisodes = watchedCount;
-      }
+      const isMovie = us.show.kind === "movie";
+      const summary = summarizeProgress(us);
+      const totalEpisodes = summary.total;
+      const validIds = new Set(us.show.episodes.map((episode) => episode.id));
 
       return {
         id: us.showId,
         userShowId: us.id,
         showId: us.showId,
-        name: us.show?.name || 'Без названия',
-        title: us.show?.name || 'Без названия',
+        name: us.show?.name || "Без названия",
+        title: us.show?.name || "Без названия",
         originalName: us.show?.originalName,
         originalTitle: us.show?.originalName,
         posterUrl: formatPosterUrl(us.show?.posterUrl),
-        year: us.show?.year || (us.show?.releaseDate ? new Date(us.show.releaseDate).getFullYear().toString() : ''),
-        kind: isMovie ? 'movie' : 'series',
-        status: us.status || 'watching',
-        isCompleted: us.status === 'completed',
+        year:
+          us.show?.year ||
+          (us.show?.releaseDate
+            ? new Date(us.show.releaseDate).getFullYear().toString()
+            : ""),
+        kind: isMovie ? "movie" : "series",
+        status: us.status || "watching",
+        isCompleted: us.status === "completed",
         isFavorite: us.isFavorite,
         totalSeasons: us.totalSeasons || 1,
         totalEpisodes,
         dubbing: us.dubbing,
         watchSite: us.watchSite,
-        rating: us.ratings?.[0]?.score || (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
-        userRating: us.ratings.find(rating => rating.episodeId === null)?.score ?? null,
+        rating:
+          us.ratings?.[0]?.score ||
+          (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
+        userRating:
+          us.ratings.find((rating) => rating.episodeId === null)?.score ?? null,
         tmdbRating: us.show?.tmdbRating,
         show: {
           id: us.show?.id,
@@ -165,7 +194,9 @@ export async function GET(request: NextRequest) {
           kind: us.show?.kind,
           episodes: us.show?.episodes || [],
         },
-        progress: us.progress || [],
+        progress: us.progress.filter((progress) =>
+          validIds.has(progress.episodeId),
+        ),
         ratings: us.ratings || [],
         updatedAt: us.updatedAt,
         createdAt: us.createdAt,
@@ -174,120 +205,39 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(safeJson(normalized));
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const userId = await getCurrentUserId();
+  if (!userId)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const currentUserId = await getCurrentUserId();
-    if (!currentUserId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ error: 'Некорректный запрос' }, { status: 400 });
-    const validationError = validateLibraryInput(body);
-    if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
-    const rawShowId = body.showId ?? body.tmdbId;
-
-    if (!rawShowId) {
-      return NextResponse.json({ error: 'Missing showId' }, { status: 400 });
-    }
-
-    const numShowId = Number(rawShowId);
-
-    let targetShow = await prisma.show.findUnique({
-      where: { id: numShowId },
-      include: { episodes: true },
-    });
-
-    if (!targetShow) {
-      targetShow = await prisma.show.findFirst({
-        where: { tmdbId: numShowId },
-        include: { episodes: true },
-      });
-    }
-
-    if (!targetShow) {
-      return NextResponse.json({ error: 'Тайтл не найден' }, { status: 404 });
-    }
-
-    const status = body.status || 'watching';
-    const isCompleted = status === 'completed';
-
-    const userShow = await prisma.userShow.upsert({
-      where: {
-        userId_showId: {
-          userId: currentUserId,
-          showId: targetShow.id,
-        },
-      },
-      update: {
-        status,
-        isCompleted,
-        ...(body.isFavorite !== undefined ? { isFavorite: Boolean(body.isFavorite) } : {}),
-      },
-      create: {
-        userId: currentUserId,
-        showId: targetShow.id,
-        kind: targetShow.kind || 'series',
-        status,
-        isCompleted,
-        isFavorite: Boolean(body.isFavorite),
-        totalEpisodes: targetShow.episodes.length || 0,
-      },
-      include: {
-        ratings: true,
-        progress: true,
-      },
-    });
-
-    if (body.score !== undefined && body.score !== null) {
-      const score = Number(body.score);
-      const existingRating = await prisma.rating.findFirst({
-        where: { userShowId: userShow.id, episodeId: null },
-      });
-
-      if (existingRating) {
-        await prisma.rating.update({
-          where: { id: existingRating.id },
-          data: { score },
-        });
-      } else {
-        await prisma.rating.create({
-          data: {
-            userShowId: userShow.id,
-            score,
-          },
-        });
-      }
-    }
-
+    const body = await request.json().catch(() => null);
+    const id = Number(body?.showId ?? body?.tmdbId);
+    const item = await saveLibrary(userId, id, body);
     return NextResponse.json(
-      safeJson({
-        success: true,
-        item: {
-          ...userShow,
-          showId: targetShow.id,
-        },
-        showId: targetShow.id,
-      })
+      safeJson({ success: true, item, showId: item.showId }),
     );
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    return mutationErrorResponse(error);
   }
 }
 
 // Удаление из планов не должно незаметно переводить тайтл в «смотрю».
 export async function DELETE(request: NextRequest) {
   const userId = await getCurrentUserId();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const showId = Number(new URL(request.url).searchParams.get('showId'));
-  if (!Number.isSafeInteger(showId) || showId <= 0) return NextResponse.json({ error: 'Invalid showId' }, { status: 400 });
-  const result = await prisma.userShow.deleteMany({ where: { userId, showId, status: 'planned' } });
-  if (!result.count) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!userId)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const showId = Number(new URL(request.url).searchParams.get("showId"));
+  if (!Number.isSafeInteger(showId) || showId <= 0)
+    return NextResponse.json({ error: "Invalid showId" }, { status: 400 });
+  const result = await prisma.userShow.deleteMany({
+    where: { userId, showId, status: "planned" },
+  });
+  if (!result.count)
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

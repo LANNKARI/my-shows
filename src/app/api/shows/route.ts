@@ -1,11 +1,12 @@
-import { NextResponse } from 'next/server';
-import { getCurrentUserId } from '@/lib/current-user';
-import { prisma } from '@/lib/prisma';
+import { NextResponse } from "next/server";
+import { getCurrentUserId } from "@/lib/current-user";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
     const currentUserId = await getCurrentUserId();
-    if (!currentUserId) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    if (!currentUserId)
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
     const userShows = currentUserId
       ? await prisma.userShow.findMany({
@@ -15,7 +16,7 @@ export async function GET() {
             ratings: true,
             progress: true,
           },
-          orderBy: { updatedAt: 'desc' },
+          orderBy: { updatedAt: "desc" },
         })
       : [];
 
@@ -27,9 +28,9 @@ export async function GET() {
       title: us.show?.name,
       originalName: us.show?.originalName,
       posterUrl: us.show?.posterUrl,
-      kind: us.kind,
+      kind: us.show.kind,
       status: us.status,
-      isCompleted: us.isCompleted,
+      isCompleted: us.status === "completed",
       isFavorite: us.isFavorite,
       totalSeasons: us.totalSeasons,
       totalEpisodes: us.totalEpisodes,
@@ -43,7 +44,7 @@ export async function GET() {
 
     return NextResponse.json(normalized);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
