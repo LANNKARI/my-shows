@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+/* У поля уже есть доступная кнопка очистки; нативный крестик не дублируем. */
+.site-search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Запас для нижней панели и области жестов на телефонах. Модальные окна z-50 остаются выше неё. */
+@media (max-width: 1279px) {
+  .mobile-navigation-layout {
+    padding-bottom: calc(4.5rem + 1px + env(safe-area-inset-bottom, 0px));
+  }
+  .mobile-navigation {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  html {
+    scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* ---------- Базовая палитра ---------- */
 :root {
   color-scheme: dark;

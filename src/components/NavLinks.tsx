@@ -52,7 +52,7 @@ export default function NavLinks() {
   };
 
   return (
-    <nav className="hidden md:flex items-center gap-1.5 text-xs font-semibold">
+    <nav className="hidden xl:flex items-center gap-1.5 text-xs font-semibold">
       {/* Главная */}
       <Link
         href="/"

@@ -1,180 +1,137 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import NavigationIcon from './NavigationIcon';
 
 interface SearchResultItem {
-  id: number;
-  tmdbId?: number;
-  showId?: number;
-  title: string;
-  name?: string;
-  originalTitle?: string;
-  year?: string;
-  posterUrl?: string | null;
-  rating?: number;
-  kind?: string;
-  type?: string;
-  media_type?: string;
+  id: number; tmdbId?: number; showId?: number; title: string; name?: string;
+  year?: string; posterUrl?: string | null; rating?: number;
+  kind?: string; type?: string; media_type?: string;
 }
+type SearchState = { query: string; items: SearchResultItem[]; loading: boolean; error: string | null };
 
-export default function SearchBar() {
+export default function SearchBar({ layout = 'dropdown', autoFocus = false }: { layout?: 'dropdown' | 'page'; autoFocus?: boolean }) {
   const router = useRouter();
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchResultItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const id = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const selectingRef = useRef(false);
+  const [query, setQuery] = useState('');
+  const [state, setState] = useState<SearchState | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [selecting, setSelecting] = useState(false);
+  const normalized = query.trim();
+  const current = state?.query === normalized ? state : null;
+  const loading = Boolean(normalized) && (!current || current.loading);
+  const results = current?.items || [];
+  const page = layout === 'page';
 
-  // Поиск с задержкой (Debounce 300ms)
   useEffect(() => {
-    if (!query.trim()) {
-      setResults([]);
-      setIsOpen(false);
-      return;
-    }
-
+    if (!normalized) return;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
-      setLoading(true);
+      setState({ query: normalized, items: [], loading: true, error: null });
       try {
-        const res = await fetch(`/api/tmdb/search?query=${encodeURIComponent(query.trim())}`);
-        if (res.ok) {
-          const data = await res.json();
-          setResults(data.results || []);
-          setIsOpen(true);
-        }
-      } catch (err) {
-        console.error('Ошибка поиска:', err);
-      } finally {
-        setLoading(false);
+        const response = await fetch(`/api/tmdb/search?query=${encodeURIComponent(normalized)}`, { signal: controller.signal });
+        if (!response.ok) throw new Error('Поиск временно недоступен. Попробуйте ещё раз.');
+        const data = await response.json();
+        if (!controller.signal.aborted) setState({ query: normalized, items: Array.isArray(data.results) ? data.results : [], loading: false, error: null });
+      } catch (error) {
+        if (!controller.signal.aborted) setState({ query: normalized, items: [], loading: false, error: error instanceof Error ? error.message : 'Не удалось выполнить поиск.' });
       }
     }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [normalized, retry]);
 
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  // Закрытие при клике вне компонента
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+    const outside = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setIsOpen(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
   }, []);
 
-  // Клик по найденному тайтлу
   const handleSelect = async (item: SearchResultItem) => {
-    const targetId = item.id || item.tmdbId || item.showId;
+    if (selectingRef.current) return;
+    const targetId = item.tmdbId || item.id || item.showId;
     if (!targetId) return;
-
-    setIsOpen(false);
-    setQuery('');
-
+    selectingRef.current = true;
+    setSelecting(true);
     const mediaType = item.type || item.media_type || (item.kind === 'series' ? 'tv' : 'movie');
-
-    // Гарантируем наличие тайтла в базе через импорт
+    let finalId = targetId;
     try {
-      const res = await fetch('/api/tmdb/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tmdbId: targetId,
-          type: mediaType,
-        }),
+      const response = await fetch('/api/tmdb/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tmdbId: targetId, type: mediaType }), signal: AbortSignal.timeout(10000),
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        const finalId = data.show?.id || data.id || targetId;
-        router.push(`/show/${finalId}`);
-        return;
+      if (response.ok) {
+        const data = await response.json();
+        finalId = data.show?.id || data.id || targetId;
       }
     } catch {
-      // Фолбэк на прямой переход
+      // Карточка также поддерживает загрузку по TMDB ID и типу.
+    } finally {
+      selectingRef.current = false;
+      setSelecting(false);
     }
-
-    router.push(`/show/${targetId}`);
+    setIsOpen(false);
+    router.push(`/show/${finalId}?type=${encodeURIComponent(mediaType)}`);
   };
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-md">
-      {/* Поле ввода */}
-      <div className="relative flex items-center">
-        <span className="absolute left-3 text-neutral-400 text-sm pointer-events-none">
-          🔍
-        </span>
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => {
-            if (results.length > 0) setIsOpen(true);
-          }}
-          placeholder="Поиск фильмов и сериалов..."
-          className="w-full pl-9 pr-8 py-2 bg-neutral-900/90 border border-neutral-800 focus:border-neutral-700 text-sm text-neutral-200 placeholder-neutral-500 rounded-xl outline-none transition-colors"
-        />
-        {loading && (
-          <div className="absolute right-3 w-4 h-4 border-2 border-neutral-600 border-t-white rounded-full animate-spin" />
-        )}
+    <div ref={containerRef} className={`relative w-full ${page ? '' : 'max-w-md'}`}>
+      <div role="search">
+        <label htmlFor={id} className="sr-only">Поиск фильмов и сериалов</label>
+        <div className="relative flex items-center">
+          <NavigationIcon name="search" className="pointer-events-none absolute left-3 h-5 w-5 text-neutral-400" />
+          <input id={id} ref={inputRef} type="search" inputMode="search" enterKeyHint="search" autoComplete="off" autoFocus={autoFocus}
+            value={query} aria-describedby={`${id}-status`} aria-controls={`${id}-results`}
+            onChange={(e) => { setQuery(e.target.value); setIsOpen(true); }}
+            onFocus={() => setIsOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setIsOpen(false);
+              if (e.key === 'ArrowDown' && results.length) {
+                e.preventDefault();
+                containerRef.current?.querySelector<HTMLButtonElement>('[data-search-result]')?.focus();
+              }
+            }}
+            placeholder="Поиск фильмов и сериалов…"
+            className={`site-search-input w-full rounded-xl border border-neutral-800 bg-neutral-900/90 pl-11 pr-11 text-base text-neutral-100 outline-none transition-colors placeholder:text-neutral-500 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15 ${page ? 'py-3.5' : 'py-2 md:text-sm'}`} />
+          {normalized && <button type="button" aria-label="Очистить поиск" onClick={() => { setQuery(''); inputRef.current?.focus(); }} className="absolute right-1 flex h-10 w-10 items-center justify-center rounded-lg text-xl text-neutral-400 hover:text-white focus-visible:outline-2 focus-visible:outline-rose-400">×</button>}
+        </div>
       </div>
-
-      {/* Выпадающий список результатов */}
-      {isOpen && results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto divide-y divide-neutral-800/60">
-          {results.map((item) => {
-            const isSeries = item.type === 'tv' || item.kind === 'series';
-            const displayTitle = item.title || item.name;
-
-            return (
-              <button
-                key={`${item.id}-${item.type || 'item'}`}
-                type="button"
-                onClick={() => handleSelect(item)}
-                className="w-full p-3 flex items-center gap-3 text-left hover:bg-neutral-800/70 transition-colors group"
-              >
-                {/* Мини-постер */}
-                <div className="w-10 h-14 bg-neutral-950 rounded-lg overflow-hidden flex-shrink-0 border border-neutral-800">
-                  {item.posterUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={item.posterUrl}
-                      alt={displayTitle}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[10px] text-neutral-600">
-                      🎬
+      <p id={`${id}-status`} role="status" className={page ? 'mt-3 text-sm text-neutral-400' : 'sr-only'}>
+        {selecting ? 'Открываем карточку…' : loading ? 'Ищем фильмы и сериалы…' : current?.error ? 'Не удалось выполнить поиск.' : normalized && current ? `Найдено: ${results.length}` : page ? 'Введите название фильма или сериала' : ''}
+      </p>
+      {(page || isOpen) && normalized && (
+        <div id={`${id}-results`} className={page ? 'mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/50' : 'absolute inset-x-0 top-full z-50 mt-2 max-h-[min(24rem,60dvh)] overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl'}>
+          {current?.error ? <div className="space-y-3 p-5"><p role="alert" className="text-sm text-neutral-300">{current.error}</p><button type="button" onClick={() => { setState({ query: normalized, items: [], loading: true, error: null }); setRetry(value => value + 1); }} className="min-h-11 rounded-lg px-3 text-sm font-medium text-rose-400 hover:bg-rose-500/10">Повторить поиск</button></div>
+            : loading ? <p className="p-5 text-sm text-neutral-400">Ищем…</p>
+            : results.length === 0 ? <div className="p-5"><p className="text-sm font-medium text-neutral-200">Ничего не найдено</p><p className="mt-1 text-sm text-neutral-400">Проверьте название или попробуйте оригинальное.</p></div>
+            : <ul aria-label="Результаты поиска" className="divide-y divide-neutral-800/60">
+              {results.map(item => {
+                const title = item.title || item.name || 'Без названия';
+                const isSeries = item.type === 'tv' || item.media_type === 'tv' || item.kind === 'series';
+                return <li key={`${item.id}-${item.type || item.media_type || item.kind}`}>
+                  <button data-search-result type="button" disabled={selecting} onClick={() => void handleSelect(item)}
+                    className="group flex w-full items-center gap-3 p-3 text-left transition-colors hover:bg-neutral-800/70 focus-visible:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-rose-400 disabled:opacity-60">
+                    <div className="h-16 w-11 shrink-0 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+                      {item.posterUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                      ) : <span className="flex h-full items-center justify-center text-neutral-500">🎞</span>}
                     </div>
-                  )}
-                </div>
-
-                {/* Информация */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-white truncate group-hover:text-blue-400 transition-colors">
-                      {displayTitle}
-                    </span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-400 uppercase">
-                      {isSeries ? 'Сериал' : 'Фильм'}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-xs text-neutral-400 mt-0.5">
-                    {item.year && <span>{item.year}</span>}
-                    {item.rating && item.rating > 0 ? (
-                      <span className="text-amber-400 font-semibold flex items-center gap-0.5">
-                        ★ {item.rating.toFixed(1)}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+                    <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-semibold text-neutral-100 group-hover:text-rose-400">{title}</p><p className="mt-1 text-xs text-neutral-400">{isSeries ? 'Сериал' : 'Фильм'}{item.year ? ` · ${item.year}` : ''}{item.rating && item.rating > 0 ? ` · ★ ${item.rating.toFixed(1)}` : ''}</p></div>
+                    <span aria-hidden="true" className="text-neutral-500">→</span>
+                  </button>
+                </li>;
+              })}
+            </ul>}
         </div>
       )}
+      {page && !normalized && <div className="mt-8 rounded-2xl border border-dashed border-neutral-800 p-8 text-center"><NavigationIcon name="search" className="mx-auto mb-4 h-8 w-8 text-neutral-500" /><p className="font-medium text-neutral-200">Что хочется посмотреть?</p><p className="mt-2 text-sm leading-relaxed text-neutral-400">Введите знакомое название — найдём фильм, сериал или новую историю для вашего списка.</p></div>}
     </div>
   );
 }
