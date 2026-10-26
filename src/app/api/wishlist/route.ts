@@ -130,9 +130,8 @@ export async function POST(request: NextRequest) {
           showId: show.id,
         },
       },
-      update: {
-        status: 'planned',
-      },
+      // Adding an existing title to plans must not overwrite its progress/status.
+      update: {},
       create: {
         userId: currentUserId,
         showId: show.id,

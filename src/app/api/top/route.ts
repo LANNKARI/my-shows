@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { calculateAchievements } from '@/lib/achievements';
-import { safeJson } from '@/lib/current-user';
+import { summarizeLibrary } from "@/lib/progress";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { calculateAchievements } from "@/lib/achievements";
+import { safeJson } from "@/lib/current-user";
 
 export async function GET() {
   try {
@@ -19,8 +20,10 @@ export async function GET() {
             status: true,
             isCompleted: true,
             kind: true,
-            ratings: { select: { score: true } },
-            progress: { select: { watched: true } },
+            totalEpisodes: true,
+            show: { include: { episodes: true } },
+            ratings: { select: { score: true, episodeId: true } },
+            progress: { select: { watched: true, episodeId: true } },
           },
         },
       },
@@ -30,7 +33,7 @@ export async function GET() {
     let commentsMap = new Map<string, number>();
     try {
       const commentCounts = await prisma.comment.groupBy({
-        by: ['userId'],
+        by: ["userId"],
         _count: { id: true },
       });
       commentsMap = new Map(commentCounts.map((c) => [c.userId, c._count.id]));
@@ -42,7 +45,7 @@ export async function GET() {
     const friendsMap = new Map<string, number>();
     try {
       const acceptedFriendships = await prisma.friendship.findMany({
-        where: { status: 'accepted' },
+        where: { status: "accepted" },
         select: { requesterId: true, addresseeId: true },
       });
       for (const f of acceptedFriendships) {
@@ -55,34 +58,25 @@ export async function GET() {
 
     // 4. Формирование рейтинга для каждого пользователя
     const result = users.map((u) => {
-      const showsCount = u.userShows.length;
-      const completedCount = u.userShows.filter(
-        (us) => us.status === 'completed' || us.isCompleted
-      ).length;
-
-      let watchedEpisodesCount = 0;
-      let ratingsCount = 0;
-      for (const us of u.userShows) {
-        watchedEpisodesCount += (us.progress || []).filter((p) => p.watched).length;
-        if (us.ratings && us.ratings.length > 0 && us.ratings[0].score > 0) {
-          ratingsCount += 1;
-        }
-      }
-
-      const completedSeriesCount = u.userShows.filter(
-        (us) => (us.status === 'completed' || us.isCompleted) && us.kind === 'series'
-      ).length;
+      const {
+        totalTitles: showsCount,
+        completedCount,
+        watchedEpisodesCount,
+        ratingsCount,
+        completedSeriesCount,
+        addedSeriesCount,
+      } = summarizeLibrary(u.userShows);
 
       const commentsCount = commentsMap.get(u.id) || 0;
       const friendsCount = friendsMap.get(u.id) || 0;
       const daysRegistered = Math.floor(
-        (Date.now() - new Date(u.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+        (Date.now() - new Date(u.createdAt).getTime()) / (1000 * 60 * 60 * 24),
       );
 
       // Расчёт значков достижений
       const achievements = calculateAchievements({
         totalTitles: showsCount,
-        addedShowsCount: showsCount,
+        addedShowsCount: addedSeriesCount,
         totalEpisodes: watchedEpisodesCount,
         watchedEpisodesCount,
         totalRatings: ratingsCount,
@@ -117,7 +111,7 @@ export async function GET() {
 
     return NextResponse.json(safeJson(result));
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

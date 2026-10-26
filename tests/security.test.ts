@@ -367,7 +367,7 @@ test('movies with or without episode rows support completion and exact undo from
     assert.equal(entry.status, 'planned'); assert.equal(entry.isCompleted, false);
     assert.equal(entry.progress.length, episodes);
     if (episodes) { assert.equal(entry.progress[0].watched, false); assert.equal(entry.progress[0].stoppedAt, '10:15'); }
-    assert.equal(await prisma.episode.count({ where: { showId: f.show.id } }), episodes);
+    assert.equal(await prisma.episode.count({ where: { showId: f.show.id } }), 1);
   }
 });
 
@@ -377,6 +377,160 @@ test('undo cannot overwrite later tracker edits, even when parent updatedAt was 
   assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token: result.undoToken })).status, 409);
   const progress = await prisma.episodeProgress.findMany({ where: { userShowId: f.entry.id }, orderBy: { episodeId: 'asc' } });
   assert.equal(progress[0].watched, true); assert.equal(progress[1].stoppedAt, '03:00');
+});
+
+test('manual episode routes require the full catalog before completing and preserve watch dates', async () => {
+  const f = await quickFixture();
+  const first = await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: f.show.episodes[0].id, stoppedAt: '12:10' } });
+  const path = `/api/user-shows/${f.entry.id}/episodes/${first.id}`;
+  assert.equal((await owner.request(path, 'PATCH', { watched: true })).status, 200);
+  let record = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id }, include: { progress: true } });
+  assert.equal(record.status, 'watching'); assert.equal(record.isCompleted, false);
+  const watchedAt = record.progress[0].watchedAt?.toISOString(); assert.ok(watchedAt); assert.equal(record.progress[0].stoppedAt, null);
+  assert.equal((await owner.request(`/api/user-shows/${f.show.id}`, 'POST', { episodeId: f.show.episodes[0].id, watched: true })).status, 200);
+  assert.equal((await prisma.episodeProgress.findUniqueOrThrow({ where: { id: first.id } })).watchedAt?.toISOString(), watchedAt);
+  assert.equal((await owner.request(`/api/user-shows/${f.show.id}`, 'POST', { episodeId: f.show.episodes[1].id, watched: true })).status, 200);
+  record = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id }, include: { progress: true } });
+  assert.equal(record.status, 'completed'); assert.equal(record.isCompleted, true);
+  assert.equal((await owner.request(path, 'PATCH', { watched: false })).status, 200);
+  record = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id }, include: { progress: true } });
+  assert.equal(record.status, 'watching'); assert.equal(record.isCompleted, false);
+  assert.equal(record.progress.find(progress => progress.id === first.id)?.watchedAt, null);
+});
+
+test('season marks are atomic, complete only the entire show, and clear dates when removed', async () => {
+  const f = await quickFixture('series', 4, 'watching', 4);
+  await prisma.episode.update({ where: { id: f.show.episodes[2].id }, data: { season: 2, episode: 1 } });
+  await prisma.episode.update({ where: { id: f.show.episodes[3].id }, data: { season: 2, episode: 2 } });
+  const path = `/api/user-shows/${f.show.id}`;
+  const one = await owner.request(path, 'POST', { seasonNumber: 1, markSeasonWatched: true }); assert.equal(one.status, 200);
+  assert.equal((await one.json()).item.status, 'watching');
+  const two = await owner.request(path, 'POST', { seasonNumber: 2, markSeasonWatched: true }); assert.equal(two.status, 200);
+  assert.equal((await two.json()).item.status, 'completed');
+  let progress = await prisma.episodeProgress.findMany({ where: { userShowId: f.entry.id } });
+  assert.equal(progress.length, 4); assert.ok(progress.every(value => value.watched && value.watchedAt && value.stoppedAt === null));
+  assert.equal((await owner.request(path, 'POST', { seasonNumber: 1, markSeasonWatched: false })).status, 200);
+  const tracker = await (await owner.request(path)).json();
+  assert.equal(tracker.userShow.status, 'watching'); assert.equal(tracker.userShow.isCompleted, false); assert.equal(tracker.stats.watchedEpisodesCount, 2); assert.equal(tracker.stats.progressPercent, 50);
+  progress = await prisma.episodeProgress.findMany({ where: { userShowId: f.entry.id, episodeId: { in: f.show.episodes.slice(0, 2).map(episode => episode.id) } } });
+  assert.ok(progress.every(value => !value.watched && value.watchedAt === null));
+});
+
+test('explicit completion marks episodes, metadata preserves status, and watching never silently resets progress', async () => {
+  const f = await quickFixture('series', 2, 'planned');
+  const path = `/api/user-shows/${f.show.id}`;
+  assert.equal((await owner.request('/api/user-shows', 'POST', { showId: f.show.id, status: 'completed' })).status, 200);
+  const initial = await prisma.episodeProgress.findMany({ where: { userShowId: f.entry.id }, orderBy: { episodeId: 'asc' } });
+  assert.equal(initial.length, 2); assert.ok(initial.every(progress => progress.watched && progress.watchedAt));
+  assert.equal((await owner.request(path, 'PATCH', { status: 'completed' })).status, 200);
+  assert.deepEqual((await prisma.episodeProgress.findMany({ where: { userShowId: f.entry.id }, orderBy: { episodeId: 'asc' } })).map(progress => progress.watchedAt), initial.map(progress => progress.watchedAt));
+  assert.equal((await owner.request('/api/user-shows', 'POST', { showId: f.show.id, score: 8, isFavorite: false })).status, 200);
+  let record = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } }); assert.equal(record.status, 'completed'); assert.equal(record.isCompleted, true);
+  assert.equal((await owner.request(path, 'PATCH', { status: 'watching' })).status, 200);
+  record = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } }); assert.equal(record.status, 'watching'); assert.equal(record.isCompleted, false);
+  assert.equal(await prisma.episodeProgress.count({ where: { userShowId: f.entry.id, watched: true } }), 2);
+  assert.equal((await owner.request('/api/wishlist', 'POST', { showId: f.show.id })).status, 200);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } })).status, 'watching');
+});
+
+test('time-only saves preserve status and old dates, and positive progress starts a planned title', async () => {
+  const f = await quickFixture('series', 2, 'planned'); const path = `/api/user-shows/${f.show.id}`;
+  assert.equal((await owner.request(path, 'POST', { episodeId: f.show.episodes[0].id, stoppedAt: '10:15' })).status, 200);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } })).status, 'planned');
+  assert.equal((await owner.request(path, 'POST', { episodeId: f.show.episodes[0].id, watched: true })).status, 200);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } })).status, 'watching');
+  assert.equal((await owner.request(path, 'POST', { episodeId: f.show.episodes[0].id, stoppedAt: '20:00' })).status, 409);
+  const previous = await prisma.episodeProgress.findFirstOrThrow({ where: { userShowId: f.entry.id, episodeId: f.show.episodes[0].id } });
+  assert.equal(previous.stoppedAt, null); assert.ok(previous.watchedAt);
+  assert.equal((await owner.request(path, 'PATCH', { status: 'dropped' })).status, 200);
+  assert.equal((await owner.request(path, 'POST', { episodeId: f.show.episodes[1].id, stoppedAt: '01:02:03' })).status, 200);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } })).status, 'dropped');
+  await prisma.episodeProgress.update({ where: { id: previous.id }, data: { watchedAt: null } });
+  assert.equal((await owner.request(path, 'POST', { episodeId: f.show.episodes[0].id, watched: true })).status, 200);
+  assert.equal((await prisma.episodeProgress.findUniqueOrThrow({ where: { id: previous.id } })).watchedAt, null);
+});
+
+test('invalid progress cannot create a library entry or partially modify a season', async () => {
+  const f = await quickFixture(); await prisma.userShow.delete({ where: { id: f.entry.id } });
+  const path = `/api/user-shows/${f.show.id}`;
+  for (const body of [null, [], {}, { episodeId: f.show.episodes[0].id, watched: 'false' }, { episodeId: f.show.episodes[0].id, watched: 1 }, { episodeId: f.show.episodes[0].id, stoppedAt: '10:99' }, { seasonNumber: 1, markSeasonWatched: 'true' }, { seasonNumber: 1, markSeasonWatched: true, episodeId: f.show.episodes[0].id }]) assert.equal((await owner.request(path, 'POST', body as object)).status, 400);
+  assert.equal((await owner.request(path, 'POST', { seasonNumber: 999, markSeasonWatched: true })).status, 404);
+  assert.equal((await owner.request(path, 'POST', { episodeId: otherEpisodeId, watched: true })).status, 404);
+  assert.equal(await prisma.userShow.count({ where: { userId: alice.id, showId: f.show.id } }), 0);
+});
+
+test('missing catalog blocks explicit completion and rolls back all changes', async () => {
+  for (const episodes of [0, 1]) {
+    const f = await quickFixture('series', 2, 'planned', episodes);
+    assert.equal((await owner.request(`/api/user-shows/${f.show.id}`, 'PATCH', { status: 'completed', score: 10 })).status, 409);
+    const record = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id }, include: { progress: true, ratings: true } });
+    assert.equal(record.status, 'planned'); assert.equal(record.isCompleted, false); assert.equal(record.progress.length, 0); assert.equal(record.ratings.length, 0);
+  }
+});
+
+test('film completion creates a dated canonical progress and quick marks preserve existing dates', async () => {
+  const film = await quickFixture('movie', 1, 'planned', 0);
+  const response = await owner.request(`/api/user-shows/${film.show.id}`, 'PATCH', { status: 'completed' }); assert.equal(response.status, 200);
+  const record = await prisma.userShow.findUniqueOrThrow({ where: { id: film.entry.id }, include: { progress: true } });
+  assert.equal(record.progress.length, 1); assert.ok(record.progress[0].watchedAt); assert.equal(record.progress[0].watched, true);
+  const f = await quickFixture('movie', 2, 'watching', 2); const oldDate = new Date('2025-01-02T10:00:00.000Z');
+  await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: f.show.episodes[0].id, watched: true, watchedAt: oldDate } });
+  const quick = await owner.request(f.path, 'POST', f.body); assert.equal(quick.status, 200);
+  const progress = await prisma.episodeProgress.findMany({ where: { userShowId: f.entry.id }, orderBy: { episodeId: 'asc' } });
+  assert.equal(progress[0].watchedAt?.toISOString(), oldDate.toISOString()); assert.ok(progress[1].watchedAt);
+});
+
+test('manual writes invalidate an earlier quick undo and concurrent routes remain consistent', async () => {
+  const f = await quickFixture();
+  const marked = await owner.request(f.path, 'POST', f.body); assert.equal(marked.status, 200); const undo = await marked.json();
+  assert.equal((await owner.request(`/api/user-shows/${f.show.id}`, 'POST', { episodeId: f.show.episodes[1].id, watched: true })).status, 200);
+  assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token: undo.undoToken })).status, 409);
+  const parallel = await quickFixture(); const path = `/api/user-shows/${parallel.show.id}`; const body = { seasonNumber: 1, markSeasonWatched: true };
+  const responses = await Promise.all([owner.request(path, 'POST', body), owner.request(parallel.path, 'POST', parallel.body)]);
+  assert.ok(responses.every(response => [200, 409].includes(response.status)));
+  if (responses[0].status === 409) assert.equal((await owner.request(path, 'POST', body)).status, 200);
+  const record = await prisma.userShow.findUniqueOrThrow({ where: { id: parallel.entry.id }, include: { progress: true } });
+  assert.equal(record.status, 'completed'); assert.equal(record.isCompleted, true); assert.equal(record.progress.length, 2); assert.ok(record.progress.every(progress => progress.watched && progress.watchedAt));
+});
+
+test('friend activity uses catalog totals and excludes progress for another show', async () => {
+  const f = await quickFixture('series', 10, 'watching', 2);
+  await prisma.episodeProgress.createMany({ data: [{ userShowId: f.entry.id, episodeId: f.show.episodes[0].id, watched: true, watchedAt: new Date() }, { userShowId: f.entry.id, episodeId: otherEpisodeId, watched: true, watchedAt: new Date() }] });
+  const response = await other.request('/api/friends/activity'); assert.equal(response.status, 200);
+  const activity = (await response.json()).find((entry: { title: { id: number } }) => entry.title.id === f.show.id);
+  assert.ok(activity); assert.equal(activity.progress.watched, 1); assert.equal(activity.progress.total, 10);
+});
+
+test('profile, achievements and leaderboard agree without counting films or foreign episodes as series', async () => {
+  const f = await quickFixture('series', 10, 'dropped', 2);
+  await prisma.episodeProgress.createMany({ data: [{ userShowId: f.entry.id, episodeId: f.show.episodes[0].id, watched: true }, { userShowId: f.entry.id, episodeId: otherEpisodeId, watched: true }] });
+  const profile = await (await owner.request(`/api/users/${alice.username}`)).json();
+  const achievements = await (await owner.request(`/api/users/${alice.username}/achievements`)).json();
+  const leaderboard = await (await owner.request('/api/top')).json();
+  const top = leaderboard.find((user: { id: string }) => user.id === alice.id);
+  const entries = await prisma.userShow.findMany({ where: { userId: alice.id }, include: { show: { include: { episodes: true } }, progress: true } });
+  const expected = entries.filter(entry => entry.show.kind === 'series').reduce((sum, entry) => sum + entry.progress.filter(progress => progress.watched && entry.show.episodes.some(episode => episode.id === progress.episodeId)).length, 0);
+  for (const id of ['beginner', 'avid', 'marathoner']) {
+    const inProfile = profile.achievements.find((achievement: { id: string }) => achievement.id === id);
+    const separate = achievements.find((achievement: { id: string }) => achievement.id === id);
+    assert.equal(inProfile.current, Math.min(expected, inProfile.target)); assert.equal(separate.current, Math.min(expected, separate.target));
+    const inTop = top.achievements.find((achievement: { id: string }) => achievement.id === id);
+    if (inTop) assert.equal(inTop.current, Math.min(expected, inTop.target));
+  }
+  assert.equal(top.completedCount, profile.stats.totalCompleted);
+  assert.equal((await (await owner.request(`/api/user-shows/${f.show.id}`)).json()).stats.watchedEpisodesCount, 1);
+});
+
+test('large seasons use one atomic save while preserving existing known and unknown dates', async () => {
+  const f = await quickFixture('series', 500, 'watching', 500);
+  const oldDate = new Date('2025-03-04T10:00:00.000Z');
+  await prisma.episodeProgress.createMany({ data: [{ userShowId: f.entry.id, episodeId: f.show.episodes[0].id, watched: true, watchedAt: oldDate }, { userShowId: f.entry.id, episodeId: f.show.episodes[1].id, watched: true, watchedAt: null }] });
+  const response = await owner.request(`/api/user-shows/${f.show.id}`, 'POST', { seasonNumber: 1, markSeasonWatched: true });
+  assert.equal(response.status, 200);
+  const result = await response.json(); assert.equal(result.item.status, 'completed'); assert.equal(result.item.progress.length, 500);
+  assert.equal(result.item.progress.find((progress: { episodeId: number }) => progress.episodeId === f.show.episodes[0].id).watchedAt, oldDate.toISOString());
+  assert.equal(result.item.progress.find((progress: { episodeId: number }) => progress.episodeId === f.show.episodes[1].id).watchedAt, null);
+  assert.equal(result.item.progress.filter((progress: { watched: boolean; watchedAt: string | null }) => progress.watched && progress.watchedAt).length, 499);
 });
 
 test('undo tokens are bound to owner and library record, and modified tokens fail', async () => {
