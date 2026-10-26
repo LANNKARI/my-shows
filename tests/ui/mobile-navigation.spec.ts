@@ -29,8 +29,7 @@ test('mobile navigation provides all four destinations, library sections and gue
   await expect(nav.getByRole('link', { name: 'Поиск', exact: true })).toHaveAttribute('aria-current', 'page');
   await nav.getByRole('link', { name: 'Библиотека' }).click();
   await expect(page).toHaveURL(/\/watching$/);
-  await page.getByRole('navigation', { name: 'Разделы библиотеки' }).getByRole('link', { name: 'В планах' }).click();
-  await expect(page).toHaveURL(/\/wishlist$/);
+  await expect(page.getByRole('heading', { name: 'Войдите, чтобы открыть свою библиотеку' })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Библиотека' })).toHaveAttribute('aria-current', 'page');
   await page.screenshot({ path: testInfo.outputPath('mobile-library.png') });
   await nav.getByRole('link', { name: 'Профиль' }).click();
@@ -148,7 +147,7 @@ test.describe('desktop', () => {
     await expect(page.getByRole('button', { name: /Дюна/ })).toBeVisible();
     await input.press('Escape');
     await expect(page.getByRole('button', { name: /Дюна/ })).toBeHidden();
-    await expect(page.getByRole('banner').getByRole('link', { name: 'Смотрю сейчас' })).toBeVisible();
+    await expect(page.getByRole('banner').getByRole('link', { name: 'Библиотека' })).toBeVisible();
     await page.setViewportSize({ width: 1280, height: 1000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });

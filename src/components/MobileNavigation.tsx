@@ -9,9 +9,10 @@ const matches = (pathname: string, path: string) => pathname === path || pathnam
 
 export function MobileLibraryTabs() {
   const pathname = usePathname();
+  if (pathname === '/watching') return null;
   const sections = [
     { label: 'Смотрю', href: '/watching', paths: ['/watching'] },
-    { label: 'В планах', href: '/wishlist', paths: ['/wishlist', '/planned'] },
+    { label: 'В планах', href: '/watching?status=planned', paths: ['/wishlist', '/planned'] },
     { label: 'Коллекции', href: '/collections', paths: ['/collections', '/collection'] },
   ];
   if (!sections.some(section => section.paths.some(path => matches(pathname, path)))) return null;

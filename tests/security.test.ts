@@ -130,6 +130,25 @@ test('profile API exposes only safe fields and the logged-in identity', async ()
   }
 });
 
+test('read-only library includes dropped titles, keeps personal ratings separate and remains owner-scoped', async () => {
+  const show = await prisma.show.create({ data: { name: 'Archived library fixture', kind: 'series', countries: [], studios: [], genres: [], creators: [], tmdbRating: 9.8, episodes: { create: { season: 1, episode: 1 } } }, include: { episodes: true } });
+  const entry = await prisma.userShow.create({ data: { userId: alice.id, showId: show.id, status: 'dropped', totalEpisodes: 0 } });
+  const foreign = await prisma.userShow.create({ data: { userId: bob.id, showId: show.id, status: 'dropped' } });
+  await prisma.rating.createMany({ data: [{ userShowId: entry.id, score: 10, episodeId: show.episodes[0].id }, { userShowId: entry.id, score: 6, episodeId: null }] });
+  const response = await owner.request('/api/user-shows?status=library');
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  const item = data.find((item: { userShowId: number }) => item.userShowId === entry.id);
+  assert.equal(item.status, 'dropped'); assert.equal(item.userRating, 6); assert.equal(item.tmdbRating, 9.8);
+  assert.equal(data.some((item: { userShowId: number }) => item.userShowId === foreign.id), false);
+  const after = await prisma.userShow.findUniqueOrThrow({ where: { id: entry.id } });
+  assert.equal(after.totalEpisodes, 0); assert.equal(after.updatedAt.toISOString(), entry.updatedAt.toISOString());
+  const legacy = await (await owner.request('/api/user-shows?status=all')).json();
+  assert.equal(legacy.some((item: { userShowId: number }) => item.userShowId === entry.id), false);
+  assert.equal((await guest.request('/api/user-shows?status=library')).status, 401);
+  assert.equal((await owner.request('/api/user-shows?status=invalid')).status, 400);
+});
+
 test('episode updates are scoped to the owning library record', async () => {
   assert.equal((await owner.request(`/api/user-shows/${ownLibraryId}/episodes/${foreignProgressId}`, 'PATCH', { watched: true })).status, 404);
   assert.equal((await prisma.episodeProgress.findUniqueOrThrow({ where: { id: foreignProgressId } })).watched, false);

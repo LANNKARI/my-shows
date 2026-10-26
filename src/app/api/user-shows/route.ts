@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { validateLibraryInput } from '@/lib/library-validation';
+import { LIBRARY_STATUSES, validateLibraryInput } from '@/lib/library-validation';
 import { getCurrentUserId, formatPosterUrl, safeJson } from '@/lib/current-user';
 
 export async function GET(request: NextRequest) {
@@ -12,17 +12,20 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get('status') || 'watching';
+    if (![...LIBRARY_STATUSES, 'all', 'library'].includes(statusParam)) {
+      return NextResponse.json({ error: 'Некорректный статус просмотра' }, { status: 400 });
+    }
 
-    let userShows = await prisma.userShow.findMany({
+    const userShows = await prisma.userShow.findMany({
       where: {
         userId: currentUserId,
-        ...(statusParam === 'all'
+        ...(statusParam === 'library' ? {} : statusParam === 'all'
           ? { status: { not: 'dropped' } }
           : { status: statusParam }),
       },
       include: {
         show: {
-          include: { episodes: true },
+          include: { episodes: { orderBy: [{ season: 'asc' }, { episode: 'asc' }, { id: 'asc' }] } },
         },
         ratings: true,
         progress: true,
@@ -36,7 +39,7 @@ export async function GET(request: NextRequest) {
       process.env.NEXT_PUBLIC_TMDB_API_KEY ||
       '';
 
-    if (apiKey) {
+    if (apiKey && statusParam !== 'library') {
       for (const us of userShows) {
         const isSeries = us.kind === 'series' || us.show?.kind === 'series';
 
@@ -151,6 +154,7 @@ export async function GET(request: NextRequest) {
         dubbing: us.dubbing,
         watchSite: us.watchSite,
         rating: us.ratings?.[0]?.score || (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
+        userRating: us.ratings.find(rating => rating.episodeId === null)?.score ?? null,
         tmdbRating: us.show?.tmdbRating,
         show: {
           id: us.show?.id,
