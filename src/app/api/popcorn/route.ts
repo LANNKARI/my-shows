@@ -1,20 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { getCurrentUserId, safeJson } from '@/lib/current-user';
+import {
+  claimDaily,
+  recordQuizAttempt,
+  nextDailyStreak,
+  STREAK_REWARDS,
+} from "@/lib/daily-popcorn";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUserId, safeJson } from "@/lib/current-user";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-const STREAK_REWARDS: Record<number, number> = {
-  1: 10,
-  2: 15,
-  3: 20,
-  4: 25,
-  5: 30,
-  6: 40,
-  7: 50,
-};
-
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
+const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original";
 
 // Функция проверки: есть ли в названии кириллица
 function hasCyrillic(str: string): boolean {
@@ -22,23 +18,33 @@ function hasCyrillic(str: string): boolean {
 }
 
 // Запросы к TMDB
-async function fetchTmdb(endpoint: string, params: Record<string, any> = {}) {
+type Movie = {
+  id: number;
+  title: string;
+  backdrop_path?: string | null;
+  genre_ids?: number[];
+};
+type MovieList = { results?: Movie[] };
+async function fetchTmdb<T = MovieList>(
+  endpoint: string,
+  params: Record<string, string | number> = {},
+): Promise<T | null> {
   const apiKey =
     process.env.TMDB_API_KEY ||
     process.env.TMDB_READ_ACCESS_TOKEN ||
     process.env.NEXT_PUBLIC_TMDB_API_KEY ||
-    '';
+    "";
   const url = new URL(`https://api.themoviedb.org/3/${endpoint}`);
-  url.searchParams.set('language', 'ru-RU');
-  if (apiKey && !apiKey.startsWith('eyJ')) {
-    url.searchParams.set('api_key', apiKey);
+  url.searchParams.set("language", "ru-RU");
+  if (apiKey && !apiKey.startsWith("eyJ")) {
+    url.searchParams.set("api_key", apiKey);
   }
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, String(v));
   }
   const headers: Record<string, string> = {};
-  if (apiKey.startsWith('eyJ')) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
+  if (apiKey.startsWith("eyJ")) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
   }
   const res = await fetch(url.toString(), { headers });
   if (!res.ok) return null;
@@ -49,11 +55,11 @@ export async function GET(request: NextRequest) {
   try {
     const userId = await getCurrentUserId();
     if (!userId) {
-      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+      return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
-    const action = searchParams.get('action');
+    const action = searchParams.get("action");
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -68,92 +74,96 @@ export async function GET(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
+      return NextResponse.json(
+        { error: "Пользователь не найден" },
+        { status: 404 },
+      );
     }
 
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = now.toISOString().split("T")[0];
 
     let canClaimDaily = true;
-    let nextStreak = (user.dailyStreak || 0) + 1;
-    if (nextStreak > 7) nextStreak = 1;
-
-    if (user.lastDailyClaim) {
-      const lastClaimStr = new Date(user.lastDailyClaim).toISOString().split('T')[0];
-      if (lastClaimStr === todayStr) {
-        canClaimDaily = false;
-        nextStreak = user.dailyStreak;
-      } else {
-        const diffDays = Math.floor((now.getTime() - new Date(user.lastDailyClaim).getTime()) / (1000 * 3600 * 24));
-        if (diffDays > 1) {
-          nextStreak = 1;
-        }
-      }
-    } else {
-      nextStreak = 1;
-    }
+    const nextStreak = nextDailyStreak(
+      user.lastDailyClaim,
+      user.dailyStreak || 0,
+      now,
+    );
+    if (
+      user.lastDailyClaim &&
+      user.lastDailyClaim.toISOString().slice(0, 10) >= todayStr
+    )
+      canClaimDaily = false;
 
     let quizAttempts = user.quizAttemptsToday || 0;
     if (user.lastQuizDate) {
-      const lastQuizStr = new Date(user.lastQuizDate).toISOString().split('T')[0];
+      const lastQuizStr = new Date(user.lastQuizDate)
+        .toISOString()
+        .split("T")[0];
       if (lastQuizStr !== todayStr) {
         quizAttempts = 0;
       }
     }
 
     // --- ЛОГИКА ВИКТОРИНЫ ---
-    if (action === 'get-quiz') {
+    if (action === "get-quiz") {
       if (quizAttempts >= 10) {
         return NextResponse.json({
           limitReached: true,
-          message: 'На сегодня лимит исчерпан! Возвращайтесь завтра.',
+          message: "На сегодня лимит исчерпан! Возвращайтесь завтра.",
           attemptsLeft: 0,
         });
       }
 
       // Парсим список ID, которые уже показывались в этой сессии
-      const excludeParam = searchParams.get('exclude') || '';
+      const excludeParam = searchParams.get("exclude") || "";
       const excludedIds = new Set<number>(
         excludeParam
-          .split(',')
+          .split(",")
           .map((id) => Number(id.trim()))
-          .filter((id) => !isNaN(id) && id > 0)
+          .filter((id) => !isNaN(id) && id > 0),
       );
 
       // Ищем уникальный фильм (пробуем до 5 случайных страниц популярных фильмов)
-      let targetMovie: any = null;
-      let poolOfCandidates: any[] = [];
+      let targetMovie: Movie | null = null;
 
       for (let attempt = 0; attempt < 5; attempt++) {
         const randomPage = Math.floor(Math.random() * 8) + 1;
-        const data = await fetchTmdb('movie/popular', { page: randomPage });
+        const data = await fetchTmdb("movie/popular", { page: randomPage });
 
         const validMovies = (data?.results || []).filter(
-          (m: any) =>
+          (m: Movie) =>
             m.backdrop_path &&
             m.title &&
             hasCyrillic(m.title) &&
-            !excludedIds.has(m.id)
+            !excludedIds.has(m.id),
         );
 
         if (validMovies.length > 0) {
-          poolOfCandidates = validMovies;
-          targetMovie = validMovies[Math.floor(Math.random() * validMovies.length)];
+          targetMovie =
+            validMovies[Math.floor(Math.random() * validMovies.length)];
           break;
         }
       }
 
       // Фолбэк: если всё исключено, берем страницу с топ-рейтингом
       if (!targetMovie) {
-        const topRated = await fetchTmdb('movie/top_rated', { page: 1 });
+        const topRated = await fetchTmdb("movie/top_rated", { page: 1 });
         const validFallback = (topRated?.results || []).filter(
-          (m: any) => m.backdrop_path && m.title && hasCyrillic(m.title) && !excludedIds.has(m.id)
+          (m: Movie) =>
+            m.backdrop_path &&
+            m.title &&
+            hasCyrillic(m.title) &&
+            !excludedIds.has(m.id),
         );
         targetMovie = validFallback[0] || (topRated?.results || [])[0];
       }
 
       if (!targetMovie) {
-        return NextResponse.json({ error: 'Ошибка подбора фильма' }, { status: 500 });
+        return NextResponse.json(
+          { error: "Ошибка подбора фильма" },
+          { status: 500 },
+        );
       }
 
       // Подбираем похожие варианты ответов
@@ -162,18 +172,19 @@ export async function GET(request: NextRequest) {
         fetchTmdb(`movie/${targetMovie.id}/similar`),
       ]);
 
-      const candidates: any[] = [
+      const candidates: Movie[] = [
         ...(recsData?.results || []),
         ...(similarData?.results || []),
       ];
 
-      const uniqueDistractorsMap = new Map<string, any>();
+      const uniqueDistractorsMap = new Map<string, Movie>();
       for (const item of candidates) {
         if (
           item.id !== targetMovie.id &&
           item.title &&
           hasCyrillic(item.title) &&
-          item.title.toLowerCase().trim() !== targetMovie.title.toLowerCase().trim()
+          item.title.toLowerCase().trim() !==
+            targetMovie.title.toLowerCase().trim()
         ) {
           if (!uniqueDistractorsMap.has(item.title)) {
             uniqueDistractorsMap.set(item.title, item);
@@ -184,12 +195,13 @@ export async function GET(request: NextRequest) {
       let distractors = Array.from(uniqueDistractorsMap.values());
 
       // Добор по жанрам, если похожих нашлось мало
-      if (distractors.length < 3 && targetMovie.genre_ids?.length > 0) {
-        const genreId = targetMovie.genre_ids[0];
-        const genreMoviesData = await fetchTmdb('discover/movie', {
+      const targetGenres = targetMovie.genre_ids || [];
+      if (distractors.length < 3 && targetGenres.length > 0) {
+        const genreId = targetGenres[0];
+        const genreMoviesData = await fetchTmdb("discover/movie", {
           with_genres: genreId,
-          sort_by: 'popularity.desc',
-          'vote_count.gte': 100,
+          sort_by: "popularity.desc",
+          "vote_count.gte": 100,
         });
 
         for (const item of genreMoviesData?.results || []) {
@@ -209,7 +221,7 @@ export async function GET(request: NextRequest) {
 
       const options = [
         targetMovie.title,
-        ...distractors.map((d: any) => d.title),
+        ...distractors.map((d: Movie) => d.title),
       ].sort(() => 0.5 - Math.random());
 
       return NextResponse.json(
@@ -220,7 +232,7 @@ export async function GET(request: NextRequest) {
           backdropUrl: `${TMDB_IMAGE_BASE}${targetMovie.backdrop_path}`,
           targetId: targetMovie.id,
           options,
-        })
+        }),
       );
     }
 
@@ -232,10 +244,16 @@ export async function GET(request: NextRequest) {
         nextStreak,
         streakRewards: STREAK_REWARDS,
         quizAttemptsLeft: Math.max(0, 10 - quizAttempts),
-      })
+      }),
     );
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error:
+          err instanceof Error ? err.message : "Не удалось выполнить запрос",
+      },
+      { status: 500 },
+    );
   }
 }
 
@@ -243,62 +261,63 @@ export async function POST(request: NextRequest) {
   try {
     const userId = await getCurrentUserId();
     if (!userId) {
-      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
+      return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
     const body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      return NextResponse.json(
+        { error: "Некорректный запрос" },
+        { status: 400 },
+      );
     const { action } = body;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    if (!user)
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = now.toISOString().split("T")[0];
 
-    if (action === 'claim-daily') {
-      if (user.lastDailyClaim) {
-        const lastStr = new Date(user.lastDailyClaim).toISOString().split('T')[0];
-        if (lastStr === todayStr) {
-          return NextResponse.json({ error: 'Сегодня вы уже забрали награду!' }, { status: 400 });
-        }
-      }
-
-      let streak = (user.dailyStreak || 0) + 1;
-      if (user.lastDailyClaim) {
-        const diffDays = Math.floor((now.getTime() - new Date(user.lastDailyClaim).getTime()) / (1000 * 3600 * 24));
-        if (diffDays > 1) streak = 1;
-      }
-      if (streak > 7) streak = 1;
-
-      const reward = STREAK_REWARDS[streak] || 10;
-
-      const updated = await prisma.user.update({
+    if (action === "claim-daily") {
+      const result = await claimDaily(user, now);
+      if (!result)
+        return NextResponse.json(
+          { error: "Награда уже получена. Обновите баланс." },
+          { status: 409 },
+        );
+      const updated = await prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        data: {
-          popcorn: { increment: reward },
-          lastDailyClaim: now,
-          dailyStreak: streak,
-        },
+        select: { popcorn: true },
       });
-
-      return NextResponse.json(
-        safeJson({
-          success: true,
-          reward,
-          streak,
-          popcorn: updated.popcorn,
-        })
-      );
+      return NextResponse.json({
+        success: true,
+        ...result,
+        popcorn: updated.popcorn,
+      });
     }
 
-    if (action === 'submit-quiz') {
+    if (action === "submit-quiz") {
       const { targetId, selectedTitle } = body;
+      if (
+        !Number.isSafeInteger(targetId) ||
+        targetId <= 0 ||
+        typeof selectedTitle !== "string" ||
+        !selectedTitle.trim() ||
+        selectedTitle.length > 500
+      )
+        return NextResponse.json(
+          { error: "Некорректный ответ" },
+          { status: 400 },
+        );
 
       let quizAttempts = user.quizAttemptsToday || 0;
       if (user.lastQuizDate) {
-        const lastQuizStr = new Date(user.lastQuizDate).toISOString().split('T')[0];
+        const lastQuizStr = new Date(user.lastQuizDate)
+          .toISOString()
+          .split("T")[0];
         if (lastQuizStr !== todayStr) {
           quizAttempts = 0;
         }
@@ -306,41 +325,51 @@ export async function POST(request: NextRequest) {
 
       if (quizAttempts >= 10) {
         return NextResponse.json(
-          { error: 'На сегодня лимит викторины исчерпан (10 из 10)!' },
-          { status: 400 }
+          { error: "На сегодня лимит викторины исчерпан (10 из 10)!" },
+          { status: 400 },
         );
       }
 
-      const targetMovie = await fetchTmdb(`movie/${targetId}`);
+      const targetMovie = await fetchTmdb<Movie>(`movie/${targetId}`);
       if (!targetMovie) {
-        return NextResponse.json({ error: 'Фильм не найден' }, { status: 404 });
+        return NextResponse.json({ error: "Фильм не найден" }, { status: 404 });
       }
 
-      const isCorrect = targetMovie.title?.toLowerCase().trim() === selectedTitle?.toLowerCase().trim();
-      const reward = isCorrect ? 5 : 0;
-
-      const updated = await prisma.user.update({
+      const isCorrect =
+        targetMovie.title?.toLowerCase().trim() ===
+        selectedTitle?.toLowerCase().trim();
+      const result = await recordQuizAttempt(user, isCorrect, now);
+      if (!result)
+        return NextResponse.json(
+          { error: "Попытка уже обработана. Обновите игру." },
+          { status: 409 },
+        );
+      const updated = await prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        data: {
-          popcorn: isCorrect ? { increment: reward } : undefined,
-          lastQuizDate: now,
-          quizAttemptsToday: quizAttempts + 1,
-        },
+        select: { popcorn: true },
       });
-
       return NextResponse.json(
         safeJson({
           isCorrect,
           correctTitle: targetMovie.title,
-          reward,
+          reward: result.reward,
           popcorn: updated.popcorn,
-          attemptsLeft: 10 - (quizAttempts + 1),
-        })
+          attemptsLeft: result.attemptsLeft,
+        }),
       );
     }
 
-    return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Неизвестное действие" },
+      { status: 400 },
+    );
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error:
+          err instanceof Error ? err.message : "Не удалось выполнить запрос",
+      },
+      { status: 500 },
+    );
   }
 }

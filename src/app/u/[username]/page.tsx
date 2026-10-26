@@ -1,7 +1,10 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState, use } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useState, use } from "react";
+import Link from "next/link";
+import CosmeticAvatar from "@/components/CosmeticAvatar";
+import CosmeticCover from "@/components/CosmeticCover";
+import { profileStyleId, STANDARD_PROFILE } from "@/lib/cosmetics";
 
 interface FavoriteShow {
   id: number;
@@ -26,7 +29,7 @@ interface Achievement {
   current?: number;
   maxProgress?: number;
   target?: number;
-  progress?: any;
+  progress?: number | { current: number; target?: number; max?: number };
 }
 
 interface UserProfileData {
@@ -36,11 +39,13 @@ interface UserProfileData {
     name: string | null;
     bio: string | null;
     avatarUrl: string | null;
+    avatarFrame?: string;
+    profileStyle?: string;
     bannerUrl?: string | null;
     createdAt: string;
   };
   isOwnProfile?: boolean;
-  friendshipStatus?: 'none' | 'pending_sent' | 'pending_received' | 'friends';
+  friendshipStatus?: "none" | "pending_sent" | "pending_received" | "friends";
   stats?: {
     totalCompleted: number;
     moviesCount: number;
@@ -72,13 +77,16 @@ export default function UserProfilePage({
   const [error, setError] = useState<string | null>(null);
   const [friendshipLoading, setFriendshipLoading] = useState<boolean>(false);
 
-  const [activeTab, setActiveTab] = useState<'all' | 'movies' | 'series'>('all');
+  const [activeTab, setActiveTab] = useState<"all" | "movies" | "series">(
+    "all",
+  );
 
   // По умолчанию блок свернут: показываются только первые 4 карточки
-  const [isAchievementsExpanded, setIsAchievementsExpanded] = useState<boolean>(false);
+  const [isAchievementsExpanded, setIsAchievementsExpanded] =
+    useState<boolean>(false);
 
   const [isBannerModalOpen, setIsBannerModalOpen] = useState<boolean>(false);
-  const [bannerUrlInput, setBannerUrlInput] = useState<string>('');
+  const [bannerUrlInput, setBannerUrlInput] = useState<string>("");
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [savingBanner, setSavingBanner] = useState<boolean>(false);
 
@@ -88,13 +96,14 @@ export default function UserProfilePage({
     try {
       const res = await fetch(`/api/users/${username}`);
       if (!res.ok) {
-        throw new Error('Пользователь не найден');
+        throw new Error("Пользователь не найден");
       }
       const json = await res.json();
       setData(json);
-      setBannerUrlInput(json.user?.bannerUrl || '');
+      setBannerUrlInput(json.user?.bannerUrl || "");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Ошибка загрузки профиля';
+      const msg =
+        err instanceof Error ? err.message : "Ошибка загрузки профиля";
       setError(msg);
     } finally {
       setLoading(false);
@@ -102,7 +111,8 @@ export default function UserProfilePage({
   };
 
   useEffect(() => {
-    fetchProfile();
+    const timer = setTimeout(() => void fetchProfile(), 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
@@ -112,34 +122,49 @@ export default function UserProfilePage({
     try {
       const currentStatus = data.friendshipStatus;
 
-      if (currentStatus === 'none') {
-        const res = await fetch('/api/friendships', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetUserId: data.user.id, action: 'request' }),
+      if (currentStatus === "none") {
+        const res = await fetch("/api/friendships", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetUserId: data.user.id,
+            action: "request",
+          }),
         });
         if (res.ok) {
-          setData((prev) => (prev ? { ...prev, friendshipStatus: 'pending_sent' } : prev));
+          setData((prev) =>
+            prev ? { ...prev, friendshipStatus: "pending_sent" } : prev,
+          );
         }
-      } else if (currentStatus === 'pending_received') {
-        const res = await fetch('/api/friendships', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetUserId: data.user.id, action: 'accept' }),
+      } else if (currentStatus === "pending_received") {
+        const res = await fetch("/api/friendships", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetUserId: data.user.id,
+            action: "accept",
+          }),
         });
         if (res.ok) {
-          setData((prev) => (prev ? { ...prev, friendshipStatus: 'friends' } : prev));
+          setData((prev) =>
+            prev ? { ...prev, friendshipStatus: "friends" } : prev,
+          );
         }
-      } else if (currentStatus === 'pending_sent' || currentStatus === 'friends') {
+      } else if (
+        currentStatus === "pending_sent" ||
+        currentStatus === "friends"
+      ) {
         const res = await fetch(`/api/friendships?userId=${data.user.id}`, {
-          method: 'DELETE',
+          method: "DELETE",
         });
         if (res.ok) {
-          setData((prev) => (prev ? { ...prev, friendshipStatus: 'none' } : prev));
+          setData((prev) =>
+            prev ? { ...prev, friendshipStatus: "none" } : prev,
+          );
         }
       }
     } catch (err) {
-      console.error('Ошибка изменения дружбы:', err);
+      console.error("Ошибка изменения дружбы:", err);
     } finally {
       setFriendshipLoading(false);
     }
@@ -151,15 +176,15 @@ export default function UserProfilePage({
       let res;
       if (bannerFile) {
         const fd = new FormData();
-        fd.append('file', bannerFile);
+        fd.append("file", bannerFile);
         res = await fetch(`/api/users/${username}/banner`, {
-          method: 'POST',
+          method: "POST",
           body: fd,
         });
       } else {
         res = await fetch(`/api/users/${username}/banner`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bannerUrl: bannerUrlInput.trim() }),
         });
       }
@@ -172,16 +197,16 @@ export default function UserProfilePage({
                 ...prev,
                 user: { ...prev.user, bannerUrl: result.bannerUrl },
               }
-            : prev
+            : prev,
         );
         setIsBannerModalOpen(false);
         setBannerFile(null);
       } else {
-        alert('Не удалось сохранить обложку');
+        alert("Не удалось сохранить обложку");
       }
     } catch (err) {
       console.error(err);
-      alert('Ошибка при сохранении обложки');
+      alert("Ошибка при сохранении обложки");
     } finally {
       setSavingBanner(false);
     }
@@ -203,8 +228,12 @@ export default function UserProfilePage({
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 text-center shadow-xl">
           <div className="text-4xl mb-3">👤</div>
-          <h1 className="text-xl font-bold text-white mb-2">Профиль не найден</h1>
-          <p className="text-sm text-neutral-400 mb-6">{error || 'Пользователь не существует.'}</p>
+          <h1 className="text-xl font-bold text-white mb-2">
+            Профиль не найден
+          </h1>
+          <p className="text-sm text-neutral-400 mb-6">
+            {error || "Пользователь не существует."}
+          </p>
           <Link
             href="/"
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors"
@@ -224,11 +253,17 @@ export default function UserProfilePage({
     ratingsCount: 0,
     hoursWatched: 0,
   };
-  const favorites: FavoriteShow[] = Array.isArray(data.favorites) ? data.favorites : [];
-  const achievements: Achievement[] = Array.isArray(data.achievements) ? data.achievements : [];
-  const completedShows = Array.isArray(data.completedShows) ? data.completedShows : [];
+  const favorites: FavoriteShow[] = Array.isArray(data.favorites)
+    ? data.favorites
+    : [];
+  const achievements: Achievement[] = Array.isArray(data.achievements)
+    ? data.achievements
+    : [];
+  const completedShows = Array.isArray(data.completedShows)
+    ? data.completedShows
+    : [];
   const isOwnProfile = Boolean(data.isOwnProfile);
-  const friendshipStatus = data.friendshipStatus || 'none';
+  const friendshipStatus = data.friendshipStatus || "none";
 
   // В свернутом состоянии отображаем только первые 4 карточки
   const visibleAchievements = isAchievementsExpanded
@@ -236,8 +271,8 @@ export default function UserProfilePage({
     : achievements.slice(0, 4);
 
   const filteredShows = completedShows.filter((s) => {
-    if (activeTab === 'movies') return s.kind === 'movie';
-    if (activeTab === 'series') return s.kind === 'series';
+    if (activeTab === "movies") return s.kind === "movie";
+    if (activeTab === "series") return s.kind === "series";
     return true;
   });
 
@@ -247,17 +282,10 @@ export default function UserProfilePage({
       <div className="max-w-6xl mx-auto px-4 pt-6">
         <div className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-900/80 shadow-2xl">
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-            {user.bannerUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={user.bannerUrl}
-                alt="Profile cover"
-                className="w-full h-full object-cover opacity-40 scale-105 blur-[1px]"
-              />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-r from-neutral-900 via-neutral-850 to-neutral-900 opacity-90" />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/70 to-neutral-950/40" />
+            <CosmeticCover
+              styleId={user.profileStyle}
+              bannerUrl={user.bannerUrl}
+            />
           </div>
 
           {isOwnProfile && (
@@ -267,19 +295,23 @@ export default function UserProfilePage({
               className="absolute top-4 right-4 z-30 px-3.5 py-2 rounded-xl bg-black/75 hover:bg-black/95 backdrop-blur-md border border-white/20 text-xs font-semibold text-neutral-200 hover:text-white transition-all flex items-center gap-1.5 shadow-xl cursor-pointer"
             >
               <span>📷</span>
-              <span>{user.bannerUrl ? 'Изменить обложку' : 'Добавить обложку'}</span>
+              <span>
+                {profileStyleId(user.profileStyle) !== STANDARD_PROFILE
+                  ? "Личная обложка"
+                  : user.bannerUrl
+                    ? "Изменить обложку"
+                    : "Добавить обложку"}
+              </span>
             </button>
           )}
 
           <div className="relative z-10 p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-start gap-6">
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-neutral-800 border-2 border-neutral-700/80 flex items-center justify-center text-3xl font-bold text-neutral-300 overflow-hidden flex-shrink-0 shadow-2xl">
-              {user.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
-              ) : (
-                user.username.charAt(0).toUpperCase()
-              )}
-            </div>
+            <CosmeticAvatar
+              name={user.name || user.username}
+              src={user.avatarUrl}
+              frame={user.avatarFrame}
+              size={112}
+            />
 
             <div className="text-center sm:text-left flex-1 w-full">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -287,37 +319,47 @@ export default function UserProfilePage({
                   <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-sm">
                     {user.name || user.username}
                   </h1>
-                  <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">@{user.username}</p>
+                  <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
+                    @{user.username}
+                  </p>
                 </div>
 
+                {isOwnProfile && (
+                  <Link
+                    href="/cosmetics"
+                    className="self-center sm:self-auto px-4 py-2.5 rounded-xl border border-rose-500/40 bg-neutral-950/70 text-rose-300 text-xs font-semibold"
+                  >
+                    Оформление за 🍿
+                  </Link>
+                )}
                 {!isOwnProfile && (
                   <button
                     type="button"
                     onClick={handleFriendshipAction}
                     disabled={friendshipLoading}
                     className={`self-center sm:self-auto px-4 py-2 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 shadow-sm cursor-pointer ${
-                      friendshipStatus === 'friends'
-                        ? 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-rose-500/50 hover:text-rose-400'
-                        : friendshipStatus === 'pending_sent'
-                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-rose-500/10 hover:text-rose-300 hover:border-rose-500/30'
-                        : friendshipStatus === 'pending_received'
-                        ? 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500 shadow-emerald-600/20'
-                        : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-blue-600/20'
+                      friendshipStatus === "friends"
+                        ? "bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-rose-500/50 hover:text-rose-400"
+                        : friendshipStatus === "pending_sent"
+                          ? "bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-rose-500/10 hover:text-rose-300 hover:border-rose-500/30"
+                          : friendshipStatus === "pending_received"
+                            ? "bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500 shadow-emerald-600/20"
+                            : "bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-blue-600/20"
                     }`}
                   >
                     {friendshipLoading ? (
-                      'Загрузка...'
-                    ) : friendshipStatus === 'friends' ? (
+                      "Загрузка..."
+                    ) : friendshipStatus === "friends" ? (
                       <>
                         <span>👥</span>
                         <span>В друзьях (удалить)</span>
                       </>
-                    ) : friendshipStatus === 'pending_sent' ? (
+                    ) : friendshipStatus === "pending_sent" ? (
                       <>
                         <span>⏳</span>
                         <span>Заявка отправлена (отменить)</span>
                       </>
-                    ) : friendshipStatus === 'pending_received' ? (
+                    ) : friendshipStatus === "pending_received" ? (
                       <>
                         <span>✓</span>
                         <span>Принять заявку</span>
@@ -333,34 +375,46 @@ export default function UserProfilePage({
               </div>
 
               {user.bio && (
-                <p className="text-xs text-neutral-300 mt-2 max-w-xl leading-relaxed">{user.bio}</p>
+                <p className="text-xs text-neutral-300 mt-2 max-w-xl leading-relaxed">
+                  {user.bio}
+                </p>
               )}
 
               {/* Счетчики */}
               <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs">
                 <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
                   <span>✓ Просмотрено:</span>
-                  <strong className="text-white font-bold">{stats.totalCompleted}</strong>
+                  <strong className="text-white font-bold">
+                    {stats.totalCompleted}
+                  </strong>
                 </span>
 
                 <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
                   <span>🎬 Фильмов:</span>
-                  <strong className="text-blue-400 font-bold">{stats.moviesCount}</strong>
+                  <strong className="text-blue-400 font-bold">
+                    {stats.moviesCount}
+                  </strong>
                 </span>
 
                 <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
                   <span>📺 Сериалов:</span>
-                  <strong className="text-indigo-400 font-bold">{stats.seriesCount}</strong>
+                  <strong className="text-indigo-400 font-bold">
+                    {stats.seriesCount}
+                  </strong>
                 </span>
 
                 <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
                   <span>★ Оценок:</span>
-                  <strong className="text-amber-400 font-bold">{stats.ratingsCount}</strong>
+                  <strong className="text-amber-400 font-bold">
+                    {stats.ratingsCount}
+                  </strong>
                 </span>
 
                 <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
                   <span>⏱ Время:</span>
-                  <strong className="text-emerald-400 font-bold">{stats.hoursWatched} ч</strong>
+                  <strong className="text-emerald-400 font-bold">
+                    {stats.hoursWatched} ч
+                  </strong>
                 </span>
               </div>
             </div>
@@ -387,12 +441,14 @@ export default function UserProfilePage({
             <div className="p-8 text-center bg-neutral-900/40 border border-neutral-800 rounded-3xl">
               <span className="text-3xl block mb-2">⭐</span>
               <p className="text-sm font-semibold text-neutral-300 mb-1">
-                {isOwnProfile ? 'Вы пока не отметили любимые картины' : 'Пользователь пока не добавил любимые картины'}
+                {isOwnProfile
+                  ? "Вы пока не отметили любимые картины"
+                  : "Пользователь пока не добавил любимые картины"}
               </p>
               <p className="text-xs text-neutral-500 max-w-md mx-auto">
                 {isOwnProfile
-                  ? 'Нажмите кнопку «Любимый сериал» на карточке в библиотеке или трекере, и тайтл сразу появится здесь.'
-                  : 'Здесь появятся любимые фильмы и сериалы пользователя.'}
+                  ? "Нажмите кнопку «Любимый сериал» на карточке в библиотеке или трекере, и тайтл сразу появится здесь."
+                  : "Здесь появятся любимые фильмы и сериалы пользователя."}
               </p>
             </div>
           ) : (
@@ -433,7 +489,11 @@ export default function UserProfilePage({
                   </Link>
 
                   <div className="p-3">
-                    {item.year && <div className="text-[10px] text-neutral-500 mb-0.5">{item.year}</div>}
+                    {item.year && (
+                      <div className="text-[10px] text-neutral-500 mb-0.5">
+                        {item.year}
+                      </div>
+                    )}
                     <Link
                       href={`/show/${item.showId}`}
                       className="font-semibold text-xs text-white line-clamp-1 group-hover:text-amber-400 transition-colors block"
@@ -454,13 +514,14 @@ export default function UserProfilePage({
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <span>🏆 Достижения</span>
                 <span className="text-xs font-normal text-neutral-500">
-                  ({achievements.filter((a) => a.unlocked).length} из {achievements.length})
+                  ({achievements.filter((a) => a.unlocked).length} из{" "}
+                  {achievements.length})
                 </span>
               </h2>
               <p className="text-xs text-neutral-400 mt-0.5">
                 {isAchievementsExpanded
-                  ? 'Отображены все 16 наград профиля'
-                  : 'Свёрнуто до 4 основных наград'}
+                  ? "Отображены все 16 наград профиля"
+                  : "Свёрнуто до 4 основных наград"}
               </p>
             </div>
 
@@ -469,10 +530,16 @@ export default function UserProfilePage({
               {achievements.length > 4 && (
                 <button
                   type="button"
-                  onClick={() => setIsAchievementsExpanded(!isAchievementsExpanded)}
+                  onClick={() =>
+                    setIsAchievementsExpanded(!isAchievementsExpanded)
+                  }
                   className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-xs font-semibold text-neutral-300 hover:text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                 >
-                  <span>{isAchievementsExpanded ? '▴ Свернуть до 4' : '▾ Показать все (16)'}</span>
+                  <span>
+                    {isAchievementsExpanded
+                      ? "▴ Свернуть до 4"
+                      : "▾ Показать все (16)"}
+                  </span>
                 </button>
               )}
 
@@ -489,24 +556,31 @@ export default function UserProfilePage({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
             {visibleAchievements.map((ach) => {
               const currentVal =
-                typeof ach.progress === 'object' && ach.progress !== null
+                typeof ach.progress === "object" && ach.progress !== null
                   ? ach.progress.current
-                  : ach.current ?? (typeof ach.progress === 'number' ? ach.progress : 0);
+                  : (ach.current ??
+                    (typeof ach.progress === "number" ? ach.progress : 0));
 
               const maxVal =
-                typeof ach.progress === 'object' && ach.progress !== null
-                  ? ach.progress.target || ach.progress.max || ach.maxProgress || 1
+                typeof ach.progress === "object" && ach.progress !== null
+                  ? ach.progress.target ||
+                    ach.progress.max ||
+                    ach.maxProgress ||
+                    1
                   : ach.maxProgress || ach.target || 1;
 
-              const percent = Math.min(100, Math.round((Number(currentVal) / Number(maxVal)) * 100));
+              const percent = Math.min(
+                100,
+                Math.round((Number(currentVal) / Number(maxVal)) * 100),
+              );
 
               return (
                 <div
                   key={ach.id}
                   className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between ${
                     ach.unlocked
-                      ? 'bg-neutral-900/95 border-amber-500/40 text-white shadow-lg shadow-amber-500/5'
-                      : 'bg-neutral-900/30 border-neutral-800/80 text-neutral-500 opacity-60'
+                      ? "bg-neutral-900/95 border-amber-500/40 text-white shadow-lg shadow-amber-500/5"
+                      : "bg-neutral-900/30 border-neutral-800/80 text-neutral-500 opacity-60"
                   }`}
                 >
                   <div>
@@ -517,8 +591,8 @@ export default function UserProfilePage({
                         alt={ach.title}
                         className={`w-full h-full object-cover transition-all duration-300 ${
                           ach.unlocked
-                            ? 'scale-100 filter-none'
-                            : 'grayscale opacity-35 contrast-75'
+                            ? "scale-100 filter-none"
+                            : "grayscale opacity-35 contrast-75"
                         }`}
                       />
                     </div>
@@ -533,8 +607,14 @@ export default function UserProfilePage({
 
                   <div className="mt-3.5 pt-2.5 border-t border-neutral-800">
                     <div className="flex items-center justify-between text-[10px] mb-1.5">
-                      <span className={ach.unlocked ? 'text-amber-400 font-semibold' : 'text-neutral-500'}>
-                        {ach.unlocked ? '✓ Получено' : 'В процессе'}
+                      <span
+                        className={
+                          ach.unlocked
+                            ? "text-amber-400 font-semibold"
+                            : "text-neutral-500"
+                        }
+                      >
+                        {ach.unlocked ? "✓ Получено" : "В процессе"}
                       </span>
                       <span className="font-bold text-neutral-300">
                         {currentVal}/{maxVal}
@@ -543,7 +623,7 @@ export default function UserProfilePage({
                     <div className="w-full h-1.5 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800/50">
                       <div
                         className={`h-full rounded-full transition-all ${
-                          ach.unlocked ? 'bg-amber-400' : 'bg-neutral-700'
+                          ach.unlocked ? "bg-amber-400" : "bg-neutral-700"
                         }`}
                         style={{
                           width: `${percent}%`,
@@ -569,31 +649,31 @@ export default function UserProfilePage({
 
             <div className="flex bg-neutral-900 p-1 rounded-xl border border-neutral-800 self-start sm:self-auto text-xs">
               <button
-                onClick={() => setActiveTab('all')}
+                onClick={() => setActiveTab("all")}
                 className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                  activeTab === 'all'
-                    ? 'bg-neutral-800 text-white font-bold'
-                    : 'text-neutral-400 hover:text-white'
+                  activeTab === "all"
+                    ? "bg-neutral-800 text-white font-bold"
+                    : "text-neutral-400 hover:text-white"
                 }`}
               >
                 Все ({completedShows.length})
               </button>
               <button
-                onClick={() => setActiveTab('movies')}
+                onClick={() => setActiveTab("movies")}
                 className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                  activeTab === 'movies'
-                    ? 'bg-neutral-800 text-white font-bold'
-                    : 'text-neutral-400 hover:text-white'
+                  activeTab === "movies"
+                    ? "bg-neutral-800 text-white font-bold"
+                    : "text-neutral-400 hover:text-white"
                 }`}
               >
                 Фильмы ({stats.moviesCount})
               </button>
               <button
-                onClick={() => setActiveTab('series')}
+                onClick={() => setActiveTab("series")}
                 className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                  activeTab === 'series'
-                    ? 'bg-neutral-800 text-white font-bold'
-                    : 'text-neutral-400 hover:text-white'
+                  activeTab === "series"
+                    ? "bg-neutral-800 text-white font-bold"
+                    : "text-neutral-400 hover:text-white"
                 }`}
               >
                 Сериалы ({stats.seriesCount})
@@ -631,7 +711,7 @@ export default function UserProfilePage({
                     )}
 
                     <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase">
-                      {item.kind === 'series' ? 'Сериал' : 'Фильм'}
+                      {item.kind === "series" ? "Сериал" : "Фильм"}
                     </div>
 
                     {item.rating && item.rating > 0 && (
@@ -643,7 +723,11 @@ export default function UserProfilePage({
                   </Link>
 
                   <div className="p-3">
-                    {item.year && <div className="text-[11px] text-neutral-500 mb-0.5">{item.year}</div>}
+                    {item.year && (
+                      <div className="text-[11px] text-neutral-500 mb-0.5">
+                        {item.year}
+                      </div>
+                    )}
                     <Link
                       href={`/show/${item.showId}`}
                       className="font-semibold text-xs text-white line-clamp-1 group-hover:text-blue-400 transition-colors block"
@@ -708,7 +792,7 @@ export default function UserProfilePage({
                   onChange={(e) => {
                     if (e.target.files?.[0]) {
                       setBannerFile(e.target.files[0]);
-                      setBannerUrlInput('');
+                      setBannerUrlInput("");
                     }
                   }}
                   className="w-full text-xs text-neutral-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-neutral-800 file:text-white hover:file:bg-neutral-700 cursor-pointer"
@@ -721,7 +805,7 @@ export default function UserProfilePage({
                 <button
                   type="button"
                   onClick={() => {
-                    setBannerUrlInput('');
+                    setBannerUrlInput("");
                     setBannerFile(null);
                     handleSaveBanner();
                   }}
@@ -744,7 +828,7 @@ export default function UserProfilePage({
                   disabled={savingBanner}
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-md shadow-blue-600/20 cursor-pointer"
                 >
-                  {savingBanner ? 'Сохранение...' : 'Сохранить'}
+                  {savingBanner ? "Сохранение..." : "Сохранить"}
                 </button>
               </div>
             </div>

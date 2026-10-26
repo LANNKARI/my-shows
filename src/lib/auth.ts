@@ -39,17 +39,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
+    async jwt({ token, user, trigger }) {
+      if (user || trigger === "update") {
+        if (user) token.id = user.id;
         // Достаём username и avatar
         const dbUser = await prisma.user.findUnique({
-          where: { id: user.id as string },
-          select: { username: true, avatarUrl: true },
+          where: { id: token.id as string },
+          select: { username: true, avatarUrl: true, avatarFrame: true },
         });
         if (dbUser) {
           token.username = dbUser.username;
           token.picture = dbUser.avatarUrl;
+          token.avatarFrame = dbUser.avatarFrame;
         }
       }
       return token;
@@ -57,7 +58,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        (session.user as any).username = token.username;
+        session.user.username = token.username as string | undefined;
+        session.user.avatarFrame = token.avatarFrame as string | undefined;
       }
       return session;
     },

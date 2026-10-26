@@ -19,7 +19,7 @@ export async function GET(
     orderBy: { createdAt: "desc" },
     include: {
       user: {
-        select: { id: true, username: true, name: true, avatarUrl: true },
+        select: { id: true, username: true, name: true, avatarUrl: true, avatarFrame: true },
       },
     },
   });
@@ -112,7 +112,7 @@ export async function POST(
     data: { showId, userId: me.id, text },
     include: {
       user: {
-        select: { id: true, username: true, name: true, avatarUrl: true },
+        select: { id: true, username: true, name: true, avatarUrl: true, avatarFrame: true },
       },
     },
   });

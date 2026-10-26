@@ -1,3 +1,4 @@
+import { recordQuizAttempt, nextDailyStreak } from '../src/lib/daily-popcorn';
 import { calendarRange, addDays, todayInZone, dayDate, validDay } from '../src/lib/calendar-dates';
 import { syncShowSchedule, scheduleDue } from '../src/lib/release-schedule';
 import { materializeReleases } from '../src/lib/release-notifications';
@@ -90,6 +91,20 @@ before(async () => {
   assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: legacyEntry.id } })).notifyReleases, false);
   const rls = await prisma.$queryRaw<{ relrowsecurity: boolean }[]>`SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ${schema} AND c.relname = 'ReleaseNotification'`;
   assert.equal(rls[0].relrowsecurity, true);
+  // Cosmetic migration is additive and preserves existing balances and uploaded covers.
+  await prisma.user.update({ where: { id: legacyUser.id }, data: { popcorn: 321, bannerUrl: 'https://example.test/cover.png' } });
+  const cosmeticMigration = await readFile('prisma/migrations/20261027000000_popcorn_cosmetics/migration.sql', 'utf8');
+  await prisma.$transaction(async tx => {
+    await tx.$executeRawUnsafe('DROP TABLE "CosmeticPurchase"');
+    await tx.$executeRawUnsafe('ALTER TABLE "User" DROP COLUMN "avatarFrame", DROP COLUMN "profileStyle"');
+    for (const statement of cosmeticMigration.replace(/^--.*$/gm, '').split(';').map(value => value.trim()).filter(value => value && !['BEGIN', 'COMMIT'].includes(value))) await tx.$executeRawUnsafe(statement);
+  });
+  const preserved = await prisma.user.findUniqueOrThrow({ where: { id: legacyUser.id } });
+  assert.equal(preserved.popcorn, 321); assert.equal(preserved.bannerUrl, 'https://example.test/cover.png');
+  assert.equal(preserved.avatarFrame, 'frame-standard'); assert.equal(preserved.profileStyle, 'profile-standard');
+  assert.deepEqual(await prisma.episodeProgress.findUniqueOrThrow({ where: { id: legacyProgress.id } }), legacyProgress);
+  const cosmeticRls = await prisma.$queryRaw<{ relrowsecurity: boolean }[]>`SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ${schema} AND c.relname = 'CosmeticPurchase'`;
+  assert.equal(cosmeticRls[0].relrowsecurity, true);
   await prisma.user.delete({ where: { id: legacyUser.id } }); await prisma.show.delete({ where: { id: legacyShow.id } });
   const passwordHash = await bcrypt.hash(password, 10);
   alice = await prisma.user.create({ data: { username: 'security_alice', email: 'alice@example.test', passwordHash } });
@@ -708,6 +723,128 @@ test('notification pagination has no duplicates and never returns another owners
   const own = [...first.items, ...second.items].filter((item: { showId: number }) => item.showId === f.show.id); assert.equal(own.length, 40);
   const foreign = await (await other.request('/api/notifications')).json();
   assert.equal(foreign.items.some((item: { showId: number }) => item.showId === f.show.id), false);
+});
+
+async function resetCosmetics(balance = 500) {
+  await prisma.cosmeticPurchase.deleteMany({ where: { userId: alice.id } });
+  await prisma.user.update({ where: { id: alice.id }, data: { popcorn: balance, avatarFrame: 'frame-standard', profileStyle: 'profile-standard' } });
+}
+const buy = (itemId = 'frame-gold', expectedPrice = 120) => owner.request('/api/cosmetics', 'POST', { action: 'purchase', itemId, expectedPrice });
+const equip = (itemId: string) => owner.request('/api/cosmetics', 'POST', { action: 'equip', itemId });
+
+test('cosmetics reject guests, invalid payloads, forged owners and client-supplied prices', async () => {
+  await resetCosmetics();
+  assert.equal((await guest.request('/api/cosmetics')).status, 401);
+  assert.equal((await guest.request('/api/cosmetics', 'POST', { action: 'purchase', itemId: 'frame-gold', expectedPrice: 120 })).status, 401);
+  for (const body of [null, [], {}, { action: ['purchase'], itemId: 'frame-standard' }, { action: 'purchase', itemId: 'unknown', expectedPrice: 0 }, { action: 'purchase', itemId: 'frame-gold', expectedPrice: 120, userId: bob.id }, { action: 'purchase', itemId: 'frame-gold', expectedPrice: -10 }]) assert.equal((await owner.request('/api/cosmetics', 'POST', body as object)).status, 400);
+  assert.equal((await buy('frame-gold', 0)).status, 409);
+  assert.equal((await buy('frame-gold', 1)).status, 409);
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 500);
+  assert.equal(await prisma.cosmeticPurchase.count({ where: { userId: alice.id } }), 0);
+  const response = await owner.request('/api/cosmetics'); assert.equal(response.status, 200); assert.match(response.headers.get('cache-control')!, /no-store/);
+  const snapshot = await response.json(); assert.equal(snapshot.user.id, alice.id); assert.equal('passwordHash' in snapshot.user, false);
+  const foreign = await fetch(base + '/api/cosmetics', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://untrusted.example', Cookie: [...owner.cookies].map(([key, value]) => `${key}=${value}`).join('; ') }, body: JSON.stringify({ action: 'purchase', itemId: 'frame-gold', expectedPrice: 120 }) });
+  assert.equal(foreign.status, 403);
+});
+
+test('purchases debit the server price once and do not silently equip the item', async () => {
+  await resetCosmetics(250);
+  const response = await buy(); assert.equal(response.status, 200); const first = await response.json();
+  assert.equal(first.user.popcorn, 130); assert.equal(first.user.avatarFrame, 'frame-standard'); assert.equal(first.purchase.pricePaid, 120);
+  const duplicate = await buy(); assert.equal(duplicate.status, 200); assert.equal((await duplicate.json()).alreadyOwned, true);
+  assert.equal((await buy('frame-gold', 119)).status, 200, 'already-owned retries never debit even if the quoted price changed');
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 130);
+  assert.equal(await prisma.cosmeticPurchase.count({ where: { userId: alice.id, itemId: 'frame-gold' } }), 1);
+});
+
+test('parallel repeat purchases are idempotent and different items cannot overdraw a balance', async () => {
+  await resetCosmetics(300);
+  const repeated = await Promise.all(Array.from({ length: 5 }, () => buy()));
+  assert.ok(repeated.every(response => response.status === 200));
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 180);
+  assert.equal(await prisma.cosmeticPurchase.count({ where: { userId: alice.id } }), 1);
+  await resetCosmetics(150);
+  const different = await Promise.all([buy('frame-pink', 80), buy()]);
+  assert.equal(different.filter(response => response.status === 200).length, 1); assert.equal(different.filter(response => response.status === 409).length, 1);
+  const receipts = await prisma.cosmeticPurchase.findMany({ where: { userId: alice.id } });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: alice.id } });
+  assert.equal(receipts.length, 1); assert.equal(user.popcorn + receipts[0].pricePaid, 150); assert.ok(user.popcorn >= 0);
+});
+
+test('failed receipt creation rolls back the balance decrement', async () => {
+  await resetCosmetics(400);
+  await prisma.cosmeticPurchase.create({ data: { userId: alice.id, itemId: 'test-rollback-anchor', pricePaid: 0 } });
+  assert.match(alice.id, /^[a-z0-9]+$/i);
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX cosmetic_rollback_test ON "CosmeticPurchase" ("userId") WHERE "userId" = '${alice.id}'`);
+  try {
+    assert.equal((await buy()).status, 503);
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 400);
+    assert.equal(await prisma.cosmeticPurchase.count({ where: { userId: alice.id, itemId: 'frame-gold' } }), 0);
+  } finally { await prisma.$executeRawUnsafe('DROP INDEX cosmetic_rollback_test'); }
+});
+
+test('paid cosmetics require ownership and never read another users collection', async () => {
+  await resetCosmetics();
+  await prisma.cosmeticPurchase.upsert({ where: { userId_itemId: { userId: bob.id, itemId: 'frame-gold' } }, create: { userId: bob.id, itemId: 'frame-gold', pricePaid: 120 }, update: {} });
+  assert.equal((await equip('frame-gold')).status, 403);
+  const snapshot = await (await owner.request(`/api/cosmetics?userId=${bob.id}`)).json();
+  assert.equal(snapshot.user.id, alice.id); assert.equal(snapshot.purchases.some((purchase: { itemId: string }) => purchase.itemId === 'frame-gold'), false);
+  assert.equal((await owner.request('/api/users/me', 'PATCH', { avatarFrame: 'frame-gold', profileStyle: 'profile-wine', popcorn: 999999 })).status, 200);
+  const record = await prisma.user.findUniqueOrThrow({ where: { id: alice.id } });
+  assert.equal(record.avatarFrame, 'frame-standard'); assert.equal(record.profileStyle, 'profile-standard'); assert.equal(record.popcorn, 500);
+});
+
+test('frame and profile slots are independent and switching to standard restores the saved cover', async () => {
+  await resetCosmetics(500);
+  await prisma.user.update({ where: { id: alice.id }, data: { bannerUrl: 'https://example.test/old-cover.png' } });
+  assert.equal((await buy()).status, 200); assert.equal((await buy('profile-wine', 140)).status, 200);
+  assert.equal((await equip('frame-gold')).status, 200); assert.equal((await equip('profile-wine')).status, 200);
+  let record = await prisma.user.findUniqueOrThrow({ where: { id: alice.id } });
+  assert.equal(record.avatarFrame, 'frame-gold'); assert.equal(record.profileStyle, 'profile-wine'); assert.equal(record.bannerUrl, 'https://example.test/old-cover.png');
+  assert.equal((await equip('profile-standard')).status, 200);
+  record = await prisma.user.findUniqueOrThrow({ where: { id: alice.id } });
+  assert.equal(record.profileStyle, 'profile-standard'); assert.equal(record.avatarFrame, 'frame-gold'); assert.equal(record.bannerUrl, 'https://example.test/old-cover.png'); assert.equal(record.popcorn, 240);
+  assert.equal((await equip('frame-standard')).status, 200); assert.equal(await prisma.cosmeticPurchase.count({ where: { userId: alice.id } }), 2);
+});
+
+test('public profiles and new comments show the selected frame without exposing receipts or balance', async () => {
+  await resetCosmetics(); assert.equal((await buy()).status, 200); assert.equal((await equip('frame-gold')).status, 200);
+  const profile = await (await guest.request(`/api/users/${alice.username}`)).json();
+  assert.equal(profile.user.avatarFrame, 'frame-gold'); assert.equal('cosmeticPurchases' in profile.user, false); assert.equal('popcorn' in profile.user, false);
+  const response = await owner.request(`/api/shows/${showId}/comments`, 'POST', { text: 'Cosmetics comment fixture' });
+  assert.equal(response.status, 201); assert.equal((await response.json()).user.avatarFrame, 'frame-gold');
+  const comments = await (await guest.request(`/api/shows/${showId}/comments`)).json();
+  assert.equal(comments.find((comment: { text: string }) => comment.text === 'Cosmetics comment fixture').user.avatarFrame, 'frame-gold');
+  const csrf = await (await owner.request('/api/auth/csrf')).json();
+  const session = await (await owner.request('/api/auth/session', 'POST', { csrfToken: csrf.csrfToken, data: { user: { id: bob.id, avatarFrame: 'frame-stars' } } })).json();
+  assert.equal(session.user.id, alice.id); assert.equal(session.user.avatarFrame, 'frame-gold');
+});
+
+test('daily rewards remain single-use under concurrent claims and purchases', async () => {
+  await resetCosmetics(75); await prisma.user.update({ where: { id: alice.id }, data: { lastDailyClaim: null, dailyStreak: 0 } });
+  const responses = await Promise.all([...Array.from({ length: 5 }, () => owner.request('/api/popcorn', 'POST', { action: 'claim-daily' })), buy('frame-pink', 80)]);
+  assert.equal(responses.slice(0, 5).filter(response => response.status === 200).length, 1);
+  assert.ok(responses.slice(0, 5).filter(response => response.status !== 200).every(response => response.status === 409));
+  const purchased = responses[5].status === 200;
+  assert.ok([200, 409].includes(responses[5].status));
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: alice.id } });
+  assert.equal(user.popcorn, 85 - (purchased ? 80 : 0)); assert.equal(user.dailyStreak, 1);
+  assert.equal(nextDailyStreak(new Date('2026-10-25T01:00:00Z'), 3, new Date('2026-10-27T00:05:00Z')), 1);
+  assert.equal(nextDailyStreak(new Date('2026-10-26T23:55:00Z'), 3, new Date('2026-10-27T00:05:00Z')), 4);
+});
+
+test('quiz attempt settlement cannot be replayed concurrently or exceed the daily reward cap', async () => {
+  await prisma.user.update({ where: { id: alice.id }, data: { popcorn: 0, lastQuizDate: null, quizAttemptsToday: 0 } });
+  const original = await prisma.user.findUniqueOrThrow({ where: { id: alice.id } });
+  const results = await Promise.all(Array.from({ length: 5 }, () => recordQuizAttempt(original, true, new Date(), prisma)));
+  assert.equal(results.filter(Boolean).length, 1);
+  for (let i = 0; i < 12; i++) {
+    const current = await prisma.user.findUniqueOrThrow({ where: { id: alice.id } });
+    await recordQuizAttempt(current, true, new Date(), prisma);
+  }
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: alice.id } });
+  assert.equal(user.quizAttemptsToday, 10); assert.equal(user.popcorn, 50);
+  assert.equal((await owner.request('/api/popcorn', 'POST', { action: 'submit-quiz', targetId: '../account' })).status, 400);
 });
 
 test('invalid sessions and sessions of deleted users never fall back to an existing account', async () => {

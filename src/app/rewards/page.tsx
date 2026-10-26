@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface RewardsData {
   popcorn: number;
@@ -21,7 +21,7 @@ export default function RewardsPage() {
   const fetchRewards = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/popcorn');
+      const res = await fetch("/api/popcorn");
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -34,28 +34,29 @@ export default function RewardsPage() {
   };
 
   useEffect(() => {
-    fetchRewards();
+    const timer = setTimeout(() => void fetchRewards(), 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleClaim = async () => {
     setClaiming(true);
     setClaimMessage(null);
     try {
-      const res = await fetch('/api/popcorn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'claim-daily' }),
+      const res = await fetch("/api/popcorn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "claim-daily" }),
       });
       const result = await res.json();
       if (res.ok) {
         setClaimMessage(`Ура! Вы получили +${result.reward} 🍿!`);
-        window.dispatchEvent(new Event('popcorn-updated'));
+        window.dispatchEvent(new Event("popcorn-updated"));
         fetchRewards();
       } else {
-        setClaimMessage(result.error || 'Ошибка получения');
+        setClaimMessage(result.error || "Ошибка получения");
       }
-    } catch (e) {
-      setClaimMessage('Ошибка соединения');
+    } catch {
+      setClaimMessage("Ошибка соединения");
     } finally {
       setClaiming(false);
     }
@@ -107,6 +108,12 @@ export default function RewardsPage() {
         </div>
       </div>
 
+      <Link
+        href="/cosmetics"
+        className="inline-flex min-h-11 items-center px-4 py-2 mb-6 rounded-xl bg-rose-600 text-white text-sm font-semibold"
+      >
+        Магазин оформления →
+      </Link>
       {/* 1. БЛОК: ЕЖЕДНЕВНЫЙ ВХОД (1-7 ДНЕЙ) */}
       <section className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -115,7 +122,8 @@ export default function RewardsPage() {
               <span>📅 Ежедневный бонус</span>
             </h2>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Заходите каждый день подряд, чтобы увеличивать количество попкорна!
+              Заходите каждый день подряд, чтобы увеличивать количество
+              попкорна!
             </p>
           </div>
 
@@ -129,17 +137,18 @@ export default function RewardsPage() {
           {days.map((day) => {
             const reward = streakRewards[day];
             const isCompleted = (data?.dailyStreak || 0) >= day;
-            const isCurrent = (data?.nextStreak || 1) === day && data?.canClaimDaily;
+            const isCurrent =
+              (data?.nextStreak || 1) === day && data?.canClaimDaily;
 
             return (
               <div
                 key={day}
                 className={`p-3.5 rounded-2xl border text-center flex flex-col justify-between transition-all ${
                   isCurrent
-                    ? 'bg-amber-500/20 border-amber-500 shadow-lg shadow-amber-500/10 scale-105'
+                    ? "bg-amber-500/20 border-amber-500 shadow-lg shadow-amber-500/10 scale-105"
                     : isCompleted
-                    ? 'bg-neutral-900 border-neutral-800 opacity-60'
-                    : 'bg-neutral-950/50 border-neutral-800/80'
+                      ? "bg-neutral-900 border-neutral-800 opacity-60"
+                      : "bg-neutral-950/50 border-neutral-800/80"
                 }`}
               >
                 <span className="text-[10px] font-bold uppercase text-neutral-400">
@@ -151,7 +160,11 @@ export default function RewardsPage() {
                     +{reward}
                   </span>
                   <span className="text-[9px] text-neutral-500 block mt-0.5">
-                    {isCompleted ? '✓ Получено' : isCurrent ? 'Доступно!' : 'Ожидает'}
+                    {isCompleted
+                      ? "✓ Получено"
+                      : isCurrent
+                        ? "Доступно!"
+                        : "Ожидает"}
                   </span>
                 </div>
               </div>
@@ -161,7 +174,9 @@ export default function RewardsPage() {
 
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
           {claimMessage && (
-            <p className="text-xs font-semibold text-amber-300">{claimMessage}</p>
+            <p className="text-xs font-semibold text-amber-300">
+              {claimMessage}
+            </p>
           )}
           <button
             type="button"
@@ -169,15 +184,15 @@ export default function RewardsPage() {
             disabled={!data?.canClaimDaily || claiming}
             className={`w-full sm:w-auto px-8 py-3 rounded-xl font-bold text-xs transition-all shadow-lg cursor-pointer ${
               data?.canClaimDaily
-                ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20 hover:scale-[1.02]'
-                : 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700/50'
+                ? "bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20 hover:scale-[1.02]"
+                : "bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700/50"
             }`}
           >
             {claiming
-              ? 'Зачисление...'
+              ? "Зачисление..."
               : data?.canClaimDaily
-              ? '🎁 Забрать бонус сегодня'
-              : '✓ Сегодня уже получено (возвращайтесь завтра)'}
+                ? "🎁 Забрать бонус сегодня"
+                : "✓ Сегодня уже получено (возвращайтесь завтра)"}
           </button>
         </div>
       </section>
@@ -210,12 +225,15 @@ export default function RewardsPage() {
                 Угадай по кадру
               </h3>
               <p className="text-xs text-neutral-400 leading-relaxed">
-                Смотрите случайный кадр из популярного фильма или сериала и выберите верное название из 4 похожих вариантов.
+                Смотрите случайный кадр из популярного фильма или сериала и
+                выберите верное название из 4 похожих вариантов.
               </p>
 
               <div className="text-[11px] text-neutral-500 font-medium">
-                Осталось попыток на сегодня:{' '}
-                <strong className="text-white">{data?.quizAttemptsLeft ?? 10} / 10</strong>
+                Осталось попыток на сегодня:{" "}
+                <strong className="text-white">
+                  {data?.quizAttemptsLeft ?? 10} / 10
+                </strong>
               </div>
             </div>
 
@@ -246,7 +264,8 @@ export default function RewardsPage() {
                 Больше или Меньше
               </h3>
               <p className="text-xs text-neutral-400 leading-relaxed">
-                5 раундов нарастающей сложности! Сравнивайте культовые фильмы по рейтингу и годам выхода. Заберите банк или рискните всем!
+                5 раундов нарастающей сложности! Сравнивайте культовые фильмы по
+                рейтингу и годам выхода. Заберите банк или рискните всем!
               </p>
 
               <div className="text-[11px] text-neutral-500 font-medium">

@@ -22,6 +22,9 @@ model User {
   bio           String?
   avatarUrl     String?
   bannerUrl     String?
+  avatarFrame String @default("frame-standard")
+  profileStyle String @default("profile-standard")
+  cosmeticPurchases CosmeticPurchase[]
   releaseNotificationsEnabled Boolean @default(true)
   notifyNewShows Boolean @default(false)
   notificationTimeZone String @default("UTC")
@@ -332,4 +335,14 @@ model ReleaseNotification {
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   @@unique([userShowId, episodeId])
   @@index([userShowId, readAt])
+}
+
+model CosmeticPurchase {
+  id Int @id @default(autoincrement())
+  userId String
+  itemId String
+  pricePaid Int
+  purchasedAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, itemId])
 }

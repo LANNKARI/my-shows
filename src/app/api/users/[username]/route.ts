@@ -24,6 +24,8 @@ export async function GET(
         name: true,
         bio: true,
         avatarUrl: true,
+        avatarFrame: true,
+        profileStyle: true,
         bannerUrl: true,
         createdAt: true,
       },
