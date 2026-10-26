@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import NavigationIcon from './NavigationIcon';
@@ -168,6 +168,7 @@ export default function Library() {
   const userId = session?.user?.id;
   const [attempt, setAttempt] = useState(0);
   const [resource, setResource] = useState<Resource | null>(null);
+  const tabsRef = useRef<HTMLElement>(null);
   const status =
     libraryStatuses.find((status) => status.value === params.get('status')) ||
     libraryStatuses[0];
@@ -187,6 +188,16 @@ export default function Library() {
     sessionStatus === 'loading' ||
     (sessionStatus === 'authenticated' && !current);
   const items = current?.items || [];
+
+  useEffect(() => {
+    const nav = tabsRef.current;
+    const active = nav?.querySelector('[aria-current="page"]');
+    if (!nav || !active) return;
+    const bounds = nav.getBoundingClientRect();
+    const selected = active.getBoundingClientRect();
+    if (selected.left < bounds.left) nav.scrollLeft += selected.left - bounds.left;
+    else if (selected.right > bounds.right) nav.scrollLeft += selected.right - bounds.right;
+  }, [status.value, current?.items.length]);
 
   useEffect(() => {
     if (sessionStatus !== 'authenticated' || !userId) return;
@@ -302,6 +313,7 @@ export default function Library() {
       ) : (
         <>
           <nav
+            ref={tabsRef}
             aria-label="Статусы библиотеки"
             className="flex gap-2 overflow-x-auto pb-1"
           >

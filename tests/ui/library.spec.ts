@@ -294,6 +294,21 @@ test('view and filters survive reload, status changes and browser back', async (
   ).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('a restored dropped tab remains visible on a narrow screen', async ({ page }) => {
+  await setup(page);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto('/watching?status=dropped');
+  await expect(titles(page)).toHaveAttribute('aria-label', 'Брошенный сериал');
+  const active = tabs(page).getByRole('link', { name: 'Брошено 1' });
+  await expect(active).toHaveAttribute('aria-current', 'page');
+  await expect(async () => {
+    const item = await active.boundingBox();
+    const container = await tabs(page).boundingBox();
+    expect(item!.x).toBeGreaterThanOrEqual(container!.x - 1);
+    expect(item!.x + item!.width).toBeLessThanOrEqual(container!.x + container!.width + 1);
+  }).toPass();
+});
+
 test('network errors are distinguishable from an empty library and can be retried', async ({
   page,
 }) => {
