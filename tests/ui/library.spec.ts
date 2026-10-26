@@ -278,6 +278,7 @@ test('view and filters survive reload, status changes and browser back', async (
     main(page).getByRole('button', { name: 'Постеры', exact: true }),
   ).toHaveAttribute('aria-pressed', 'true');
   await tabs(page).getByRole('link', { name: 'В планах 1' }).click();
+  await expect(titles(page)).toHaveCount(1);
   await expect(titles(page)).toHaveAttribute('aria-label', 'Тьма');
   await page.goBack();
   await expect(titles(page)).toHaveCount(3);

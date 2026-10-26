@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import sharp from 'sharp';
 import { config } from 'dotenv';
 import { answerDuel, createDuel, publicDuel, type DuelState } from '../src/lib/higher-lower';
+import { signProgressUndo, verifyProgressUndo, type ProgressUndo } from '../src/lib/progress-undo';
 
 config({ path: '.env.local', quiet: true });
 const schema = `test_security_${process.pid}_${Date.now()}`;
@@ -274,6 +275,108 @@ test('removing a planned title does not move it into watching or delete another 
   assert.equal((await owner.request(`/api/user-shows?showId=${showId}`, 'DELETE')).status, 200);
   assert.equal(await prisma.userShow.count({ where: { userId: alice.id, showId } }), 0);
   assert.equal(await prisma.userShow.count({ where: { userId: bob.id, showId } }), 1);
+});
+
+async function quickFixture(kind = 'series', totalEpisodes = 2, status = 'watching', episodes = 2) {
+  const show = await prisma.show.create({ data: { name: 'Quick progress fixture', kind, countries: [], studios: [], genres: [], creators: [], episodes: { create: Array.from({ length: episodes }, (_, i) => ({ season: 1, episode: i + 1 })) } }, include: { episodes: { orderBy: { episode: 'asc' } } } });
+  const entry = await prisma.userShow.create({ data: { userId: alice.id, showId: show.id, kind, status, totalEpisodes, dubbing: 'Сохранить озвучку', isFavorite: true } });
+  const path = `/api/user-shows/${entry.id}/quick-progress`;
+  const body = { action: 'mark', expectedUpdatedAt: entry.updatedAt.toISOString(), expectedEpisodeId: show.episodes[0]?.id };
+  return { show, entry, path, body };
+}
+
+test('quick mark and undo restore the previous timestamp and flags exactly', async () => {
+  const f = await quickFixture();
+  await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: f.show.episodes[0].id, stoppedAt: '18:42', watched: false } });
+  const response = await fetch(base + f.path, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, Cookie: [...owner.cookies].map(([key, value]) => `${key}=${value}`).join('; ') }, body: JSON.stringify(f.body) });
+  assert.equal(response.status, 200); const marked = await response.json();
+  assert.equal(marked.item.status, 'watching'); assert.equal(marked.item.progress[0].watched, true); assert.equal(marked.item.progress[0].stoppedAt, null); assert.ok(marked.item.progress[0].watchedAt);
+  const undo = await owner.request(f.path, 'POST', { action: 'undo', token: marked.undoToken });
+  assert.equal(undo.status, 200);
+  const restored = await prisma.episodeProgress.findFirstOrThrow({ where: { userShowId: f.entry.id } });
+  assert.equal(restored.watched, false); assert.equal(restored.stoppedAt, '18:42'); assert.equal(restored.watchedAt, null);
+  const entry = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } });
+  assert.equal(entry.status, 'watching'); assert.equal(entry.isCompleted, false); assert.equal(entry.dubbing, 'Сохранить озвучку'); assert.equal(entry.isFavorite, true);
+  assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token: marked.undoToken })).status, 409);
+});
+
+test('parallel duplicate marks update one episode only', async () => {
+  const f = await quickFixture();
+  const responses = await Promise.all(Array.from({ length: 5 }, () => owner.request(f.path, 'POST', f.body)));
+  assert.equal(responses.filter(r => r.status === 200).length, 1); assert.equal(responses.filter(r => r.status === 409).length, 4);
+  assert.equal(await prisma.episodeProgress.count({ where: { userShowId: f.entry.id, watched: true } }), 1);
+  assert.equal((await owner.request(f.path, 'POST', f.body)).status, 409);
+});
+
+test('quick progress rejects guests, other owners, wrong episode IDs and cross-origin writes', async () => {
+  const f = await quickFixture();
+  assert.equal((await guest.request(f.path, 'POST', f.body)).status, 401);
+  assert.equal((await other.request(f.path, 'POST', f.body)).status, 404);
+  assert.equal((await owner.request(f.path, 'POST', { ...f.body, expectedEpisodeId: otherEpisodeId })).status, 409);
+  assert.equal((await owner.request('/api/user-shows/invalid/quick-progress', 'POST', f.body)).status, 400);
+  const foreignOrigin = await fetch(base + f.path, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://untrusted.example', Cookie: [...owner.cookies].map(([key, value]) => `${key}=${value}`).join('; ') }, body: JSON.stringify(f.body) });
+  assert.equal(foreignOrigin.status, 403);
+  assert.equal(await prisma.episodeProgress.count({ where: { userShowId: f.entry.id } }), 0);
+});
+
+test('last episode completes the series and undo removes only the newly-created progress', async () => {
+  const f = await quickFixture('series', 1, 'watching', 1);
+  const response = await owner.request(f.path, 'POST', f.body); assert.equal(response.status, 200); const result = await response.json();
+  assert.equal(result.item.status, 'completed'); assert.equal(result.item.progress.length, 1);
+  assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token: result.undoToken })).status, 200);
+  assert.equal(await prisma.episodeProgress.count({ where: { userShowId: f.entry.id } }), 0);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } })).status, 'watching');
+});
+
+test('partial catalog data cannot prematurely complete a series or mark an unloaded episode', async () => {
+  const f = await quickFixture('series', 2, 'watching', 1);
+  // Исторически ошибочная ссылка на серию другого тайтла не завершает этот сериал.
+  await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: otherEpisodeId, watched: true } });
+  const response = await owner.request(f.path, 'POST', f.body); assert.equal(response.status, 200); const result = await response.json();
+  assert.equal(result.item.status, 'watching');
+  assert.equal((await owner.request(f.path, 'POST', { ...f.body, expectedUpdatedAt: result.item.updatedAt })).status, 409);
+  const unloaded = await quickFixture('series', 10, 'watching', 0);
+  assert.equal((await owner.request(unloaded.path, 'POST', unloaded.body)).status, 409);
+});
+
+test('movies with or without episode rows support completion and exact undo from planned', async () => {
+  for (const episodes of [0, 1]) {
+    const f = await quickFixture('movie', 1, 'planned', episodes);
+    if (episodes) await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: f.show.episodes[0].id, stoppedAt: '10:15' } });
+    const response = await owner.request(f.path, 'POST', f.body); assert.equal(response.status, 200); const result = await response.json();
+    assert.equal(result.item.status, 'completed');
+    if (episodes) { assert.equal(result.item.progress[0].watched, true); assert.equal(result.item.progress[0].stoppedAt, null); }
+    assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token: result.undoToken })).status, 200);
+    const entry = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id }, include: { progress: true } });
+    assert.equal(entry.status, 'planned'); assert.equal(entry.isCompleted, false);
+    assert.equal(entry.progress.length, episodes);
+    if (episodes) { assert.equal(entry.progress[0].watched, false); assert.equal(entry.progress[0].stoppedAt, '10:15'); }
+    assert.equal(await prisma.episode.count({ where: { showId: f.show.id } }), episodes);
+  }
+});
+
+test('undo cannot overwrite later tracker edits, even when parent updatedAt was unchanged', async () => {
+  const f = await quickFixture(); const response = await owner.request(f.path, 'POST', f.body); assert.equal(response.status, 200); const result = await response.json();
+  await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: f.show.episodes[1].id, stoppedAt: '03:00' } });
+  assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token: result.undoToken })).status, 409);
+  const progress = await prisma.episodeProgress.findMany({ where: { userShowId: f.entry.id }, orderBy: { episodeId: 'asc' } });
+  assert.equal(progress[0].watched, true); assert.equal(progress[1].stoppedAt, '03:00');
+});
+
+test('undo tokens are bound to owner and library record, and modified tokens fail', async () => {
+  const f = await quickFixture(); const response = await owner.request(f.path, 'POST', f.body); assert.equal(response.status, 200); const result = await response.json();
+  assert.equal((await other.request(f.path, 'POST', { action: 'undo', token: result.undoToken })).status, 400);
+  assert.equal((await owner.request(`/api/user-shows/${ownLibraryId}/quick-progress`, 'POST', { action: 'undo', token: result.undoToken })).status, 400);
+  assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token: `a${result.undoToken.slice(1)}` })).status, 400);
+  assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token: `${result.undoToken}!` })).status, 400);
+});
+
+test('undo signatures expire and cannot be verified with a different key', () => {
+  const payload: ProgressUndo = { version: 1, userId: 'fixture', userShowId: 1, expiresAt: 2000, before: { status: 'watching', isCompleted: false }, progress: [], fingerprint: 'fixture' };
+  const token = signProgressUndo(payload, 'test-only-signing-key');
+  assert.ok(verifyProgressUndo(token, 'test-only-signing-key', 1000));
+  assert.equal(verifyProgressUndo(token, 'test-only-signing-key', 2000), null);
+  assert.equal(verifyProgressUndo(token, 'different-test-key', 1000), null);
 });
 
 test('invalid sessions and sessions of deleted users never fall back to an existing account', async () => {
