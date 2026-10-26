@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { validateLibraryInput } from '@/lib/library-validation';
 import { getCurrentUserId, formatPosterUrl, safeJson } from '@/lib/current-user';
 
 export async function GET(request: NextRequest) {
   try {
     const currentUserId = await getCurrentUserId();
     if (!currentUserId) {
-      return NextResponse.json([]);
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -182,6 +183,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ error: 'Некорректный запрос' }, { status: 400 });
+    const validationError = validateLibraryInput(body);
+    if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
     const rawShowId = body.showId ?? body.tmdbId;
 
     if (!rawShowId) {
@@ -237,7 +241,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (body.score !== undefined && body.score !== null) {
-      const score = Math.min(Math.max(Number(body.score), 1), 10);
+      const score = Number(body.score);
       const existingRating = await prisma.rating.findFirst({
         where: { userShowId: userShow.id, episodeId: null },
       });
@@ -271,4 +275,15 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+// Удаление из планов не должно незаметно переводить тайтл в «смотрю».
+export async function DELETE(request: NextRequest) {
+  const userId = await getCurrentUserId();
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const showId = Number(new URL(request.url).searchParams.get('showId'));
+  if (!Number.isSafeInteger(showId) || showId <= 0) return NextResponse.json({ error: 'Invalid showId' }, { status: 400 });
+  const result = await prisma.userShow.deleteMany({ where: { userId, showId, status: 'planned' } });
+  if (!result.count) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  return NextResponse.json({ success: true });
 }

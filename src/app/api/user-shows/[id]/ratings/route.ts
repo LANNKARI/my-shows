@@ -46,7 +46,7 @@ export async function POST(
   const { score, episodeId } = body;
 
   const numScore = Number(score);
-  if (!numScore || numScore < 1 || numScore > 10) {
+  if (typeof score !== 'number' || !Number.isInteger(numScore) || numScore < 1 || numScore > 10) {
     return NextResponse.json(
       { error: "Оценка должна быть от 1 до 10" },
       { status: 400 }
@@ -55,6 +55,8 @@ export async function POST(
 
   // Если оценка за серию — обновляем существующую или создаём
   if (episodeId) {
+    const episode = await prisma.episode.findFirst({ where: { id: Number(episodeId), showId: userShow.showId } });
+    if (!episode) return NextResponse.json({ error: 'not found' }, { status: 404 });
     const existing = await prisma.rating.findFirst({
       where: {
         userShowId,

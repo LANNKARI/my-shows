@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       tmdbUrl += `&api_key=${apiKey}`;
     }
 
-    const tmdbRes = await fetch(tmdbUrl);
+    const tmdbRes = await fetch(tmdbUrl, { headers });
     if (!tmdbRes.ok) {
       return NextResponse.json(
         { error: `TMDB error: ${tmdbRes.statusText}` },

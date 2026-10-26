@@ -17,7 +17,7 @@ export function safeJson<T>(data: T): T {
   );
 }
 
-// Получение текущего пользователя с надежным фолбэком
+// Отсутствующая или недействительная сессия никогда не даёт чужую личность.
 export async function getCurrentUser() {
   try {
     const session = await auth();
@@ -30,16 +30,14 @@ export async function getCurrentUser() {
       if (userId) {
         user = await prisma.user.findUnique({
           where: { id: userId },
+          select: { id: true, email: true, username: true, name: true, bio: true, avatarUrl: true, bannerUrl: true, createdAt: true },
         });
       } else if (email) {
         user = await prisma.user.findUnique({
           where: { email },
+          select: { id: true, email: true, username: true, name: true, bio: true, avatarUrl: true, bannerUrl: true, createdAt: true },
         });
       }
-    }
-
-    if (!user) {
-      user = await prisma.user.findFirst();
     }
 
     return user;

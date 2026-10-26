@@ -38,6 +38,7 @@ model User {
   lastHigherLowerDate    DateTime?
   higherLowerAttempts    Int       @default(0)
   higherLowerCompleted   Boolean   @default(false)
+  higherLowerState       Json?
 
   accounts  Account[]
   sessions  Session[]

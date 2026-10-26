@@ -117,7 +117,10 @@ export async function POST(request: NextRequest) {
     });
 
     // 1. Принятие входящей заявки
-    if (action === 'accept' && existing) {
+    if (action === 'accept') {
+      if (!existing || existing.status !== 'pending' || existing.addresseeId !== currentUserId) {
+        return NextResponse.json({ error: 'Нет входящей заявки для подтверждения' }, { status: 403 });
+      }
       const updated = await prisma.friendship.update({
         where: { id: existing.id },
         data: { status: 'accepted' },
