@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import React, { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 export default function NavLinks() {
   const pathname = usePathname();
@@ -21,7 +21,7 @@ export default function NavLinks() {
     }
 
     try {
-      const res = await fetch('/api/users/counts', { cache: 'no-store' });
+      const res = await fetch("/api/users/counts", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setCounts({
@@ -30,24 +30,25 @@ export default function NavLinks() {
         });
       }
     } catch (err) {
-      console.error('Ошибка загрузки счетчиков:', err);
+      console.error("Ошибка загрузки счетчиков:", err);
     }
   }, [session?.user]);
 
   useEffect(() => {
-    fetchCounts();
+    const timer = setTimeout(() => void fetchCounts(), 0);
+    return () => clearTimeout(timer);
   }, [fetchCounts, pathname]);
 
   // Слушатель для обновления счетчиков при изменении статусов в трекере
   useEffect(() => {
     const handleUpdate = () => fetchCounts();
-    window.addEventListener('user-shows-updated', handleUpdate);
-    return () => window.removeEventListener('user-shows-updated', handleUpdate);
+    window.addEventListener("user-shows-updated", handleUpdate);
+    return () => window.removeEventListener("user-shows-updated", handleUpdate);
   }, [fetchCounts]);
 
   const isActive = (path: string) => {
-    if (path === '/' && pathname === '/') return true;
-    if (path !== '/' && pathname.startsWith(path)) return true;
+    if (path === "/" && pathname === "/") return true;
+    if (path !== "/" && pathname.startsWith(path)) return true;
     return false;
   };
 
@@ -57,9 +58,9 @@ export default function NavLinks() {
       <Link
         href="/"
         className={`px-3 py-2 rounded-xl transition-all ${
-          isActive('/')
-            ? 'bg-neutral-900 text-white font-bold border border-neutral-800'
-            : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+          isActive("/")
+            ? "bg-neutral-900 text-white font-bold border border-neutral-800"
+            : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
         }`}
       >
         Главная
@@ -69,9 +70,9 @@ export default function NavLinks() {
       <Link
         href="/watching"
         className={`px-3 py-2 rounded-xl transition-all flex items-center gap-2 ${
-          isActive('/watching')
-            ? 'bg-neutral-900 text-white font-bold border border-neutral-800'
-            : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+          isActive("/watching")
+            ? "bg-neutral-900 text-white font-bold border border-neutral-800"
+            : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
         }`}
       >
         <span className="flex items-center gap-1.5">
@@ -89,33 +90,21 @@ export default function NavLinks() {
       <Link
         href="/random"
         className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
-          isActive('/random')
-            ? 'bg-neutral-900 text-white font-bold border border-neutral-800'
-            : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
+          isActive("/random")
+            ? "bg-neutral-900 text-white font-bold border border-neutral-800"
+            : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"
         }`}
       >
         <span>🎲</span>
         <span>Что посмотреть</span>
       </Link>
 
-      {/* Хочу посмотреть + счетчик */}
       <Link
-        href="/watching?status=planned"
-        className={`px-3 py-2 rounded-xl transition-all flex items-center gap-2 ${
-          isActive('/wishlist')
-            ? 'bg-neutral-900 text-white font-bold border border-neutral-800'
-            : 'text-neutral-400 hover:text-white hover:bg-neutral-900/60'
-        }`}
+        href="/calendar"
+        className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 ${isActive("/calendar") ? "bg-neutral-900 text-white border border-neutral-800" : "text-neutral-400 hover:text-white hover:bg-neutral-900/60"}`}
       >
-        <span className="flex items-center gap-1.5">
-          <span>🔖</span>
-          <span>Хочу посмотреть</span>
-        </span>
-        {counts.plannedCount > 0 && (
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-            {counts.plannedCount}
-          </span>
-        )}
+        <span aria-hidden="true">▦</span>
+        <span>Календарь</span>
       </Link>
     </nav>
   );

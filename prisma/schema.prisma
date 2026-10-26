@@ -22,6 +22,9 @@ model User {
   bio           String?
   avatarUrl     String?
   bannerUrl     String?
+  releaseNotificationsEnabled Boolean @default(true)
+  notifyNewShows Boolean @default(false)
+  notificationTimeZone String @default("UTC")
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
   sentRequests     Friendship[] @relation("FriendshipRequester")
@@ -120,6 +123,10 @@ model Episode {
   season    Int
   episode   Int
 
+  airDate DateTime? @db.Date
+  name String?
+  releaseNotifications ReleaseNotification[]
+
   // ── Старые поля — оставляем для миграции, потом удалим ──
   titleId   Int?
   watched   Boolean   @default(false)
@@ -131,6 +138,7 @@ model Episode {
   progress  EpisodeProgress[]
 
   @@unique([showId, season, episode])
+  @@index([showId, airDate])
   @@index([showId])
   @@index([titleId])
 }
@@ -240,6 +248,11 @@ model Show {
   tmdbRating    Float?
   tmdbVotes     Int?
 
+  calendarSyncedAt DateTime?
+  calendarAttemptedAt DateTime?
+  calendarSyncFrom DateTime? @db.Date
+  calendarSyncTo DateTime? @db.Date
+
   // ── Кто первым добавил каноническую карточку ──
   createdById String?
   createdBy   User?   @relation("ShowCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -267,6 +280,10 @@ model UserShow {
   isCompleted   Boolean @default(false)
   isFavorite    Boolean @default(false)
   status String @default("watching")
+
+  notifyReleases Boolean @default(false)
+  notifySince DateTime? @db.Date
+  releaseNotifications ReleaseNotification[]
 
   // ── Личные поля ──
   dubbing   String?
@@ -304,3 +321,15 @@ model EpisodeProgress {
   @@index([episodeId])
 }
 
+
+model ReleaseNotification {
+  id Int @id @default(autoincrement())
+  userShowId Int
+  episodeId Int
+  createdAt DateTime @default(now())
+  readAt DateTime?
+  userShow UserShow @relation(fields: [userShowId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  @@unique([userShowId, episodeId])
+  @@index([userShowId, readAt])
+}

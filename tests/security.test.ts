@@ -1,3 +1,6 @@
+import { calendarRange, addDays, todayInZone, dayDate, validDay } from '../src/lib/calendar-dates';
+import { syncShowSchedule, scheduleDue } from '../src/lib/release-schedule';
+import { materializeReleases } from '../src/lib/release-notifications';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -68,6 +71,26 @@ before(async () => {
   // Exercise the additive migration against the pre-change schema as well.
   await prisma.$executeRawUnsafe('ALTER TABLE "User" DROP COLUMN "higherLowerState"');
   await prisma.$executeRawUnsafe(await readFile('prisma/migrations/20261022000000_secure_higher_lower_state/migration.sql', 'utf8'));
+  // Exercise the calendar migration against a populated pre-calendar schema.
+  const legacyUser = await prisma.user.create({ data: { email: 'migration@example.test', username: 'migration_fixture' } });
+  const legacyShow = await prisma.show.create({ data: { name: 'Migration fixture', kind: 'series', episodes: { create: { season: 1, episode: 1 } } }, include: { episodes: true } });
+  const legacyEntry = await prisma.userShow.create({ data: { userId: legacyUser.id, showId: legacyShow.id, dubbing: 'Сохранить' } });
+  const legacyProgress = await prisma.episodeProgress.create({ data: { userShowId: legacyEntry.id, episodeId: legacyShow.episodes[0].id, watched: true, watchedAt: new Date('2025-01-02T10:00:00Z') } });
+  const calendarMigration = await readFile('prisma/migrations/20261026000000_release_calendar/migration.sql', 'utf8');
+  await prisma.$transaction(async tx => {
+    await tx.$executeRawUnsafe('DROP TABLE "ReleaseNotification"');
+    await tx.$executeRawUnsafe('ALTER TABLE "User" DROP COLUMN "releaseNotificationsEnabled", DROP COLUMN "notifyNewShows", DROP COLUMN "notificationTimeZone"');
+    await tx.$executeRawUnsafe('ALTER TABLE "UserShow" DROP COLUMN "notifyReleases", DROP COLUMN "notifySince"');
+    await tx.$executeRawUnsafe('ALTER TABLE "Show" DROP COLUMN "calendarSyncedAt", DROP COLUMN "calendarAttemptedAt", DROP COLUMN "calendarSyncFrom", DROP COLUMN "calendarSyncTo"');
+    await tx.$executeRawUnsafe('ALTER TABLE "Episode" DROP COLUMN "airDate", DROP COLUMN "name"');
+    for (const statement of calendarMigration.replace(/^--.*$/gm, '').split(';').map(value => value.trim()).filter(value => value && !['BEGIN', 'COMMIT'].includes(value))) await tx.$executeRawUnsafe(statement);
+  });
+  assert.deepEqual(await prisma.episodeProgress.findUniqueOrThrow({ where: { id: legacyProgress.id } }), legacyProgress);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: legacyEntry.id } })).dubbing, 'Сохранить');
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: legacyEntry.id } })).notifyReleases, false);
+  const rls = await prisma.$queryRaw<{ relrowsecurity: boolean }[]>`SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ${schema} AND c.relname = 'ReleaseNotification'`;
+  assert.equal(rls[0].relrowsecurity, true);
+  await prisma.user.delete({ where: { id: legacyUser.id } }); await prisma.show.delete({ where: { id: legacyShow.id } });
   const passwordHash = await bcrypt.hash(password, 10);
   alice = await prisma.user.create({ data: { username: 'security_alice', email: 'alice@example.test', passwordHash } });
   bob = await prisma.user.create({ data: { username: 'security_bob', email: 'bob@example.test', passwordHash } });
@@ -547,6 +570,144 @@ test('undo signatures expire and cannot be verified with a different key', () =>
   assert.ok(verifyProgressUndo(token, 'test-only-signing-key', 1000));
   assert.equal(verifyProgressUndo(token, 'test-only-signing-key', 2000), null);
   assert.equal(verifyProgressUndo(token, 'different-test-key', 1000), null);
+});
+
+const calendarToday = () => todayInZone('UTC');
+const calendarQuery = () => `from=${addDays(calendarToday(), -7)}&to=${addDays(calendarToday(), 7)}`;
+
+test('calendar dates remain day-only across DST, year boundaries and timezone differences', () => {
+  assert.equal(todayInZone('Asia/Yekaterinburg', new Date('2026-10-25T21:00:00Z')), '2026-10-26');
+  assert.equal(todayInZone('America/Los_Angeles', new Date('2026-10-26T01:00:00Z')), '2026-10-25');
+  assert.deepEqual(calendarRange('2026-11-01', 'week'), { from: '2026-10-26', to: '2026-11-01' });
+  assert.deepEqual(calendarRange('2026-10-28', 'month'), { from: '2026-09-28', to: '2026-11-01' });
+  assert.equal(addDays('2026-12-31', 1), '2027-01-01'); assert.equal(validDay('2026-02-31'), false);
+});
+
+test('calendar, notifications and subscription APIs require auth and validate ranges and input', async () => {
+  for (const path of [`/api/calendar?${calendarQuery()}`, '/api/notifications', '/api/release-preferences']) assert.equal((await guest.request(path)).status, 401);
+  assert.equal((await guest.request('/api/release-preferences', 'PATCH', { releaseNotificationsEnabled: false })).status, 401);
+  assert.equal((await guest.request('/api/notifications', 'PATCH', { all: true, throughId: 0 })).status, 401);
+  for (const query of ['from=2026-02-31&to=2026-03-02', 'from=2026-01-01&to=2026-12-31', 'from=2026-10-29&to=2026-10-01', `${calendarQuery()}&status=invalid`]) assert.equal((await owner.request(`/api/calendar?${query}`)).status, 400);
+  assert.equal((await owner.request('/api/notifications?timeZone=invalid-zone')).status, 400);
+  assert.equal((await owner.request('/api/notifications?cursor=not-a-number')).status, 400);
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', { notifyNewShows: 'true' })).status, 400);
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', { userShowId: 1, notifyReleases: 'true' })).status, 400);
+  assert.equal((await owner.request(`/api/calendar/sync?${calendarQuery()}`, 'POST', { showIds: [1, 2, 3] })).status, 400);
+});
+
+test('calendar is owner-scoped, includes date-only releases and keeps films and unknown dates out', async () => {
+  const f = await quickFixture('series', 2, 'watching', 2);
+  const today = calendarToday(); await prisma.episode.update({ where: { id: f.show.episodes[0].id }, data: { airDate: dayDate(today) } });
+  const hidden = await prisma.show.create({ data: { name: 'Only Bob', kind: 'series', episodes: { create: { season: 1, episode: 1, airDate: dayDate(today) } } } });
+  await prisma.userShow.create({ data: { userId: bob.id, showId: hidden.id } });
+  const film = await quickFixture('movie', 1, 'watching', 1); await prisma.episode.update({ where: { id: film.show.episodes[0].id }, data: { airDate: dayDate(today) } });
+  const response = await owner.request(`/api/calendar?${calendarQuery()}`); assert.equal(response.status, 200); assert.match(response.headers.get('cache-control')!, /no-store/);
+  const result = await response.json(); const events = result.events.filter((event: { showId: number }) => event.showId === f.show.id);
+  assert.equal(events.length, 1); assert.equal(events[0].date, today); assert.equal(events[0].userShowId, f.entry.id);
+  assert.equal(result.events.some((event: { showId: number }) => [hidden.id, film.show.id].includes(event.showId)), false);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } })).updatedAt.toISOString(), f.entry.updatedAt.toISOString());
+});
+
+test('subscriptions are owner-scoped, idempotent, reject films and preserve progress revision for undo', async () => {
+  const f = await quickFixture();
+  const body = { userShowId: f.entry.id, notifyReleases: true, timeZone: 'Asia/Yekaterinburg' };
+  assert.equal((await other.request('/api/release-preferences', 'PATCH', body)).status, 404);
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', body)).status, 200);
+  const first = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } });
+  assert.equal(first.notifyReleases, true); assert.equal(first.notifySince?.toISOString().slice(0, 10), todayInZone('Asia/Yekaterinburg'));
+  assert.equal(first.updatedAt.toISOString(), f.entry.updatedAt.toISOString());
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', body)).status, 200);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } })).notifySince?.toISOString(), first.notifySince?.toISOString());
+  const marked = await owner.request(f.path, 'POST', f.body); assert.equal(marked.status, 200); const token = (await marked.json()).undoToken;
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', { ...body, notifyReleases: false })).status, 200);
+  assert.equal((await owner.request(f.path, 'POST', { action: 'undo', token })).status, 200);
+  const film = await quickFixture('movie', 1, 'watching', 1);
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', { ...body, userShowId: film.entry.id })).status, 404);
+  const foreignOrigin = await fetch(base + '/api/release-preferences', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Origin: 'https://untrusted.example', Cookie: [...owner.cookies].map(([key, value]) => `${key}=${value}`).join('; ') }, body: JSON.stringify(body) });
+  assert.equal(foreignOrigin.status, 403);
+});
+
+test('release notifications deduplicate, respect subscription start, watched episodes and global disable', async () => {
+  const today = calendarToday(); const f = await quickFixture('series', 4, 'watching', 4);
+  await prisma.userShow.update({ where: { id: f.entry.id }, data: { notifyReleases: true, notifySince: dayDate(today) } });
+  for (const [index, day] of [addDays(today, -1), today, addDays(today, 1), today].entries()) await prisma.episode.update({ where: { id: f.show.episodes[index].id }, data: { airDate: dayDate(day) } });
+  await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: f.show.episodes[3].id, watched: true } });
+  await Promise.all([materializeReleases(alice.id, today, prisma), materializeReleases(alice.id, today, prisma)]);
+  let notices = await prisma.releaseNotification.findMany({ where: { userShowId: f.entry.id } });
+  assert.equal(notices.length, 1); assert.equal(notices[0].episodeId, f.show.episodes[1].id);
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', { releaseNotificationsEnabled: false })).status, 200);
+  await materializeReleases(alice.id, addDays(today, 1), prisma);
+  assert.equal(await prisma.releaseNotification.count({ where: { userShowId: f.entry.id } }), 1);
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', { releaseNotificationsEnabled: true })).status, 200);
+  await materializeReleases(alice.id, addDays(today, 1), prisma);
+  notices = await prisma.releaseNotification.findMany({ where: { userShowId: f.entry.id } }); assert.equal(notices.length, 2);
+});
+
+test('read state belongs to its owner, bulk read stops at the viewed snapshot, postponed dates are hidden', async () => {
+  const today = calendarToday(), f = await quickFixture('series', 3, 'watching', 3);
+  await prisma.userShow.update({ where: { id: f.entry.id }, data: { notifyReleases: true, notifySince: dayDate(today) } });
+  for (const episode of f.show.episodes) await prisma.episode.update({ where: { id: episode.id }, data: { airDate: dayDate(today) } });
+  await materializeReleases(alice.id, today, prisma);
+  const rows = await prisma.releaseNotification.findMany({ where: { userShowId: f.entry.id }, orderBy: { id: 'asc' } });
+  assert.equal((await other.request('/api/notifications', 'PATCH', { ids: [rows[0].id] })).status, 404);
+  assert.equal((await owner.request('/api/notifications', 'PATCH', { all: true, throughId: rows[1].id })).status, 200);
+  assert.ok((await prisma.releaseNotification.findUniqueOrThrow({ where: { id: rows[0].id } })).readAt);
+  assert.equal((await prisma.releaseNotification.findUniqueOrThrow({ where: { id: rows[2].id } })).readAt, null);
+  await prisma.episode.update({ where: { id: f.show.episodes[2].id }, data: { airDate: dayDate(addDays(today, 5)) } });
+  let inbox = await (await owner.request('/api/notifications')).json();
+  assert.equal(inbox.items.some((item: { id: number }) => item.id === rows[2].id), false);
+  await prisma.episode.update({ where: { id: f.show.episodes[2].id }, data: { airDate: dayDate(today) } });
+  inbox = await (await owner.request('/api/notifications?mode=unread')).json();
+  assert.equal(inbox.items.filter((item: { id: number }) => item.id === rows[2].id).length, 1);
+  assert.equal((await owner.request('/api/notifications', 'PATCH', { ids: [rows[2].id] })).status, 200);
+  assert.equal((await owner.request('/api/notifications', 'PATCH', { ids: [rows[2].id] })).status, 200);
+});
+
+test('new-series default applies to new entries only, including tracker and wishlist entry points', async () => {
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', { notifyNewShows: true, timeZone: 'Asia/Yekaterinburg' })).status, 200);
+  const existing = await quickFixture(); assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: existing.entry.id } })).notifyReleases, false);
+  for (const route of ['metadata', 'tracker', 'wishlist']) {
+    const show = await prisma.show.create({ data: { name: `New subscribed ${route}`, kind: 'series' } });
+    const response = route === 'metadata' ? await owner.request(`/api/user-shows/${show.id}`, 'PATCH', { status: 'planned' }) : route === 'tracker' ? await owner.request(`/api/user-shows/${show.id}`) : await owner.request('/api/wishlist', 'POST', { showId: show.id });
+    assert.equal(response.status, 200);
+    const entry = await prisma.userShow.findUniqueOrThrow({ where: { userId_showId: { userId: alice.id, showId: show.id } } });
+    assert.equal(entry.notifyReleases, true); assert.ok(entry.notifySince);
+  }
+  assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: existing.entry.id } })).notifyReleases, false);
+  assert.equal((await owner.request('/api/release-preferences', 'PATCH', { notifyNewShows: false })).status, 200);
+});
+
+test('schedule refresh preserves progress, handles unknown and changed dates, caches calls and survives source failure', async () => {
+  const today = calendarToday(), f = await quickFixture();
+  await prisma.show.update({ where: { id: f.show.id }, data: { tmdbId: 987654 } });
+  const old = await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: f.show.episodes[0].id, watched: true, watchedAt: new Date('2025-01-02T10:00:00Z') } });
+  const show = await prisma.show.findUniqueOrThrow({ where: { id: f.show.id } });
+  let calls = 0; const fetcher = async (url: string) => { calls++; assert.match(url, /^https:\/\/api\.themoviedb\.org\/3\/tv\/987654/); return new Response(JSON.stringify(url.includes('/season/') ? { episodes: [{ episode_number: 1, air_date: today, name: 'Episode A' }, { episode_number: 2, air_date: null }] } : { seasons: [{ season_number: 1, episode_count: 2, air_date: addDays(today, -10) }] }), { headers: { 'Content-Type': 'application/json' } }); };
+  const range = { from: addDays(today, -7), to: addDays(today, 7) };
+  assert.equal((await syncShowSchedule(show, range, { db: prisma, fetcher, apiKey: 'test-only' })).ok, true); assert.equal(calls, 2);
+  const updated = await prisma.show.findUniqueOrThrow({ where: { id: show.id } }); assert.equal(scheduleDue(updated, range.from, range.to), false);
+  assert.equal((await syncShowSchedule(updated, range, { db: prisma, fetcher, apiKey: 'test-only' })).ok, false); assert.equal(calls, 2);
+  assert.deepEqual(await prisma.episodeProgress.findUniqueOrThrow({ where: { id: old.id } }), old);
+  assert.equal((await prisma.episode.findUniqueOrThrow({ where: { id: f.show.episodes[0].id } })).airDate?.toISOString().slice(0, 10), today);
+  assert.equal((await prisma.episode.findUniqueOrThrow({ where: { id: f.show.episodes[1].id } })).airDate, null);
+  assert.equal((await syncShowSchedule(updated, range, { db: prisma, apiKey: 'test-only', now: new Date(Date.now() + 120000), fetcher: async () => new Response('{}', { status: 503 }) })).ok, false);
+  assert.equal((await prisma.episode.findUniqueOrThrow({ where: { id: f.show.episodes[0].id } })).airDate?.toISOString().slice(0, 10), today);
+  assert.equal((await prisma.show.findUniqueOrThrow({ where: { id: show.id } })).calendarSyncedAt?.toISOString(), updated.calendarSyncedAt?.toISOString());
+  assert.equal((await other.request(`/api/calendar/sync?${calendarQuery()}`, 'POST', { showIds: [show.id] })).status, 404);
+});
+
+test('notification pagination has no duplicates and never returns another owners inbox', async () => {
+  const today = calendarToday(), f = await quickFixture('series', 40, 'watching', 40);
+  await prisma.episode.updateMany({ where: { showId: f.show.id }, data: { airDate: dayDate(today) } });
+  await prisma.userShow.update({ where: { id: f.entry.id }, data: { notifyReleases: true, notifySince: dayDate(today) } });
+  const first = await (await owner.request('/api/notifications')).json();
+  assert.equal(first.items.length, 30); assert.ok(first.nextCursor);
+  const second = await (await owner.request(`/api/notifications?cursor=${first.nextCursor}`)).json();
+  const ids = [...first.items, ...second.items].map((item: { id: number }) => item.id);
+  assert.equal(new Set(ids).size, ids.length);
+  const own = [...first.items, ...second.items].filter((item: { showId: number }) => item.showId === f.show.id); assert.equal(own.length, 40);
+  const foreign = await (await other.request('/api/notifications')).json();
+  assert.equal(foreign.items.some((item: { showId: number }) => item.showId === f.show.id), false);
 });
 
 test('invalid sessions and sessions of deleted users never fall back to an existing account', async () => {

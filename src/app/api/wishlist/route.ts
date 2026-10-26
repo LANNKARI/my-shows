@@ -1,3 +1,4 @@
+import { releaseDefaults } from "@/lib/release-defaults";
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserId, formatPosterUrl, safeJson } from '@/lib/current-user';
@@ -137,6 +138,7 @@ export async function POST(request: NextRequest) {
         showId: show.id,
         kind: show.kind,
         status: 'planned',
+        ...await releaseDefaults(currentUserId, show.kind),
       },
     });
 

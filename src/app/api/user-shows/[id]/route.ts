@@ -1,3 +1,4 @@
+import { releaseDefaults } from "@/lib/release-defaults";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { summarizeProgress } from "@/lib/progress";
@@ -99,6 +100,7 @@ export async function GET(
           showId: targetShow.id,
           kind: targetShow.kind,
           status: "watching",
+          ...(await releaseDefaults(currentUserId, targetShow.kind)),
         },
         include: {
           ratings: true,
@@ -302,6 +304,7 @@ export async function GET(
           status: userShow.status,
           kind: userShow.kind,
           isFavorite: userShow.isFavorite,
+          notifyReleases: userShow.notifyReleases,
           isCompleted: userShow.isCompleted,
           dubbing: userShow.dubbing,
           watchSite: userShow.watchSite,
