@@ -1,40 +1,47 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState, use } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { use, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
+import {
+  PersonalNotes,
+  TitleControls,
+  TitleRatings,
+  type PersonalValues,
+} from "@/components/TitlePersonal";
+import useQuickProgress, {
+  type ProgressPatch,
+} from "@/components/useQuickProgress";
+import { type LibraryItem } from "@/lib/library";
+import "@/components/title-detail.css";
 
-interface EpisodeItem {
+type Episode = {
   id: number;
   season: number;
   episode: number;
   watched: boolean;
-  stoppedAt?: string | null;
-}
-
-interface SeasonItem {
+  stoppedAt: string | null;
+};
+type Season = {
   seasonNumber: number;
   totalEpisodes: number;
   watchedEpisodes: number;
   isCompleted: boolean;
-  episodes: EpisodeItem[];
-}
-
-interface TrackerData {
-  userShow: {
+  episodes: Episode[];
+};
+type TrackerData = {
+  userShow: PersonalValues & {
     id: number;
     showId: number;
-    status: string;
     kind: string;
-    isFavorite?: boolean;
-    dubbing: string | null;
-    watchSite: string | null;
-    userRating: number | null;
+    status: string;
+    updatedAt: string;
   };
   show: {
     id: number;
     title: string;
-    originalTitle: string | null;
+    originalTitle?: string | null;
+    originalName?: string | null;
     posterUrl: string | null;
     year: string | null;
     kind: string;
@@ -46,7 +53,55 @@ interface TrackerData {
     watchedEpisodesCount: number;
     progressPercent: number;
   };
-  seasons: SeasonItem[];
+  seasons: Season[];
+};
+
+function withProgress(data: TrackerData, patch: ProgressPatch): TrackerData {
+  const progress = new Map(
+    patch.progress.map((value) => [value.episodeId, value]),
+  );
+  const seasons = data.seasons.map((season) => {
+    const episodes = season.episodes.map((episode) => ({
+      ...episode,
+      watched: progress.get(episode.id)?.watched ?? false,
+      stoppedAt: progress.get(episode.id)?.stoppedAt ?? null,
+    }));
+    const watchedEpisodes = episodes.filter(
+      (episode) => episode.watched,
+    ).length;
+    return {
+      ...season,
+      episodes,
+      watchedEpisodes,
+      isCompleted: watchedEpisodes === episodes.length && episodes.length > 0,
+    };
+  });
+  const watchedEpisodesCount = seasons.reduce(
+    (sum, season) => sum + season.watchedEpisodes,
+    0,
+  );
+  return {
+    ...data,
+    userShow: {
+      ...data.userShow,
+      status: patch.status,
+      updatedAt: patch.updatedAt,
+    },
+    seasons,
+    stats: {
+      ...data.stats,
+      watchedEpisodesCount,
+      progressPercent:
+        data.stats.totalEpisodes > 0
+          ? Math.min(
+              100,
+              Math.round(
+                (watchedEpisodesCount / data.stats.totalEpisodes) * 100,
+              ),
+            )
+          : 0,
+    },
+  };
 }
 
 export default function LibraryTrackerPage({
@@ -55,867 +110,622 @@ export default function LibraryTrackerPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const router = useRouter();
+  const { data: session, status } = useSession();
+  if (status === "loading")
+    return (
+      <div className="title-detail td-panel" role="status">
+        Загрузка трекера…
+      </div>
+    );
+  if (!session?.user)
+    return (
+      <div className="title-detail td-panel">
+        <h1>Войдите, чтобы открыть трекер</h1>
+        <Link className="td-button td-primary mt-5" href="/login">
+          Войти
+        </Link>
+      </div>
+    );
+  return (
+    <TrackerContent
+      key={`${id}:${session.user.id}`}
+      id={id}
+      userId={session.user.id}
+    />
+  );
+}
 
+function TrackerContent({ id, userId }: { id: string; userId: string }) {
   const [data, setData] = useState<TrackerData | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Состояния редактирования заметок
-  const [isEditingDubbing, setIsEditingDubbing] = useState(false);
-  const [isEditingSite, setIsEditingSite] = useState(false);
-  const [dubbingInput, setDubbingInput] = useState('');
-  const [siteInput, setSiteInput] = useState('');
-  const [savingNotes, setSavingNotes] = useState(false);
-
-  // Состояние сворачивания сезонов (сезон -> открыт/закрыт)
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const undoButton = useRef<HTMLButtonElement>(null);
   const [openSeasons, setOpenSeasons] = useState<Record<number, boolean>>({});
-
-  // Редактирование времени остановки для конкретной серии
-  const [editingEpisodeTimeId, setEditingEpisodeTimeId] = useState<number | null>(null);
-  const [episodeTimeInput, setEpisodeTimeInput] = useState<string>('');
-
-  const loadTracker = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/user-shows/${id}`);
-      if (!res.ok) {
-        throw new Error('Не удалось загрузить данные трекера');
-      }
-      const json: TrackerData = await res.json();
-      setData(json);
-
-      setDubbingInput(json.userShow.dubbing || '');
-      setSiteInput(json.userShow.watchSite || '');
-
-      // Инициализируем аккордеоны: первый незавершенный сезон открыт, остальные можно свернуть
-      const initialOpen: Record<number, boolean> = {};
-      let firstUncompletedFound = false;
-
-      (json.seasons || []).forEach((s, idx) => {
-        if (!firstUncompletedFound && !s.isCompleted) {
-          initialOpen[s.seasonNumber] = true;
-          firstUncompletedFound = true;
-        } else if (idx === 0 && !firstUncompletedFound) {
-          initialOpen[s.seasonNumber] = true;
-        } else {
-          initialOpen[s.seasonNumber] = !s.isCompleted;
-        }
-      });
-      setOpenSeasons(initialOpen);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Ошибка загрузки';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [expandedSeasons, setExpandedSeasons] = useState<
+    Record<number, boolean>
+  >({});
+  const [confirmSeason, setConfirmSeason] = useState<number | null>(null);
+  const [editingTime, setEditingTime] = useState<Episode | null>(null);
+  const [timeInput, setTimeInput] = useState("");
+  const [reload, setReload] = useState(0);
+  const quick = useQuickProgress(userId, (patch) =>
+    setData((previous) =>
+      previous ? withProgress(previous, patch) : previous,
+    ),
+  );
 
   useEffect(() => {
-    loadTracker();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+    if (quick.undo?.focus) undoButton.current?.focus({ preventScroll: true });
+  }, [quick.undo]);
 
-  // Переключение состояния аккордеона сезона
-  const toggleSeasonAccordion = (seasonNumber: number) => {
-    setOpenSeasons((prev) => ({
-      ...prev,
-      [seasonNumber]: !prev[seasonNumber],
-    }));
-  };
-
-  const toggleAllSeasons = (open: boolean) => {
-    if (!data) return;
-    const nextState: Record<number, boolean> = {};
-    data.seasons.forEach((s) => {
-      nextState[s.seasonNumber] = open;
-    });
-    setOpenSeasons(nextState);
-  };
-
-  // Переключение избранного «Любимый сериал»
-  const toggleFavorite = async () => {
-    if (!data) return;
-    const nextFavorite = !data.userShow.isFavorite;
-
-    setData((prev) =>
-      prev
-        ? {
-            ...prev,
-            userShow: { ...prev.userShow, isFavorite: nextFavorite },
-          }
-        : prev
-    );
-
-    try {
-      await fetch(`/api/user-shows/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isFavorite: nextFavorite }),
+  useEffect(() => {
+    const abort = new AbortController();
+    fetch(`/api/user-shows/${encodeURIComponent(id)}`, { signal: abort.signal })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error(
+            response.status === 401
+              ? "Войдите в аккаунт, чтобы открыть трекер."
+              : "Не удалось загрузить трекер",
+          );
+        return response.json();
+      })
+      .then((json: TrackerData) => {
+        setData(json);
+        setConfirmSeason(null);
+        setEditingTime(null);
+        setSaveError("");
+        const current =
+          json.seasons.find((season) => !season.isCompleted) || json.seasons[0];
+        setOpenSeasons(current ? { [current.seasonNumber]: true } : {});
+        setExpandedSeasons({});
+      })
+      .catch((error) => {
+        if (!abort.signal.aborted) setLoadError(error.message);
+      })
+      .finally(() => {
+        if (!abort.signal.aborted) setLoading(false);
       });
-    } catch (err) {
-      console.error(err);
-    }
-  };
+    return () => abort.abort();
+  }, [id, reload]);
 
-  // Переключение статуса просмотра (Смотрю, В планах и т.д.)
-  const handleStatusChange = async (newStatus: string) => {
-    if (!data) return;
-    setData((prev) =>
-      prev ? { ...prev, userShow: { ...prev.userShow, status: newStatus } } : prev
-    );
-
+  async function mutate(
+    method: "POST" | "PATCH",
+    body: Record<string, unknown>,
+  ) {
+    if (!data || lock.current || quick.pending) return false;
+    lock.current = true;
+    setBusy(true);
+    setSaveError("");
     try {
-      await fetch(`/api/user-shows/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+      // This legacy endpoint takes Show.id; quick-progress takes UserShow.id.
+      const response = await fetch(`/api/user-shows/${data.show.id}`, {
+        method,
+        signal: AbortSignal.timeout(15000),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Сохранение озвучки
-  const handleSaveDubbing = async () => {
-    setSavingNotes(true);
-    try {
-      const trimmed = dubbingInput.trim();
-      await fetch(`/api/user-shows/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dubbing: trimmed }),
-      });
-
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              userShow: { ...prev.userShow, dubbing: trimmed || null },
-            }
-          : prev
-      );
-      setIsEditingDubbing(false);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSavingNotes(false);
-    }
-  };
-
-  // Сохранение сайта просмотра
-  const handleSaveSite = async () => {
-    setSavingNotes(true);
-    try {
-      const trimmed = siteInput.trim();
-      await fetch(`/api/user-shows/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ watchSite: trimmed }),
-      });
-
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              userShow: { ...prev.userShow, watchSite: trimmed || null },
-            }
-          : prev
-      );
-      setIsEditingSite(false);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSavingNotes(false);
-    }
-  };
-
-  // Форматирование ссылки на сайт просмотра
-  const formatSiteLink = (site: string) => {
-    const trimmed = site.trim();
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return trimmed;
-    }
-    if (trimmed.includes('.') && !trimmed.includes(' ')) {
-      return `https://${trimmed}`;
-    }
-    // Если введено название («Кинопоиск», «HDRezka») — формируем ссылку для быстрого перехода
-    return `https://www.google.com/search?q=${encodeURIComponent(trimmed + ' ' + (data?.show.title || ''))}`;
-  };
-
-  // Переключение одной серии
-  const toggleEpisode = async (episodeId: number, currentWatched: boolean) => {
-    if (!data) return;
-    const nextWatched = !currentWatched;
-
-    setData((prev) => {
-      if (!prev) return prev;
-      let newWatchedTotal = prev.stats.watchedEpisodesCount;
-
-      const newSeasons = prev.seasons.map((s) => {
-        let seasonWatched = s.watchedEpisodes;
-        const newEps = s.episodes.map((ep) => {
-          if (ep.id === episodeId) {
-            if (nextWatched) {
-              seasonWatched += 1;
-              newWatchedTotal += 1;
-            } else {
-              seasonWatched = Math.max(0, seasonWatched - 1);
-              newWatchedTotal = Math.max(0, newWatchedTotal - 1);
-            }
-            return { ...ep, watched: nextWatched };
-          }
-          return ep;
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Не удалось сохранить изменения");
+      quick.dismiss();
+      if (method === "PATCH") {
+        setData((previous) =>
+          previous
+            ? {
+                ...previous,
+                userShow: {
+                  ...previous.userShow,
+                  ...result.item,
+                  ...(body.score !== undefined
+                    ? { userRating: Number(body.score) }
+                    : {}),
+                },
+              }
+            : previous,
+        );
+      } else {
+        const fresh = await fetch(`/api/user-shows/${data.show.id}`, {
+          signal: AbortSignal.timeout(15000),
         });
-
-        return {
-          ...s,
-          watchedEpisodes: seasonWatched,
-          isCompleted: seasonWatched === s.totalEpisodes && s.totalEpisodes > 0,
-          episodes: newEps,
-        };
-      });
-
-      const total = prev.stats.totalEpisodes;
-      const newPercent = total > 0 ? Math.min(100, Math.round((newWatchedTotal / total) * 100)) : 0;
-
-      return {
-        ...prev,
-        stats: {
-          ...prev.stats,
-          watchedEpisodesCount: newWatchedTotal,
-          progressPercent: newPercent,
-        },
-        seasons: newSeasons,
-      };
-    });
-
-    try {
-      await fetch(`/api/user-shows/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          episodeId,
-          watched: nextWatched,
-        }),
-      });
-    } catch (err) {
-      console.error(err);
+        if (!fresh.ok)
+          throw new Error(
+            "Изменение отправлено, но проверить результат не удалось. Обновите трекер.",
+          );
+        setData(await fresh.json());
+      }
+      window.dispatchEvent(new Event("user-shows-updated"));
+      return true;
+    } catch (error) {
+      setSaveError(
+        error instanceof Error && error.name === "Error"
+          ? error.message
+          : "Не удалось подтвердить сохранение. Обновите трекер перед повтором.",
+      );
+      return false;
+    } finally {
+      lock.current = false;
+      setBusy(false);
     }
-  };
-
-  // Отметка всего сезона
-  const toggleSeasonAll = async (seasonNumber: number, markWatched: boolean) => {
-    if (!data) return;
-
-    setData((prev) => {
-      if (!prev) return prev;
-      const newSeasons = prev.seasons.map((s) => {
-        if (s.seasonNumber === seasonNumber) {
-          return {
-            ...s,
-            watchedEpisodes: markWatched ? s.totalEpisodes : 0,
-            isCompleted: markWatched,
-            episodes: s.episodes.map((ep) => ({ ...ep, watched: markWatched })),
-          };
-        }
-        return s;
-      });
-
-      const totalWatched = newSeasons.reduce((acc, s) => acc + s.watchedEpisodes, 0);
-      const total = prev.stats.totalEpisodes;
-      const newPercent = total > 0 ? Math.min(100, Math.round((totalWatched / total) * 100)) : 0;
-
-      return {
-        ...prev,
-        stats: {
-          ...prev.stats,
-          watchedEpisodesCount: totalWatched,
-          progressPercent: newPercent,
-        },
-        seasons: newSeasons,
-      };
-    });
-
-    try {
-      await fetch(`/api/user-shows/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          seasonNumber,
-          markSeasonWatched: markWatched,
-        }),
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Сохранение времени остановки для серии
-  const handleSaveEpisodeTime = async (episodeId: number) => {
-    const trimmedTime = episodeTimeInput.trim();
-
-    setData((prev) => {
-      if (!prev) return prev;
-      const newSeasons = prev.seasons.map((s) => ({
-        ...s,
-        episodes: s.episodes.map((ep) =>
-          ep.id === episodeId ? { ...ep, stoppedAt: trimmedTime || null } : ep
-        ),
-      }));
-      return { ...prev, seasons: newSeasons };
-    });
-
-    setEditingEpisodeTimeId(null);
-    setEpisodeTimeInput('');
-
-    try {
-      await fetch(`/api/user-shows/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          episodeId,
-          stoppedAt: trimmedTime || null,
-        }),
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-neutral-400">Загрузка трекера серий...</p>
-        </div>
-      </div>
-    );
+  }
+  function refresh() {
+    setLoading(true);
+    setLoadError("");
+    quick.dismiss();
+    setReload(reload + 1);
+  }
+  const save = (body: Record<string, unknown>) => mutate("PATCH", body);
+  function editTime(episode: Episode) {
+    setEditingTime(episode);
+    setTimeInput(episode.stoppedAt || "");
   }
 
-  if (error || !data) {
+  if (loading)
     return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 text-center shadow-xl">
-          <div className="text-4xl mb-3">🎬</div>
-          <h1 className="text-xl font-bold text-white mb-2">Трекер не найден</h1>
-          <p className="text-sm text-neutral-400 mb-6">{error || 'Не удалось найти серии для этого тайтла.'}</p>
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={() => router.back()}
-              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-sm font-medium rounded-xl transition-colors"
-            >
-              ← Назад
-            </button>
-            <Link
-              href="/"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors"
-            >
-              На главную
-            </Link>
-          </div>
-        </div>
+      <div className="title-detail td-panel" role="status">
+        Загрузка трекера…
       </div>
     );
-  }
-
-  const { show, stats, seasons, userShow } = data;
-  const isFav = Boolean(userShow.isFavorite);
-
-  return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-24">
-      {/* Верхняя навигация */}
-      <div className="border-b border-neutral-800 bg-neutral-900/60 backdrop-blur-md sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 py-3.5 flex items-center justify-between gap-4">
-          <button
-            onClick={() => router.back()}
-            className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
-          >
-            <span>←</span>
-            <span>Назад</span>
+  if (!data || loadError)
+    return (
+      <div className="title-detail td-panel">
+        <h1>Трекер недоступен</h1>
+        <p className="td-description">{loadError || "Тайтл не найден"}</p>
+        <div className="td-inline">
+          <button className="td-button" onClick={refresh}>
+            Повторить загрузку
           </button>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleFavorite}
-              className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition-all border flex items-center gap-1.5 ${
-                isFav
-                  ? 'bg-amber-400 text-black border-amber-300 shadow-md'
-                  : 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:text-white'
-              }`}
-            >
-              <span>{isFav ? '★' : '☆'}</span>
-              <span>{isFav ? 'Любимый сериал' : 'Сделать любимым'}</span>
-            </button>
-
-            <Link
-              href={`/show/${show.id}`}
-              className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800"
-            >
-              Карточка фильма ↗
-            </Link>
-          </div>
+          <Link className="td-button" href="/login">
+            Войти
+          </Link>
+          <Link className="td-button" href="/watching">
+            Библиотека
+          </Link>
         </div>
       </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-6 sm:py-8">
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
-          {/* ========================================================
-              ЛЕВАЯ КОЛОНКА: БОЛЬШОЙ ПОСТЕР И КОМПАКТНЫЙ БЛОК ЗАМЕТОК
-             ======================================================== */}
-          <div className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-5">
-            {/* 1. Большой постер тайтла */}
-            <div className="aspect-[2/3] w-full rounded-3xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl relative">
-              {show.posterUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={show.posterUrl}
-                  alt={show.title}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-neutral-600 text-xs">
-                  Нет постера
-                </div>
-              )}
-              <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] font-black uppercase text-white border border-white/10 tracking-wider">
-                {show.kind === 'series' ? 'Сериал' : 'Фильм'}
-              </div>
+    );
+  const { show, userShow, stats, seasons } = data;
+  const episodes = seasons.flatMap((season) => season.episodes);
+  const next = episodes.find((episode) => !episode.watched);
+  const disabled = busy || !!quick.pending;
+  const item: LibraryItem = {
+    id: show.id,
+    showId: show.id,
+    userShowId: userShow.id,
+    title: show.title,
+    kind: show.kind,
+    status: userShow.status,
+    updatedAt: userShow.updatedAt,
+    totalEpisodes: stats.totalEpisodes,
+    show: { id: show.id, episodes },
+    ratings: [],
+    progress: episodes.map((episode) => ({
+      episodeId: episode.id,
+      watched: episode.watched,
+      stoppedAt: episode.stoppedAt,
+    })),
+  };
+  const canQuick = userShow.status === "watching" && !!userId;
+  async function markNext() {
+    if (lock.current) return;
+    setSaveError("");
+    await quick.mark(item);
+  }
+  const poster =
+    show.posterUrl /* eslint-disable-next-line @next/next/no-img-element */ ? (
+      <img
+        className="td-poster"
+        src={show.posterUrl}
+        alt={`Постер: ${show.title}`}
+      />
+    ) : (
+      <div className="td-poster td-poster-empty">Нет постера</div>
+    );
+  return (
+    <div className="title-detail">
+      <nav className="td-breadcrumb" aria-label="Навигация трекера">
+        <Link href="/watching">Библиотека</Link>
+        <span aria-hidden="true">/</span>
+        <span>Трекер</span>
+      </nav>
+      <div className="td-tracker">
+        <aside className="td-tracker-side">
+          {poster}
+          <PersonalNotes value={userShow} busy={disabled} save={save} />
+          <Link className="td-text-button block mt-4" href={`/show/${show.id}`}>
+            Открыть карточку {show.kind === "movie" ? "фильма" : "сериала"} →
+          </Link>
+        </aside>
+        <section className="td-tracker-header" aria-label="Тайтл и статус">
+          {poster}
+          <div>
+            <h1>{show.title}</h1>
+            {(show.originalTitle || show.originalName) && (
+              <p className="td-original">
+                {show.originalTitle || show.originalName}
+              </p>
+            )}
+            <div className="td-meta">
+              {show.year && <span>{show.year}</span>}
+              <span>{show.genres?.join(", ")}</span>
             </div>
-
-            {/* 2. Компактный блок заметок и статуса строго под постером */}
-            <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl p-5 shadow-xl space-y-4">
-              <h2 className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
-                <span>📝 Заметки и статус</span>
-              </h2>
-
-              {/* Сетка 4 статусов просмотра */}
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { key: 'watching', label: '👀 Смотрю' },
-                  { key: 'planned', label: '🔖 В планах' },
-                  { key: 'completed', label: '✓ Просмотрено' },
-                  { key: 'dropped', label: '✕ Брошено' },
-                ].map((st) => (
-                  <button
-                    key={st.key}
-                    onClick={() => handleStatusChange(st.key)}
-                    className={`py-2 px-2.5 rounded-xl text-xs font-semibold transition-all border ${
-                      userShow.status === st.key
-                        ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/20'
-                        : 'bg-neutral-950/70 text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-white'
-                    }`}
-                  >
-                    {st.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Озвучка и перевод */}
-              <div className="pt-2 border-t border-neutral-800/80">
-                <span className="text-[11px] text-neutral-500 block mb-1">Озвучка / Перевод:</span>
-                {isEditingDubbing ? (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={dubbingInput}
-                      onChange={(e) => setDubbingInput(e.target.value)}
-                      placeholder="LostFilm, Red Head Sound, Дубляж..."
-                      className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-blue-500"
-                      autoFocus
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleSaveDubbing}
-                        disabled={savingNotes}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold rounded-lg"
-                      >
-                        {savingNotes ? '...' : 'Сохранить'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setDubbingInput(userShow.dubbing || '');
-                          setIsEditingDubbing(false);
-                        }}
-                        className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px] rounded-lg"
-                      >
-                        Отмена
-                      </button>
-                    </div>
+            <TitleControls value={userShow} busy={disabled} save={save} />
+            <TitleRatings
+              tmdb={show.tmdbRating}
+              rating={userShow.userRating}
+              busy={disabled}
+              save={save}
+            />
+          </div>
+        </section>
+        <div className="td-tracker-content">
+          <section className="td-panel" aria-label="Прогресс просмотра">
+            <div className="td-progress-label">
+              <span>
+                Отмечено {stats.watchedEpisodesCount} из {stats.totalEpisodes}{" "}
+                {show.kind === "movie" ? "частей" : "серий"}
+              </span>
+              <strong>{stats.progressPercent}%</strong>
+            </div>
+            <div
+              className="td-progress"
+              role="progressbar"
+              aria-label="Прогресс просмотра"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={stats.progressPercent}
+            >
+              <div style={{ width: `${stats.progressPercent}%` }} />
+            </div>
+          </section>
+          <section className="td-panel td-current" aria-label="Текущая серия">
+            <h2>
+              {next?.stoppedAt
+                ? "Вы остановились здесь"
+                : next
+                  ? "Следующая серия"
+                  : "Все доступные серии просмотрены"}
+            </h2>
+            {next ? (
+              <>
+                <div className="td-current-main">
+                  <div>
+                    <strong>
+                      {show.kind === "movie"
+                        ? show.title
+                        : `Сезон ${next.season} · Серия ${next.episode}`}
+                    </strong>
+                    <span className="td-time">
+                      {next.stoppedAt
+                        ? `Время остановки: ${next.stoppedAt}`
+                        : "Время остановки не указано"}
+                    </span>
                   </div>
-                ) : userShow.dubbing ? (
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-neutral-950 border border-neutral-800 group">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm">🎧</span>
-                      <span className="text-xs font-medium text-neutral-200 truncate">
-                        {userShow.dubbing}
-                      </span>
-                    </div>
+                  {canQuick ? (
                     <button
-                      onClick={() => setIsEditingDubbing(true)}
-                      className="text-neutral-500 hover:text-white text-xs p-1"
-                      title="Изменить озвучку"
+                      className="td-button td-primary"
+                      disabled={disabled}
+                      aria-busy={!!quick.pending}
+                      onClick={() => void markNext()}
                     >
-                      ✏️
+                      {quick.pending
+                        ? "Сохранение…"
+                        : show.kind === "movie"
+                          ? "Отметить фильм"
+                          : "Отметить серию"}
                     </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setIsEditingDubbing(true)}
-                    className="w-full py-2 px-3 border border-dashed border-neutral-800 hover:border-neutral-700 rounded-xl text-xs text-neutral-400 hover:text-blue-400 transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <span>+ Указать озвучку</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Где смотрю (Сайт / Сервис) с красивой кликабельной ссылкой */}
-              <div className="pt-2 border-t border-neutral-800/80">
-                <span className="text-[11px] text-neutral-500 block mb-1">Где смотрю:</span>
-                {isEditingSite ? (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={siteInput}
-                      onChange={(e) => setSiteInput(e.target.value)}
-                      placeholder="Кинопоиск, HDRezka, Иви или ссылка..."
-                      className="w-full bg-neutral-950 border border-neutral-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-blue-500"
-                      autoFocus
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleSaveSite}
-                        disabled={savingNotes}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold rounded-lg"
-                      >
-                        {savingNotes ? '...' : 'Сохранить'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSiteInput(userShow.watchSite || '');
-                          setIsEditingSite(false);
-                        }}
-                        className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[11px] rounded-lg"
-                      >
-                        Отмена
-                      </button>
-                    </div>
-                  </div>
-                ) : userShow.watchSite ? (
-                  <div className="flex items-center justify-between p-2 rounded-xl bg-neutral-950 border border-neutral-800 group">
-                    <a
-                      href={formatSiteLink(userShow.watchSite)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 min-w-0 text-blue-400 hover:text-blue-300 transition-colors"
-                      title="Открыть сайт просмотра"
-                    >
-                      <span className="text-sm">🌐</span>
-                      <span className="text-xs font-semibold underline truncate">
-                        {userShow.watchSite}
-                      </span>
-                      <span className="text-[10px]">↗</span>
-                    </a>
+                  ) : (
                     <button
-                      onClick={() => setIsEditingSite(true)}
-                      className="text-neutral-500 hover:text-white text-xs p-1"
-                      title="Изменить сайт"
+                      className="td-button"
+                      disabled={disabled}
+                      onClick={() => void save({ status: "watching" })}
                     >
-                      ✏️
+                      Продолжить просмотр
                     </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setIsEditingSite(true)}
-                    className="w-full py-2 px-3 border border-dashed border-neutral-800 hover:border-neutral-700 rounded-xl text-xs text-neutral-400 hover:text-blue-400 transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <span>+ Указать сайт просмотра</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Личная оценка */}
-              <div className="pt-2 border-t border-neutral-800/80">
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-neutral-500 text-[11px]">Моя оценка:</span>
-                  {userShow.userRating && userShow.userRating > 0 && (
-                    <span className="font-bold text-amber-400">{userShow.userRating}/10</span>
                   )}
                 </div>
-                <div className="flex items-center justify-between">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
-                    <button
-                      key={star}
-                      onClick={() => {
-                        setData((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                userShow: { ...prev.userShow, userRating: star },
-                              }
-                            : prev
-                        );
-                        fetch(`/api/user-shows/${id}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ score: star }),
-                        });
-                      }}
-                      className={`text-sm transition-transform hover:scale-125 ${
-                        (userShow.userRating || 0) >= star
-                          ? 'text-amber-400'
-                          : 'text-neutral-700 hover:text-neutral-400'
-                      }`}
-                    >
-                      ★
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ========================================================
-              ПРАВАЯ КОЛОНКА: ИНФО, ПРОГРЕСС И СЕРИИ В СТРОЧКУ
-             ======================================================== */}
-          <div className="flex-1 w-full space-y-6">
-            {/* Заголовок тайтла и Прогресс-бар */}
-            <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl p-6 sm:p-7 shadow-xl">
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                {show.year && (
-                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300">
-                    {show.year}
-                  </span>
-                )}
-                {show.tmdbRating && show.tmdbRating > 0 && (
-                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    ★ {show.tmdbRating.toFixed(1)} TMDB
-                  </span>
-                )}
-                {show.genres && show.genres.length > 0 && (
-                  <span className="text-xs text-neutral-400">
-                    • {show.genres.slice(0, 3).join(', ')}
-                  </span>
-                )}
-              </div>
-
-              <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-1">
-                {show.title}
-              </h1>
-
-              {show.originalTitle && show.originalTitle !== show.title && (
-                <p className="text-xs text-neutral-400 italic mb-5">
-                  {show.originalTitle}
-                </p>
+                <button
+                  className="td-text-button"
+                  disabled={disabled}
+                  onClick={() => editTime(next)}
+                >
+                  Изменить время
+                </button>
+              </>
+            ) : (
+              <p className="td-muted">
+                {stats.watchedEpisodesCount < stats.totalEpisodes
+                  ? "Ожидаем информацию об остальных сериях."
+                  : "Прогресс сохранён. Отметки можно изменить в списке ниже."}
+              </p>
+            )}
+          </section>
+          {(quick.undo || quick.error) && (
+            <aside
+              className="td-notice"
+              aria-label="Последнее изменение прогресса"
+            >
+              {quick.undo && (
+                <>
+                  <p role="status">{quick.undo.message}</p>
+                  <button
+                    className="td-text-button"
+                    disabled={disabled}
+                    ref={undoButton}
+                    onClick={() => void quick.undoLast()}
+                  >
+                    Отменить отметку
+                  </button>
+                </>
               )}
-
-              {/* Прогресс-бар */}
-              <div className="pt-4 border-t border-neutral-800/80">
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="font-semibold text-neutral-300">
-                    Прогресс просмотра:
-                  </span>
-                  <span className="text-blue-400 font-bold">
-                    {stats.watchedEpisodesCount} из {stats.totalEpisodes} серий ({stats.progressPercent}%)
-                  </span>
-                </div>
-                <div className="w-full h-3 bg-neutral-950 rounded-full overflow-hidden border border-neutral-800">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-600 to-indigo-500 rounded-full transition-all duration-300"
-                    style={{ width: `${stats.progressPercent}%` }}
-                  />
-                </div>
-              </div>
+              {quick.error && <p role="alert">{quick.error}</p>}
+              <button
+                className="td-text-button"
+                disabled={disabled}
+                onClick={refresh}
+              >
+                Обновить трекер
+              </button>
+            </aside>
+          )}
+          {saveError && (
+            <div className="td-alert" role="alert">
+              {saveError}
+              <button
+                className="td-text-button"
+                disabled={disabled}
+                onClick={refresh}
+              >
+                Обновить трекер
+              </button>
             </div>
-
-            {/* СПИСОК СЕЗОНОВ (СВОРАЧИВАЕМЫЙ АККОРДЕОН) */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <span>📺 Эпизоды по сезонам</span>
-                  <span className="text-xs font-normal text-neutral-500">
-                    ({seasons.length} {seasons.length === 1 ? 'сезон' : 'сезонов'})
-                  </span>
-                </h2>
-
-                {seasons.length > 1 && (
-                  <div className="flex items-center gap-2 text-xs">
+          )}
+          {editingTime && (
+            <form
+              className="td-panel td-time-form"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const time = timeInput.trim();
+                if (time && !/^\d{1,3}:(?:[0-5]\d:)?[0-5]\d$/.test(time)) {
+                  setSaveError("Введите время в формате ММ:СС или ЧЧ:ММ:СС.");
+                  return;
+                }
+                if (
+                  await mutate("POST", {
+                    episodeId: editingTime.id,
+                    stoppedAt: time || null,
+                  })
+                )
+                  setEditingTime(null);
+              }}
+            >
+              <label htmlFor="episode-time">
+                Время остановки: сезон {editingTime.season}, серия{" "}
+                {editingTime.episode}
+              </label>
+              <input
+                id="episode-time"
+                className="td-input"
+                value={timeInput}
+                onChange={(event) => setTimeInput(event.target.value)}
+                placeholder="18:42"
+                autoFocus
+                maxLength={12}
+                disabled={disabled}
+              />
+              <button className="td-button td-primary" disabled={disabled}>
+                Сохранить время
+              </button>
+              <button
+                className="td-button"
+                type="button"
+                disabled={disabled}
+                onClick={() => setEditingTime(null)}
+              >
+                Отмена
+              </button>
+              <p className="td-muted w-full">
+                ММ:СС или ЧЧ:ММ:СС. Оставьте поле пустым, чтобы удалить время.
+              </p>
+            </form>
+          )}
+          <div className="lg:hidden">
+            <PersonalNotes
+              value={userShow}
+              busy={disabled}
+              save={save}
+              collapsible
+            />
+          </div>
+          <section aria-label="Сезоны и серии">
+            <h2>Сезоны и серии</h2>
+            {seasons.length > 1 && (
+              <div className="td-season-actions">
+                <button
+                  className="td-text-button"
+                  onClick={() =>
+                    setOpenSeasons(
+                      Object.fromEntries(
+                        seasons.map((season) => [season.seasonNumber, true]),
+                      ),
+                    )
+                  }
+                >
+                  Развернуть все сезоны
+                </button>
+                <button
+                  className="td-text-button"
+                  onClick={() => setOpenSeasons({})}
+                >
+                  Свернуть все сезоны
+                </button>
+              </div>
+            )}
+            {!seasons.length && (
+              <p className="td-muted mt-4">Список серий пока недоступен.</p>
+            )}
+            {seasons.map((season) => {
+              const open = !!openSeasons[season.seasonNumber];
+              const currentIndex = season.episodes.findIndex(
+                (episode) => episode.id === next?.id,
+              );
+              const start = currentIndex < 5 ? 0 : currentIndex - 2;
+              const visibleEpisodes = expandedSeasons[season.seasonNumber]
+                ? season.episodes
+                : season.episodes.slice(start, start + 5);
+              return (
+                <section
+                  className="td-panel td-season"
+                  key={season.seasonNumber}
+                  aria-label={`Сезон ${season.seasonNumber}`}
+                >
+                  <div className="td-season-head">
                     <button
-                      onClick={() => toggleAllSeasons(true)}
-                      className="text-neutral-400 hover:text-white transition-colors"
+                      className="td-season-toggle"
+                      aria-expanded={open}
+                      aria-controls={`season-${season.seasonNumber}`}
+                      onClick={() =>
+                        setOpenSeasons((previous) => ({
+                          ...previous,
+                          [season.seasonNumber]: !open,
+                        }))
+                      }
                     >
-                      Развернуть все
+                      <strong>Сезон {season.seasonNumber}</strong>
+                      <span>
+                        {season.watchedEpisodes} из {season.totalEpisodes}{" "}
+                        просмотрено
+                      </span>
+                      <span aria-hidden="true">{open ? "⌃" : "⌄"}</span>
                     </button>
-                    <span className="text-neutral-700">•</span>
                     <button
-                      onClick={() => toggleAllSeasons(false)}
-                      className="text-neutral-400 hover:text-white transition-colors"
+                      className="td-text-button"
+                      disabled={disabled}
+                      onClick={() =>
+                        setConfirmSeason(
+                          confirmSeason === season.seasonNumber
+                            ? null
+                            : season.seasonNumber,
+                        )
+                      }
                     >
-                      Свернуть все
+                      {season.isCompleted
+                        ? "Снять отметки сезона"
+                        : "Отметить сезон"}
                     </button>
                   </div>
-                )}
-              </div>
-
-              {seasons.length === 0 ? (
-                <div className="p-8 text-center bg-neutral-900 border border-neutral-800 rounded-2xl text-xs text-neutral-500">
-                  Список серий для этого тайтла формируется...
-                </div>
-              ) : (
-                seasons.map((season) => {
-                  const isOpen = openSeasons[season.seasonNumber] ?? true;
-
-                  return (
+                  {confirmSeason === season.seasonNumber && (
                     <div
-                      key={season.seasonNumber}
-                      className="bg-neutral-900/70 border border-neutral-800 rounded-2xl overflow-hidden shadow-lg transition-all"
+                      className="td-confirm"
+                      role="group"
+                      aria-label="Подтверждение изменения сезона"
                     >
-                      {/* Шапка сезона (кликабельный аккордеон) */}
-                      <div className="p-4 bg-neutral-850/90 border-b border-neutral-800 flex items-center justify-between gap-3">
+                      <p>
+                        {season.isCompleted
+                          ? "Снять отметки со всех серий"
+                          : "Отметить просмотренными все серии"}{" "}
+                        сезона {season.seasonNumber}?
+                      </p>
+                      <div className="td-inline">
                         <button
-                          type="button"
-                          onClick={() => toggleSeasonAccordion(season.seasonNumber)}
-                          className="flex items-center gap-3 text-left flex-1 group"
+                          className="td-button td-primary"
+                          autoFocus
+                          disabled={disabled}
+                          onClick={async () => {
+                            if (
+                              await mutate("POST", {
+                                seasonNumber: season.seasonNumber,
+                                markSeasonWatched: !season.isCompleted,
+                              })
+                            )
+                              setConfirmSeason(null);
+                          }}
                         >
-                          <span className={`text-xs text-neutral-500 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>
-                            ▶
-                          </span>
-                          <span className="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">
-                            Сезон {season.seasonNumber}
-                          </span>
-                          <span className="text-xs text-neutral-400 font-medium">
-                            ({season.watchedEpisodes} из {season.totalEpisodes} просмотрено)
-                          </span>
-                          {season.isCompleted && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              ✓ Завершен
-                            </span>
-                          )}
+                          Подтвердить
                         </button>
-
                         <button
-                          type="button"
-                          onClick={() =>
-                            toggleSeasonAll(season.seasonNumber, !season.isCompleted)
-                          }
-                          className={`text-xs px-3 py-1.5 rounded-xl font-medium transition-colors border flex-shrink-0 ${
-                            season.isCompleted
-                              ? 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-750'
-                              : 'bg-blue-600/20 text-blue-300 border-blue-500/30 hover:bg-blue-600/30'
-                          }`}
+                          className="td-button"
+                          disabled={disabled}
+                          onClick={() => setConfirmSeason(null)}
                         >
-                          {season.isCompleted ? 'Снять отметки сезона' : '✓ Отметить весь сезон'}
+                          Отмена
                         </button>
                       </div>
-
-                      {/* Список серий в строчку (Row Format) */}
-                      {isOpen && (
-                        <div className="divide-y divide-neutral-800/60 p-2 sm:p-3">
-                          {season.episodes.map((ep) => {
-                            const isEditingTime = editingEpisodeTimeId === ep.id;
-
-                            return (
-                              <div
-                                key={ep.id}
-                                className={`p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
-                                  ep.watched ? 'bg-blue-600/10' : 'hover:bg-neutral-850/60'
-                                }`}
-                              >
-                                {/* Чекбокс и номер серии */}
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleEpisode(ep.id, ep.watched)}
-                                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors flex-shrink-0 ${
-                                      ep.watched
-                                        ? 'bg-blue-600 border-blue-500 text-white'
-                                        : 'border-neutral-700 bg-neutral-950 hover:border-blue-400'
-                                    }`}
-                                  >
-                                    {ep.watched && <span className="text-xs">✓</span>}
-                                  </button>
-
-                                  <div>
-                                    <span className="text-xs font-bold text-white block">
-                                      Серия {ep.episode}
-                                    </span>
-                                    <span className="text-[11px] text-neutral-500">
-                                      {ep.watched ? 'Просмотрено' : 'Не просмотрено'}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* Таймкод / Время остановки просмотра */}
-                                <div className="flex items-center gap-2 self-end sm:self-center">
-                                  {isEditingTime ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <input
-                                        type="text"
-                                        value={episodeTimeInput}
-                                        onChange={(e) => setEpisodeTimeInput(e.target.value)}
-                                        placeholder="Например: 42:15"
-                                        className="w-24 bg-neutral-950 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-blue-500"
-                                        autoFocus
-                                      />
-                                      <button
-                                        onClick={() => handleSaveEpisodeTime(ep.id)}
-                                        className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold rounded-lg"
-                                      >
-                                        ✓
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setEditingEpisodeTimeId(null);
-                                          setEpisodeTimeInput('');
-                                        }}
-                                        className="px-2 py-1 bg-neutral-800 text-neutral-400 text-[11px] rounded-lg"
-                                      >
-                                        ✕
-                                      </button>
-                                    </div>
-                                  ) : ep.stoppedAt ? (
-                                    <div className="flex items-center gap-1.5 bg-neutral-950 border border-neutral-800 px-2.5 py-1 rounded-xl">
-                                      <span className="text-[11px] text-neutral-400">⏱ Ост.:</span>
-                                      <span className="text-xs font-bold text-amber-400">
-                                        {ep.stoppedAt}
-                                      </span>
-                                      <button
-                                        onClick={() => {
-                                          setEditingEpisodeTimeId(ep.id);
-                                          setEpisodeTimeInput(ep.stoppedAt || '');
-                                        }}
-                                        className="text-neutral-500 hover:text-white text-[10px] ml-1"
-                                        title="Изменить время"
-                                      >
-                                        ✏️
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingEpisodeTimeId(ep.id);
-                                        setEpisodeTimeInput('');
-                                      }}
-                                      className="text-[11px] text-neutral-500 hover:text-neutral-300 px-2 py-1 rounded-lg hover:bg-neutral-800 transition-colors"
-                                    >
-                                      + Время
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+                  )}
+                  <div id={`season-${season.seasonNumber}`} hidden={!open}>
+                    {visibleEpisodes.map((episode) => (
+                      <div
+                        key={episode.id}
+                        className={`td-episode ${episode.id === next?.id ? "is-current" : ""}`}
+                      >
+                        <button
+                          className="td-episode-check"
+                          role="checkbox"
+                          aria-checked={episode.watched}
+                          aria-label={`Сезон ${episode.season}, серия ${episode.episode}: просмотрено`}
+                          disabled={disabled}
+                          onClick={() => {
+                            if (
+                              !episode.watched &&
+                              episode.id === next?.id &&
+                              canQuick
+                            )
+                              void markNext();
+                            else
+                              void mutate("POST", {
+                                episodeId: episode.id,
+                                watched: !episode.watched,
+                              });
+                          }}
+                        >
+                          <span className="td-check" aria-hidden="true">
+                            {episode.watched ? "✓" : ""}
+                          </span>
+                          <span>Серия {episode.episode}</span>
+                        </button>
+                        <div className="td-inline">
+                          <span className="td-muted">
+                            {episode.watched ? "Просмотрено" : ""}
+                          </span>
+                          <button
+                            className="td-text-button"
+                            aria-label={`Изменить время: сезон ${episode.season}, серия ${episode.episode}`}
+                            disabled={disabled}
+                            onClick={() => editTime(episode)}
+                          >
+                            {episode.stoppedAt || "+ Время"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {season.episodes.length > 5 && (
+                      <button
+                        className="td-show-more"
+                        onClick={() =>
+                          setExpandedSeasons((previous) => ({
+                            ...previous,
+                            [season.seasonNumber]:
+                              !previous[season.seasonNumber],
+                          }))
+                        }
+                      >
+                        {expandedSeasons[season.seasonNumber]
+                          ? "Свернуть список серий"
+                          : `Показать все ${season.episodes.length} серий`}
+                      </button>
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </section>
+          <Link className="td-text-button lg:hidden" href={`/show/${show.id}`}>
+            Открыть карточку {show.kind === "movie" ? "фильма" : "сериала"} →
+          </Link>
         </div>
       </div>
     </div>

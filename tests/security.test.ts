@@ -150,6 +150,22 @@ test('read-only library includes dropped titles, keeps personal ratings separate
   assert.equal((await owner.request('/api/user-shows?status=invalid')).status, 400);
 });
 
+test('tracker exposes the current revision and whole-title rating without counting foreign episodes', async () => {
+  const f = await quickFixture();
+  await prisma.rating.createMany({ data: [{ userShowId: f.entry.id, episodeId: f.show.episodes[0].id, score: 10 }, { userShowId: f.entry.id, episodeId: null, score: 6 }] });
+  await prisma.episodeProgress.create({ data: { userShowId: f.entry.id, episodeId: otherEpisodeId, watched: true } });
+  const response = await owner.request(`/api/user-shows/${f.show.id}`);
+  assert.equal(response.status, 200);
+  const tracker = await response.json();
+  const record = await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } });
+  assert.equal(tracker.userShow.id, f.entry.id);
+  assert.equal(tracker.userShow.updatedAt, record.updatedAt.toISOString());
+  assert.equal(tracker.userShow.userRating, 6);
+  assert.equal(tracker.stats.watchedEpisodesCount, 0);
+  const marked = await owner.request(f.path, 'POST', { action: 'mark', expectedUpdatedAt: tracker.userShow.updatedAt, expectedEpisodeId: tracker.seasons[0].episodes[0].id });
+  assert.equal(marked.status, 200);
+});
+
 test('episode updates are scoped to the owning library record', async () => {
   assert.equal((await owner.request(`/api/user-shows/${ownLibraryId}/episodes/${foreignProgressId}`, 'PATCH', { watched: true })).status, 404);
   assert.equal((await prisma.episodeProgress.findUniqueOrThrow({ where: { id: foreignProgressId } })).watched, false);

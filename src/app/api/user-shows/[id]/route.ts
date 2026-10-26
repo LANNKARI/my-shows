@@ -199,6 +199,12 @@ export async function GET(
       });
     }
 
+    // Synchronization can change totals and the revision used by quick-progress.
+    userShow = await prisma.userShow.findUniqueOrThrow({
+      where: { id: userShow.id },
+      include: { ratings: true, progress: true },
+    });
+
     // 4. Подсчет прогресса серий и извлечение таймкодов (stoppedAt)
     const episodes = targetShow.episodes || [];
     const progressMap = new Map<number, { watched: boolean; stoppedAt: string | null }>();
@@ -206,7 +212,8 @@ export async function GET(
       progressMap.set(p.episodeId, { watched: p.watched, stoppedAt: p.stoppedAt });
     }
 
-    const watchedEpisodesCount = (userShow.progress || []).filter((p) => p.watched).length;
+    const episodeIds = new Set(episodes.map(episode => episode.id));
+    const watchedEpisodesCount = (userShow.progress || []).filter((p) => p.watched && episodeIds.has(p.episodeId)).length;
     const totalEpisodes =
       userShow.totalEpisodes > 0
         ? userShow.totalEpisodes
@@ -254,6 +261,7 @@ export async function GET(
       safeJson({
         userShow: {
           id: userShow.id,
+          updatedAt: userShow.updatedAt,
           showId: targetShow.id,
           status: userShow.status,
           kind: userShow.kind,
@@ -261,13 +269,14 @@ export async function GET(
           isCompleted: userShow.isCompleted,
           dubbing: userShow.dubbing,
           watchSite: userShow.watchSite,
-          userRating: userShow.ratings?.[0]?.score || null,
+          userRating: userShow.ratings.find(rating => rating.episodeId === null)?.score ?? null,
         },
         show: {
           id: targetShow.id,
           name: targetShow.name,
           title: targetShow.name,
           originalName: targetShow.originalName,
+          originalTitle: targetShow.originalName,
           posterUrl: formatPosterUrl(targetShow.posterUrl),
           year: targetShow.year,
           kind: targetShow.kind,
