@@ -247,12 +247,10 @@ export async function GET(request: NextRequest) {
       }),
     );
   } catch (err) {
+    console.error("Popcorn unavailable", err);
     return NextResponse.json(
-      {
-        error:
-          err instanceof Error ? err.message : "Не удалось выполнить запрос",
-      },
-      { status: 500 },
+      { error: "Не удалось загрузить награды. Попробуйте ещё раз." },
+      { status: 503, headers: { "Cache-Control": "private, no-store" } },
     );
   }
 }
@@ -364,12 +362,10 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   } catch (err) {
+    console.error("Popcorn unavailable", err);
     return NextResponse.json(
-      {
-        error:
-          err instanceof Error ? err.message : "Не удалось выполнить запрос",
-      },
-      { status: 500 },
+      { error: "Не удалось загрузить награды. Попробуйте ещё раз." },
+      { status: 503, headers: { "Cache-Control": "private, no-store" } },
     );
   }
 }

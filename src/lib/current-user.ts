@@ -43,12 +43,21 @@ export async function getCurrentUser() {
     return user;
   } catch (error) {
     console.error('Ошибка в getCurrentUser:', error);
-    return null;
+    throw error;
   }
 }
 
 export async function getCurrentUserId(): Promise<string | null> {
-  const user = await getCurrentUser();
+  const session = await auth();
+  if (!session?.user) return null;
+  // Verify account existence with a minimal query; database failures must propagate.
+  const id = session.user.id;
+  const email = session.user.email;
+  if (!id && !email) return null;
+  const user = await prisma.user.findUnique({
+    where: id ? { id } : { email: email! },
+    select: { id: true },
+  });
   return user?.id || null;
 }
 

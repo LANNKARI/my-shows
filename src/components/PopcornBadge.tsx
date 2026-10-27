@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { privateFetch } from "@/lib/private-fetch";
 import { useSession } from "next-auth/react";
 export default function PopcornBadge() {
   const { data: session } = useSession();
@@ -9,6 +10,7 @@ export default function PopcornBadge() {
 function Wallet() {
   const [popcorn, setPopcorn] = useState<number | null>(null),
     [canClaim, setCanClaim] = useState(false);
+  const [failed, setFailed] = useState(false);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => {
     const fetchBalance = async () => {
@@ -16,19 +18,18 @@ function Wallet() {
       const abort = new AbortController();
       controller.current = abort;
       try {
-        const response = await fetch("/api/popcorn", {
-          cache: "no-store",
-          signal: abort.signal,
-        });
+        const response = await privateFetch("/api/popcorn", abort.signal);
+        if (!response.ok) throw new Error("balance unavailable");
         if (response.ok) {
           const data = await response.json();
           if (!abort.signal.aborted) {
+            setFailed(false);
             setPopcorn(data.popcorn ?? 0);
             setCanClaim(!!data.canClaimDaily);
           }
         }
       } catch {
-        /* Keep the last confirmed balance on a transient network failure. */
+        if (!abort.signal.aborted) setFailed(true);
       }
     };
     const update = () => {
@@ -52,7 +53,7 @@ function Wallet() {
         🍿
       </span>
       <span className="text-xs font-black text-amber-400 tracking-tight">
-        {popcorn !== null ? popcorn : "…"}
+        {popcorn !== null ? popcorn : failed ? "↻" : "…"}
       </span>
       {canClaim && (
         <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-rose-500" />

@@ -205,8 +205,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(safeJson(normalized));
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Library unavailable", error);
+    return NextResponse.json({ error: "База данных временно недоступна. Повторите загрузку." }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
   }
 }
 
