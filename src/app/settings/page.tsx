@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import ChangePasswordForm from "@/components/ChangePasswordForm";
+import { privateFetch } from "@/lib/private-fetch";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -26,8 +28,15 @@ export default function SettingsPage() {
     }
     if (status !== "authenticated") return;
 
-    fetch("/api/users/me")
-      .then((r) => r.json())
+    const controller = new AbortController();
+    privateFetch("/api/users/me", controller.signal)
+      .then((r) => {
+        if (!r.ok)
+          throw new Error(
+            "Не удалось загрузить настройки. Попробуйте обновить страницу.",
+          );
+        return r.json();
+      })
       .then((u) => {
         setUsername(u.username || "");
         setEmail(u.email || "");
@@ -35,7 +44,13 @@ export default function SettingsPage() {
         setBio(u.bio || "");
         setAvatarUrl(u.avatarUrl);
       })
-      .finally(() => setLoading(false));
+      .catch((error) => {
+        if (!controller.signal.aborted) setError(error.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [status, router]);
 
   async function uploadAvatar(file: File) {
@@ -64,28 +79,35 @@ export default function SettingsPage() {
     setError(null);
     setSaved(false);
 
-    const r = await fetch("/api/users/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, bio, avatarUrl }),
-    });
+    try {
+      const r = await fetch("/api/users/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, bio, avatarUrl }),
+      });
 
-    if (!r.ok) {
-      const data = await r.json().catch(() => ({}));
-      setError(data.error || "Ошибка сохранения");
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        setError(data.error || "Ошибка сохранения");
+        return;
+      }
+
+      setSaved(true);
+      router.refresh();
+    } catch {
+      setError("Ошибка соединения. Не удалось подтвердить сохранение.");
+    } finally {
       setSaving(false);
-      return;
     }
-
-    setSaved(true);
-    setSaving(false);
-    router.refresh();
   }
 
   function downloadBackup() {
-  window.location.href = "/api/export";
-}
+    window.location.href = "/api/export";
+  }
 
+  if (status === "unauthenticated") return null;
+  if (!loading && !username)
+    return <p role="alert">{error || "Не удалось загрузить настройки."}</p>;
   if (loading) return <p className="text-neutral-500">Загрузка...</p>;
 
   return (
@@ -94,21 +116,21 @@ export default function SettingsPage() {
 
       <form onSubmit={submit} className="space-y-6">
         <div className="card p-5">
-  <h3 className="text-sm uppercase tracking-widest text-neutral-500 font-semibold mb-3">
-    💾 Экспорт данных
-  </h3>
-  <p className="text-sm text-neutral-400 mb-4">
-    Скачайте бэкап своей библиотеки в формате JSON. Файл содержит все ваши сериалы,
-    прогресс, оценки, коллекции и комментарии.
-  </p>
-  <button
-    type="button"
-    onClick={downloadBackup}
-    className="btn btn-secondary"
-  >
-    ⬇️ Скачать бэкап
-  </button>
-</div>
+          <h3 className="text-sm uppercase tracking-widest text-neutral-500 font-semibold mb-3">
+            💾 Экспорт данных
+          </h3>
+          <p className="text-sm text-neutral-400 mb-4">
+            Скачайте бэкап своей библиотеки в формате JSON. Файл содержит все
+            ваши сериалы, прогресс, оценки, коллекции и комментарии.
+          </p>
+          <button
+            type="button"
+            onClick={downloadBackup}
+            className="btn btn-secondary"
+          >
+            ⬇️ Скачать бэкап
+          </button>
+        </div>
         {/* Аватарка */}
         <div className="card p-5">
           <label className="label">Аватарка</label>
@@ -129,7 +151,9 @@ export default function SettingsPage() {
               <input
                 type="file"
                 accept="image/*"
-                onChange={(e) => e.target.files?.[0] && uploadAvatar(e.target.files[0])}
+                onChange={(e) =>
+                  e.target.files?.[0] && uploadAvatar(e.target.files[0])
+                }
                 className="input"
               />
               {uploading && (
@@ -212,6 +236,7 @@ export default function SettingsPage() {
           </button>
         </div>
       </form>
+      <ChangePasswordForm />
     </div>
   );
 }

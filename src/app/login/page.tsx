@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
+import PasswordInput from "@/components/PasswordInput";
 
 function LoginForm() {
   const router = useRouter();
@@ -20,27 +21,38 @@ function LoginForm() {
     setLoading(true);
     setError(null);
 
-    const res = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
-    if (res?.error) {
-      setError("Неверный email или пароль");
+    try {
+      const res = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+      if (res?.error || !res?.ok) {
+        setError("Неверный email или пароль");
+        return;
+      }
+      router.push(
+        callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
+          ? callbackUrl
+          : "/",
+      );
+      router.refresh();
+    } catch {
+      setError("Не удалось войти. Проверьте соединение и попробуйте ещё раз.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    router.push(callbackUrl);
-    router.refresh();
   }
 
   return (
     <form onSubmit={submit} className="space-y-4">
       <div>
-        <label className="label">Email</label>
+        <label className="label" htmlFor="login-email">
+          Email
+        </label>
         <input
+          id="login-email"
+          autoComplete="username"
           type="email"
           className="input"
           required
@@ -51,9 +63,12 @@ function LoginForm() {
       </div>
 
       <div>
-        <label className="label">Пароль</label>
-        <input
-          type="password"
+        <label className="label" htmlFor="login-password">
+          Пароль
+        </label>
+        <PasswordInput
+          id="login-password"
+          autoComplete="current-password"
           className="input"
           required
           value={password}
@@ -83,11 +98,11 @@ export default function LoginPage() {
     <div className="max-w-md mx-auto mt-10">
       <div className="card p-8">
         <h1 className="text-2xl font-bold mb-1">Вход</h1>
-        <p className="text-neutral-500 text-sm mb-6">
-          Войдите в свой аккаунт
-        </p>
+        <p className="text-neutral-500 text-sm mb-6">Войдите в свой аккаунт</p>
 
-        <Suspense fallback={<p className="text-sm text-neutral-500">Загрузка...</p>}>
+        <Suspense
+          fallback={<p className="text-sm text-neutral-500">Загрузка...</p>}
+        >
           <LoginForm />
         </Suspense>
 

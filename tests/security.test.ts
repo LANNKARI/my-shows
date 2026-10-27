@@ -898,3 +898,41 @@ test('database failures return retryable errors rather than treating a signed-in
   assert.equal((await owner.request('/api/popcorn')).status, 200);
   assert.equal((await owner.request('/api/user-shows?status=library')).status, 200);
 });
+
+test('password changes verify the current secret, reject forged owners and serialize concurrent replacements', async () => {
+  const account = await prisma.user.create({ data: { username: `password_${randomBytes(5).toString('hex')}`, email: `${randomUUID()}@example.test`, passwordHash: await bcrypt.hash(password, 10) } });
+  const client = new Client(); await client.login(account);
+  const endpoint = '/api/users/me/password';
+  const first = randomBytes(20).toString('hex'), second = randomBytes(20).toString('hex');
+  assert.equal((await guest.request(endpoint, 'POST', { currentPassword: password, newPassword: first })).status, 401);
+  for (const body of [[], { currentPassword: password, newPassword: first, userId: alice.id }, { currentPassword: password, newPassword: 'short' }, { currentPassword: password, newPassword: 'я'.repeat(37) }])
+    assert.equal((await client.request(endpoint, 'POST', body)).status, 400);
+  assert.equal((await client.request(endpoint, 'POST', { currentPassword: 'wrong-password', newPassword: first })).status, 400);
+  assert.equal((await client.request(endpoint, 'POST', { currentPassword: password, newPassword: password })).status, 400);
+  const cookie = [...client.cookies].map(([key, value]) => `${key}=${value}`).join('; ');
+  assert.equal((await fetch(base + endpoint, { method: 'POST', headers: { cookie, origin: 'https://other.example', 'content-type': 'application/json' }, body: JSON.stringify({ currentPassword: password, newPassword: first }) })).status, 403);
+  const results = await Promise.all([first, second].map(newPassword => client.request(endpoint, 'POST', { currentPassword: password, newPassword })));
+  assert.equal(results.filter(response => response.status === 200).length, 1);
+  assert.ok(results.every(response => [200, 400, 409].includes(response.status)));
+  const saved = await prisma.user.findUniqueOrThrow({ where: { id: account.id } });
+  assert.equal(await bcrypt.compare(password, saved.passwordHash!), false);
+  const replacement = await bcrypt.compare(first, saved.passwordHash!) ? first : second;
+  assert.equal(await bcrypt.compare(replacement, saved.passwordHash!), true);
+  assert.equal(await bcrypt.compare(password, (await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).passwordHash!), true);
+  for (const [candidate, expected] of [[password, false], [replacement, true]] as const) {
+    const login = new Client();
+    const csrf = await (await login.request('/api/auth/csrf')).json();
+    await login.request('/api/auth/callback/credentials', 'POST', new URLSearchParams({ csrfToken: csrf.csrfToken, email: account.email, password: candidate, callbackUrl: base }));
+    const session = await (await login.request('/api/auth/session')).json();
+    assert.equal(session?.user?.id === account.id, expected);
+  }
+});
+
+test('repeated wrong current passwords are limited without changing the stored password', async () => {
+  const account = await prisma.user.create({ data: { username: `limited_${randomBytes(5).toString('hex')}`, email: `${randomUUID()}@example.test`, passwordHash: await bcrypt.hash(password, 10) } });
+  const client = new Client(); await client.login(account);
+  for (let i = 0; i < 5; i++) assert.equal((await client.request('/api/users/me/password', 'POST', { currentPassword: 'wrong-password', newPassword: 'new-test-password' })).status, 400);
+  const response = await client.request('/api/users/me/password', 'POST', { currentPassword: password, newPassword: 'new-test-password' });
+  assert.equal(response.status, 429); assert.ok(Number(response.headers.get('retry-after')) > 0);
+  assert.equal(await bcrypt.compare(password, (await prisma.user.findUniqueOrThrow({ where: { id: account.id } })).passwordHash!), true);
+});
