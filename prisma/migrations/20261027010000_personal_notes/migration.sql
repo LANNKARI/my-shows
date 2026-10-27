@@ -1,0 +1,9 @@
+BEGIN;
+CREATE TABLE "PersonalNote" (
+ "id" SERIAL PRIMARY KEY, "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+ "showId" INTEGER NOT NULL REFERENCES "Show"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+ "text" TEXT NOT NULL CHECK (char_length("text") <= 2000), "updatedAt" TIMESTAMP(3) NOT NULL
+);
+CREATE UNIQUE INDEX "PersonalNote_userId_showId_key" ON "PersonalNote"("userId", "showId");
+ALTER TABLE "PersonalNote" ENABLE ROW LEVEL SECURITY;
+COMMIT;

@@ -1,0 +1,10 @@
+BEGIN;
+CREATE TABLE "LibraryImportJob" (
+ "id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+ "digest" TEXT NOT NULL, "payload" JSONB NOT NULL, "cursor" INTEGER NOT NULL DEFAULT 0,
+ "result" JSONB NOT NULL, "completed" BOOLEAN NOT NULL DEFAULT false,
+ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "expiresAt" TIMESTAMP(3) NOT NULL
+);
+CREATE UNIQUE INDEX "LibraryImportJob_userId_digest_key" ON "LibraryImportJob"("userId", "digest");
+ALTER TABLE "LibraryImportJob" ENABLE ROW LEVEL SECURITY;
+COMMIT;
