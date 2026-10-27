@@ -63,6 +63,11 @@ for (const width of [320, 390, 1440])
     await page.goto("/");
     const shelf = page.getByRole("region", { name: "Продолжить просмотр" });
     await expect(shelf.getByText("Остановились на 18:42")).toBeVisible();
+    await expect(shelf.getByText("2 сезон · 4 серия")).toBeVisible();
+    await expect(shelf.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "63",
+    );
     await expect(
       shelf.getByRole("link", { name: "Открыть трекер →" }),
     ).toHaveAttribute("href", "/library/10");
@@ -142,18 +147,16 @@ test("import requires preview and explicit confirmation, then resumes a failed b
   });
   await page.goto("/settings");
   const region = page.getByRole("region", { name: "Импорт библиотеки" });
-  await region
-    .getByLabel("Файл резервной копии")
-    .setInputFiles({
-      name: "backup.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(
-        JSON.stringify({
-          meta: { version: 2, generator: "EpisyHub" },
-          userShows: [],
-        }),
-      ),
-    });
+  await region.getByLabel("Файл резервной копии").setInputFiles({
+    name: "backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        meta: { version: 2, generator: "EpisyHub" },
+        userShows: [],
+      }),
+    ),
+  });
   expect(commits).toBe(0);
   await region.getByRole("button", { name: "Проверить файл" }).click();
   await expect(
@@ -168,10 +171,18 @@ test("import requires preview and explicit confirmation, then resumes a failed b
   await region.getByRole("button", { name: "Продолжить импорт" }).click();
   await expect(region.getByRole("status")).toContainText("добавлено 6");
   expect(commits).toBe(3);
-  const nextPreview=page.waitForRequest(request=>new URL(request.url()).pathname==='/api/library-import'&&request.postDataJSON().action==='preview');
-  await region.getByRole('button',{name:'Проверить файл для нового импорта'}).click();
+  const nextPreview = page.waitForRequest(
+    (request) =>
+      new URL(request.url()).pathname === "/api/library-import" &&
+      request.postDataJSON().action === "preview",
+  );
+  await region
+    .getByRole("button", { name: "Проверить файл для нового импорта" })
+    .click();
   expect((await nextPreview).postDataJSON().newRun).toBe(true);
-  await expect(region.getByRole('button',{name:'Подтвердить импорт'})).toBeEnabled();
+  await expect(
+    region.getByRole("button", { name: "Подтвердить импорт" }),
+  ).toBeEnabled();
   expect(commits).toBe(3);
 });
 
