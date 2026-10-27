@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
+import { privateFetch } from "@/lib/private-fetch";
 import CosmeticAvatar from "@/components/CosmeticAvatar";
 import CosmeticCover from "@/components/CosmeticCover";
 import { profileStyleId, STANDARD_PROFILE } from "@/lib/cosmetics";
@@ -75,6 +76,7 @@ export default function UserProfilePage({
   const [data, setData] = useState<UserProfileData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [friendshipLoading, setFriendshipLoading] = useState<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<"all" | "movies" | "series">(
@@ -90,29 +92,47 @@ export default function UserProfilePage({
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [savingBanner, setSavingBanner] = useState<boolean>(false);
 
-  const fetchProfile = async () => {
+  const fetchProfile = async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
+    setNotFound(false);
     try {
-      const res = await fetch(`/api/users/${username}`);
+      const res = await privateFetch(
+        `/api/users/${encodeURIComponent(username)}`,
+        signal,
+      );
+      if (signal?.aborted) return;
       if (!res.ok) {
-        throw new Error("Пользователь не найден");
+        setNotFound(res.status === 404);
+        throw new Error(
+          res.status === 404
+            ? "Пользователь не найден"
+            : "Не удалось загрузить профиль. Попробуйте ещё раз.",
+        );
       }
       const json = await res.json();
+      if (signal?.aborted) return;
       setData(json);
       setBannerUrlInput(json.user?.bannerUrl || "");
     } catch (err: unknown) {
+      if (signal?.aborted) return;
       const msg =
-        err instanceof Error ? err.message : "Ошибка загрузки профиля";
+        err instanceof Error && err.name === "Error"
+          ? err.message
+          : "Не удалось загрузить профиль. Проверьте соединение и повторите загрузку.";
       setError(msg);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => void fetchProfile(), 0);
-    return () => clearTimeout(timer);
+    const controller = new AbortController();
+    const timer = setTimeout(() => void fetchProfile(controller.signal), 0);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
@@ -229,11 +249,19 @@ export default function UserProfilePage({
         <div className="max-w-md w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 text-center shadow-xl">
           <div className="text-4xl mb-3">👤</div>
           <h1 className="text-xl font-bold text-white mb-2">
-            Профиль не найден
+            {notFound ? "Профиль не найден" : "Не удалось загрузить профиль"}
           </h1>
           <p className="text-sm text-neutral-400 mb-6">
             {error || "Пользователь не существует."}
           </p>
+          {!notFound && (
+            <button
+              onClick={() => void fetchProfile()}
+              className="mr-3 px-4 py-2 bg-blue-600 rounded-xl text-sm font-medium"
+            >
+              Повторить загрузку
+            </button>
+          )}
           <Link
             href="/"
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors"
