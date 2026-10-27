@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { privateFetch } from "@/lib/private-fetch";
 
 interface RewardsData {
   popcorn: number;
@@ -15,19 +16,27 @@ interface RewardsData {
 export default function RewardsPage() {
   const [data, setData] = useState<RewardsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimMessage, setClaimMessage] = useState<string | null>(null);
 
   const fetchRewards = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch("/api/popcorn");
+      const res = await privateFetch("/api/popcorn");
+      if (!res.ok)
+        throw new Error(
+          res.status === 401
+            ? "Войдите, чтобы открыть награды."
+            : "Не удалось загрузить баланс. Попробуйте ещё раз.",
+        );
       if (res.ok) {
         const json = await res.json();
         setData(json);
       }
     } catch (e) {
-      console.error(e);
+      setError(e instanceof Error ? e.message : "Ошибка соединения");
     } finally {
       setLoading(false);
     }
@@ -71,6 +80,20 @@ export default function RewardsPage() {
     );
   }
 
+  if (!data)
+    return (
+      <div className="max-w-4xl mx-auto py-12 px-4 space-y-4">
+        <h1 className="text-2xl font-bold">Центр наград</h1>
+        <p role="alert">{error || "Не удалось загрузить награды."}</p>
+        <button
+          onClick={() => void fetchRewards()}
+          className="rounded-xl bg-rose-600 px-4 py-3"
+        >
+          Повторить загрузку
+        </button>
+      </div>
+    );
+
   const days = [1, 2, 3, 4, 5, 6, 7];
   const streakRewards: Record<number, number> = data?.streakRewards || {
     1: 10,
@@ -84,6 +107,14 @@ export default function RewardsPage() {
 
   return (
     <div className="max-w-4xl mx-auto py-6 px-4 space-y-10 pb-20">
+      {error && (
+        <p role="alert">
+          {error}{" "}
+          <button onClick={() => void fetchRewards()}>
+            Повторить загрузку
+          </button>
+        </p>
+      )}
       {/* Баннер баланса */}
       <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-amber-500/20 via-neutral-900 to-neutral-950 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-2xl">
         <div className="flex items-center gap-4 text-center sm:text-left">

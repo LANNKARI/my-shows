@@ -882,3 +882,19 @@ test('TMDB round generation uses authorization, deduplicates movies and hides th
     if (oldToken === undefined) delete process.env.TMDB_READ_ACCESS_TOKEN; else process.env.TMDB_READ_ACCESS_TOKEN = oldToken;
   }
 });
+
+test('database failures return retryable errors rather than treating a signed-in user as a guest', async () => {
+  // Only this suite's isolated temporary schema is affected.
+  await prisma.$executeRawUnsafe('ALTER TABLE "User" RENAME TO "User_temporarily_unavailable"');
+  try {
+    for (const path of ['/api/user-shows?status=library', '/api/popcorn']) {
+      const response = await owner.request(path);
+      assert.equal(response.status, 503, path);
+      assert.match(response.headers.get('cache-control') || '', /no-store/);
+    }
+  } finally {
+    await prisma.$executeRawUnsafe('ALTER TABLE "User_temporarily_unavailable" RENAME TO "User"');
+  }
+  assert.equal((await owner.request('/api/popcorn')).status, 200);
+  assert.equal((await owner.request('/api/user-shows?status=library')).status, 200);
+});

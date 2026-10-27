@@ -144,7 +144,7 @@ async function setup(
     if (url.pathname === '/api/user-shows') {
       expect(url.searchParams.get('status')).toBe('library');
       loads++;
-      if (options.failure && loads === 1)
+      if (options.failure && loads <= 2)
         return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
       return route.fulfill({ json: options.empty ? [] : records });
     }
@@ -395,4 +395,18 @@ test('list and poster views fit small screens and keep the last action above the
       expect(action!.y + action!.height).toBeLessThanOrEqual(bar!.y);
     }
   }
+});
+
+
+test('a temporary library failure recovers automatically without reloading or showing login', async ({ page }) => {
+  await setup(page);
+  let loads = 0;
+  await page.route('**/api/user-shows?status=library', route => {
+    loads++;
+    return route.fulfill(loads === 1 ? { status: 503, json: { error: 'database busy' } } : { json: records });
+  });
+  await page.goto('/watching');
+  await expect(titles(page)).toHaveCount(3);
+  await expect(main(page).getByText('Войдите, чтобы открыть свою библиотеку')).toHaveCount(0);
+  expect(loads).toBe(2);
 });

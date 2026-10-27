@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { privateFetch } from '@/lib/private-fetch';
 import {
   useCallback,
   useEffect,
@@ -271,10 +272,7 @@ export default function Library() {
   useEffect(() => {
     if (sessionStatus !== 'authenticated' || !userId) return;
     const controller = new AbortController();
-    fetch('/api/user-shows?status=library', {
-      signal: controller.signal,
-      cache: 'no-store',
-    })
+    privateFetch('/api/user-shows?status=library', controller.signal)
       .then(async (response) => {
         if (response.status === 401)
           return {
