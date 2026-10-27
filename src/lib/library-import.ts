@@ -102,10 +102,28 @@ export async function previewImport(
   const expiresAt = new Date(Date.now() + 86400000);
   const job = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "User" WHERE id=${userId} FOR UPDATE`;
+    await tx.libraryImportJob.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
     if (newRun)
       await tx.libraryImportJob.deleteMany({
         where: { userId, digest, completed: true },
       });
+    const existing = await tx.libraryImportJob.findUnique({
+      where: { userId_digest: { userId, digest } },
+      select: { id: true },
+    });
+    if (
+      !existing &&
+      ((await tx.libraryImportJob.count({ where: { userId } })) >= 20 ||
+        (await tx.libraryImportJob.count({
+          where: { userId, completed: false },
+        })) >= 5)
+    )
+      throw new CalendarError(
+        429,
+        "Слишком много заданий импорта. Завершите начатые или дождитесь истечения 24 часов.",
+      );
     return tx.libraryImportJob.upsert({
       where: { userId_digest: { userId, digest } },
       create: {
@@ -241,7 +259,7 @@ export async function commitImport(
         return {
           jobId,
           cursor: job.cursor,
-          total: payload.rows.length,
+          total: job.completed ? job.cursor : payload.rows.length,
           completed: job.completed,
           result,
         };
@@ -446,7 +464,11 @@ export async function commitImport(
           cursor: end,
           completed,
           result: json(result),
-          payload: json(payload),
+          payload: json(
+            completed
+              ? { titles: [], collections: [], rows: [], warnings: [] }
+              : payload,
+          ),
         },
       });
       return {

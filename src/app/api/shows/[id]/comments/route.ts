@@ -1,3 +1,8 @@
+import {
+  activityEvents,
+  titleIdentity,
+  lockWallet,
+} from "@/lib/popcorn-economy";
 import { achievementStats } from "@/lib/achievement-stats";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -19,7 +24,13 @@ export async function GET(
     orderBy: { createdAt: "desc" },
     include: {
       user: {
-        select: { id: true, username: true, name: true, avatarUrl: true, avatarFrame: true },
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          avatarUrl: true,
+          avatarFrame: true,
+        },
       },
     },
   });
@@ -108,15 +119,36 @@ export async function POST(
     );
   }
 
-  const comment = await prisma.comment.create({
-    data: { showId, userId: me.id, text },
-    include: {
-      user: {
-        select: { id: true, username: true, name: true, avatarUrl: true, avatarFrame: true },
+  const comment = await prisma.$transaction(async (tx) => {
+    if (Array.from(text).length >= 100) await lockWallet(tx, me.id);
+    const comment = await tx.comment.create({
+      data: { showId, userId: me.id, text },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            avatarUrl: true,
+            avatarFrame: true,
+          },
+        },
       },
-    },
-  });
+    });
 
+    if (Array.from(text).length >= 100) {
+      const show = await tx.show.findUnique({ where: { id: showId } });
+      if (show)
+        await activityEvents(tx, me.id, [
+          {
+            key: `review:${titleIdentity(show)}`,
+            amount: 10,
+            reason: `Публичный отзыв: ${show.name}`,
+          },
+        ]);
+    }
+    return comment;
+  });
   // Для нового комментария считаем бейдж автора
   const badges = calculateAchievements(await achievementStats(me.id))
     .filter((a) => a.unlocked)

@@ -1,320 +1,327 @@
 "use client";
-
-import React, { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { privateFetch } from "@/lib/private-fetch";
-
-interface RewardsData {
+type Quest = {
+  id: string;
+  name: string;
+  count: number;
+  target: number;
+  reward: number;
+  claimed: boolean;
+};
+type Data = {
   popcorn: number;
   canClaimDaily: boolean;
   dailyStreak: number;
   nextStreak: number;
   streakRewards: Record<number, number>;
-  quizAttemptsLeft: number;
-}
-
+  activityEarned?: number;
+  activityLimit?: number;
+  gameEarned?: number;
+  gameLimit?: number;
+  tasks?: Quest[];
+  allTasksClaimed?: boolean;
+  nextResetAt?: string;
+};
+type History = {
+  id: string;
+  amount: number;
+  reason: string;
+  createdAt: string;
+};
 export default function RewardsPage() {
-  const [data, setData] = useState<RewardsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [claiming, setClaiming] = useState(false);
-  const [claimMessage, setClaimMessage] = useState<string | null>(null);
-
-  const fetchRewards = async () => {
-    setLoading(true);
-    setError(null);
+  const { data, status } = useSession();
+  if (status === "loading") return <p>Загрузка наград…</p>;
+  if (!data?.user?.id)
+    return (
+      <div>
+        <h1 className="text-2xl font-bold">Центр наград</h1>
+        <Link href="/login?callbackUrl=%2Frewards">
+          Войдите, чтобы открыть награды
+        </Link>
+      </div>
+    );
+  return <Rewards key={data.user.id} />;
+}
+function Rewards() {
+  const [data, setData] = useState<Data | null>(null),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [message, setMessage] = useState(""),
+    [history, setHistory] = useState<History[]>([]),
+    [cursor, setCursor] = useState<string | null>(null),
+    [historyError, setHistoryError] = useState(""),
+    [historyBusy, setHistoryBusy] = useState(false);
+  const lock = useRef(false),
+    historyLock = useRef(false);
+  async function load() {
     try {
-      const res = await privateFetch("/api/popcorn");
-      if (!res.ok)
-        throw new Error(
-          res.status === 401
+      const r = await privateFetch("/api/popcorn");
+      if (!r.ok)
+        throw Error(
+          r.status === 401
             ? "Войдите, чтобы открыть награды."
             : "Не удалось загрузить баланс. Попробуйте ещё раз.",
         );
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
+      setData(await r.json());
+      setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка соединения");
-    } finally {
-      setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(() => void fetchRewards(), 0);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleClaim = async () => {
-    setClaiming(true);
-    setClaimMessage(null);
+  }
+  async function loadHistory(next?: string) {
+    if (historyLock.current) return;
+    historyLock.current = true;
+    setHistoryBusy(true);
     try {
-      const res = await fetch("/api/popcorn", {
+      const r = await privateFetch(
+        "/api/popcorn-history" +
+          (next ? "?cursor=" + encodeURIComponent(next) : ""),
+      );
+      if (!r.ok) throw Error("История временно недоступна");
+      const v = await r.json();
+      setHistory((old) => (next ? [...old, ...v.items] : v.items));
+      setCursor(v.nextCursor);
+      setHistoryError("");
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : "Ошибка истории");
+    } finally {
+      historyLock.current = false;
+      setHistoryBusy(false);
+    }
+  }
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void load();
+      void loadHistory();
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+  async function claim(action: string, taskId?: string) {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setMessage("");
+    try {
+      const r = await fetch("/api/popcorn", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "claim-daily" }),
+        body: JSON.stringify({ action, taskId }),
       });
-      const result = await res.json();
-      if (res.ok) {
-        setClaimMessage(`Ура! Вы получили +${result.reward} 🍿!`);
-        window.dispatchEvent(new Event("popcorn-updated"));
-        fetchRewards();
-      } else {
-        setClaimMessage(result.error || "Ошибка получения");
-      }
-    } catch {
-      setClaimMessage("Ошибка соединения");
+      const v = await r.json();
+      if (!r.ok) throw Error(v.error || "Не удалось получить награду");
+      setMessage(
+        v.alreadyClaimed ? "Награда уже получена" : `Получено +${v.reward} 🍿`,
+      );
+      window.dispatchEvent(new Event("popcorn-updated"));
+      await load();
+      await loadHistory();
+    } catch (e) {
+      setMessage(
+        (e instanceof Error ? e.message : "Ошибка соединения") +
+          ". Обновите баланс перед повторной попыткой.",
+      );
     } finally {
-      setClaiming(false);
+      lock.current = false;
+      setBusy(false);
     }
-  };
-
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto py-12 px-4 text-center">
-        <div className="w-8 h-8 border-3 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-xs text-neutral-400">Загрузка наград...</p>
-      </div>
-    );
   }
-
   if (!data)
     return (
-      <div className="max-w-4xl mx-auto py-12 px-4 space-y-4">
+      <div className="max-w-4xl mx-auto py-12 space-y-4">
         <h1 className="text-2xl font-bold">Центр наград</h1>
-        <p role="alert">{error || "Не удалось загрузить награды."}</p>
-        <button
-          onClick={() => void fetchRewards()}
-          className="rounded-xl bg-rose-600 px-4 py-3"
-        >
-          Повторить загрузку
-        </button>
+        {error ? (
+          <>
+            <p role="alert">{error}</p>
+            <button className="btn btn-primary" onClick={() => void load()}>
+              Повторить загрузку
+            </button>
+          </>
+        ) : (
+          <p>Загрузка наград…</p>
+        )}
       </div>
     );
-
-  const days = [1, 2, 3, 4, 5, 6, 7];
-  const streakRewards: Record<number, number> = data?.streakRewards || {
-    1: 10,
-    2: 15,
-    3: 20,
-    4: 25,
-    5: 30,
-    6: 40,
-    7: 50,
-  };
-
   return (
-    <div className="max-w-4xl mx-auto py-6 px-4 space-y-10 pb-20">
+    <div className="max-w-5xl mx-auto py-6 space-y-6 pb-20">
+      <h1 className="text-3xl font-bold">Центр наград</h1>
       {error && (
         <p role="alert">
           {error}{" "}
-          <button onClick={() => void fetchRewards()}>
-            Повторить загрузку
-          </button>
+          <button onClick={() => void load()}>Повторить загрузку</button>
         </p>
       )}
-      {/* Баннер баланса */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-amber-500/20 via-neutral-900 to-neutral-950 border border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-2xl">
-        <div className="flex items-center gap-4 text-center sm:text-left">
-          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-4xl shadow-inner">
-            🍿
+      <section className="rounded-3xl border border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-neutral-900 p-6 sm:p-8">
+        <div className="flex flex-wrap justify-between items-center gap-5">
+          <div>
+            <p className="text-neutral-400 text-sm">Ваш баланс</p>
+            <strong className="text-4xl text-amber-400">
+              {data.popcorn} 🍿
+            </strong>
+          </div>
+          <Link className="btn btn-primary" href="/cosmetics">
+            Магазин оформления →
+          </Link>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-5 mt-6">
+          <div>
+            Активность сегодня:{" "}
+            <strong>
+              {data.activityEarned ?? 0} / {data.activityLimit ?? 60} 🍿
+            </strong>
           </div>
           <div>
-            <h1 className="text-2xl font-black text-white">Центр наград</h1>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Собирайте ежедневный попкорн и зарабатывайте его в играх!
-            </p>
+            Мини-игры сегодня:{" "}
+            <strong>
+              {data.gameEarned ?? 0} / {data.gameLimit ?? 50} 🍿
+            </strong>
           </div>
         </div>
-
-        <div className="bg-neutral-950/80 border border-neutral-800 rounded-2xl px-6 py-3 text-center sm:text-right">
-          <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">
-            Ваш баланс
-          </span>
-          <span className="text-2xl sm:text-3xl font-black text-amber-400">
-            {data?.popcorn || 0} 🍿
-          </span>
-        </div>
-      </div>
-
-      <Link
-        href="/cosmetics"
-        className="inline-flex min-h-11 items-center px-4 py-2 mb-6 rounded-xl bg-rose-600 text-white text-sm font-semibold"
-      >
-        Магазин оформления →
-      </Link>
-      {/* 1. БЛОК: ЕЖЕДНЕВНЫЙ ВХОД (1-7 ДНЕЙ) */}
-      <section className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>📅 Ежедневный бонус</span>
-            </h2>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Заходите каждый день подряд, чтобы увеличивать количество
-              попкорна!
-            </p>
-          </div>
-
-          <div className="text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-xl self-start sm:self-auto">
-            Серия: {data?.dailyStreak || 0} из 7 дней
-          </div>
-        </div>
-
-        {/* Сетка 7 дней */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
-          {days.map((day) => {
-            const reward = streakRewards[day];
-            const isCompleted = (data?.dailyStreak || 0) >= day;
-            const isCurrent =
-              (data?.nextStreak || 1) === day && data?.canClaimDaily;
-
-            return (
-              <div
-                key={day}
-                className={`p-3.5 rounded-2xl border text-center flex flex-col justify-between transition-all ${
-                  isCurrent
-                    ? "bg-amber-500/20 border-amber-500 shadow-lg shadow-amber-500/10 scale-105"
-                    : isCompleted
-                      ? "bg-neutral-900 border-neutral-800 opacity-60"
-                      : "bg-neutral-950/50 border-neutral-800/80"
-                }`}
-              >
-                <span className="text-[10px] font-bold uppercase text-neutral-400">
-                  День {day}
-                </span>
-                <span className="text-2xl my-2">🍿</span>
-                <div>
-                  <span className="text-xs font-black text-amber-400 block">
-                    +{reward}
-                  </span>
-                  <span className="text-[9px] text-neutral-500 block mt-0.5">
-                    {isCompleted
-                      ? "✓ Получено"
-                      : isCurrent
-                        ? "Доступно!"
-                        : "Ожидает"}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4">
-          {claimMessage && (
-            <p className="text-xs font-semibold text-amber-300">
-              {claimMessage}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={handleClaim}
-            disabled={!data?.canClaimDaily || claiming}
-            className={`w-full sm:w-auto px-8 py-3 rounded-xl font-bold text-xs transition-all shadow-lg cursor-pointer ${
-              data?.canClaimDaily
-                ? "bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20 hover:scale-[1.02]"
-                : "bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700/50"
-            }`}
-          >
-            {claiming
-              ? "Зачисление..."
-              : data?.canClaimDaily
-                ? "🎁 Забрать бонус сегодня"
-                : "✓ Сегодня уже получено (возвращайтесь завтра)"}
-          </button>
-        </div>
+        <p className="text-xs text-neutral-400 mt-4">
+          Лимиты обновляются в 00:00 UTC
+          {data.nextResetAt
+            ? ` · ${new Date(data.nextResetAt).toLocaleString()} по вашему времени`
+            : ""}
+          . Ежедневный бонус и задания учитываются отдельно.
+        </p>
       </section>
-
-      {/* 2. БЛОК: ИГРЫ И ЗАРАБОТОК ПОПКОРНА */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <span>🎮 Мини-игры для заработка</span>
-          </h2>
-          <p className="text-xs text-neutral-400 mt-0.5">
-            Проверяйте свои знания кино и получайте попкорн
+      <section className="card p-6 space-y-4">
+        <h2 className="text-xl font-bold">Ежедневный бонус</h2>
+        <p className="text-sm text-neutral-400">
+          Серия: {data.dailyStreak} из 7 дней
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(
+            data.streakRewards || {
+              1: 10,
+              2: 15,
+              3: 20,
+              4: 25,
+              5: 30,
+              6: 40,
+              7: 50,
+            },
+          ).map(([day, reward]) => (
+            <span
+              key={day}
+              className="rounded-xl border border-neutral-800 p-3 text-sm"
+            >
+              День {day} · +{reward} 🍿
+            </span>
+          ))}
+        </div>
+        <button
+          disabled={busy || !data.canClaimDaily}
+          className="btn btn-primary"
+          onClick={() => void claim("claim-daily")}
+        >
+          {data.canClaimDaily
+            ? `Забрать +${data.streakRewards?.[data.nextStreak] ?? 10} 🍿`
+            : "Сегодня уже получено"}
+        </button>
+      </section>
+      {message && (
+        <p role="status" className="text-amber-300">
+          {message}
+        </p>
+      )}
+      <section className="card p-6 space-y-4">
+        <h2 className="text-xl font-bold">Задания на сегодня</h2>
+        {(data.tasks || []).map((task) => (
+          <div
+            key={task.id}
+            className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 pb-4"
+          >
+            <div>
+              <h3>{task.name}</h3>
+              <p className="text-xs text-neutral-400">
+                {task.count} из {task.target}
+              </p>
+            </div>
+            <button
+              className="btn btn-secondary"
+              disabled={busy || task.claimed || task.count < task.target}
+              onClick={() => void claim("claim-task", task.id)}
+            >
+              {task.claimed ? "Получено" : `Забрать +${task.reward} 🍿`}
+            </button>
+          </div>
+        ))}
+        <button
+          className="btn btn-primary"
+          disabled={
+            busy ||
+            data.allTasksClaimed ||
+            !data.tasks?.length ||
+            !data.tasks.every((t) => t.claimed)
+          }
+          onClick={() => void claim("claim-task", "all")}
+        >
+          {data.allTasksClaimed
+            ? "Бонус за все задания получен"
+            : "Все 3 задания: ещё +10 🍿"}
+        </button>
+      </section>
+      <section className="grid sm:grid-cols-2 gap-5">
+        <Link href="/rewards/quiz" className="card p-6">
+          <h2 className="font-bold text-lg">🎬 Угадай фильм по кадру</h2>
+          <p className="text-sm text-neutral-400 mt-2">
+            +5 🍿 за ответ. Бонусы за 3 и 5 подряд.
           </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Игра 1: Угадай по кадру */}
-          <div className="p-6 rounded-3xl bg-neutral-900/70 border border-neutral-800 flex flex-col justify-between hover:border-neutral-700 transition-all shadow-lg group">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-3xl p-3 bg-neutral-950 rounded-2xl border border-neutral-800">
-                  🎬
-                </span>
-                <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  +5 🍿 за ответ
-                </span>
-              </div>
-
-              <h3 className="text-base font-bold text-white group-hover:text-amber-400 transition-colors">
-                Угадай по кадру
-              </h3>
-              <p className="text-xs text-neutral-400 leading-relaxed">
-                Смотрите случайный кадр из популярного фильма или сериала и
-                выберите верное название из 4 похожих вариантов.
-              </p>
-
-              <div className="text-[11px] text-neutral-500 font-medium">
-                Осталось попыток на сегодня:{" "}
-                <strong className="text-white">
-                  {data?.quizAttemptsLeft ?? 10} / 10
-                </strong>
-              </div>
+        </Link>
+        <Link href="/rewards/higher-lower" className="card p-6">
+          <h2 className="font-bold text-lg">⚖️ Больше или меньше</h2>
+          <p className="text-sm text-neutral-400 mt-2">
+            +3 🍿 в банк за ответ, бонусы на 3-м и 5-м раундах. До 30 🍿 за
+            полную серию.
+          </p>
+        </Link>
+      </section>
+      <section className="card p-6 space-y-3">
+        <h2 className="text-xl font-bold">История операций</h2>
+        {historyError && (
+          <p className="text-sm text-neutral-400">
+            {historyError}{" "}
+            <button onClick={() => void loadHistory()}>
+              Повторить загрузку истории
+            </button>
+          </p>
+        )}
+        {history.map((entry) => (
+          <div
+            key={entry.id}
+            className="flex justify-between gap-4 border-b border-neutral-800 pb-3"
+          >
+            <div>
+              <p className="text-sm">{entry.reason}</p>
+              <time className="text-xs text-neutral-500">
+                {new Date(entry.createdAt).toLocaleString()}
+              </time>
             </div>
-
-            <div className="pt-6">
-              <Link
-                href="/rewards/quiz"
-                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all shadow-md shadow-rose-600/20 cursor-pointer"
-              >
-                <span>Играть в викторину</span>
-                <span>→</span>
-              </Link>
-            </div>
+            <strong
+              className={
+                entry.amount > 0 ? "text-emerald-400" : "text-neutral-300"
+              }
+            >
+              {entry.amount > 0 ? "+" : ""}
+              {entry.amount} 🍿
+            </strong>
           </div>
-
-          {/* Игра 2: Больше или Меньше */}
-          <div className="p-6 rounded-3xl bg-neutral-900/70 border border-neutral-800 flex flex-col justify-between hover:border-neutral-700 transition-all shadow-lg group">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-3xl p-3 bg-neutral-950 rounded-2xl border border-neutral-800">
-                  ⚖️
-                </span>
-                <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  До +15 🍿 за победу
-                </span>
-              </div>
-
-              <h3 className="text-base font-bold text-white group-hover:text-amber-400 transition-colors">
-                Больше или Меньше
-              </h3>
-              <p className="text-xs text-neutral-400 leading-relaxed">
-                5 раундов нарастающей сложности! Сравнивайте культовые фильмы по
-                рейтингу и годам выхода. Заберите банк или рискните всем!
-              </p>
-
-              <div className="text-[11px] text-neutral-500 font-medium">
-                Попыток в день: <strong className="text-white">5 жизней</strong>
-              </div>
-            </div>
-
-            <div className="pt-6">
-              <Link
-                href="/rewards/higher-lower"
-                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-              >
-                <span>Играть в дуэль</span>
-                <span>→</span>
-              </Link>
-            </div>
-          </div>
-        </div>
+        ))}
+        {!history.length && !historyError && (
+          <p className="text-neutral-400 text-sm">Пока нет операций.</p>
+        )}
+        {cursor && (
+          <button
+            className="btn btn-secondary"
+            disabled={historyBusy}
+            onClick={() => void loadHistory(cursor)}
+          >
+            Показать ещё
+          </button>
+        )}
       </section>
     </div>
   );
