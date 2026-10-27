@@ -193,7 +193,10 @@ export async function GET(
       }),
     );
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Profile unavailable", error);
+    return NextResponse.json(
+      { error: "Не удалось загрузить профиль. Попробуйте ещё раз." },
+      { status: 503, headers: { "Cache-Control": "private, no-store" } },
+    );
   }
 }
