@@ -151,6 +151,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const notes = await prisma.personalNote.findMany({where:{userId:currentUserId, text:{not:""}},select:{showId:true}});
+    const noted = new Set(notes.map(n=>n.showId));
     const normalized = userShows.map((us) => {
       const isMovie = us.show.kind === "movie";
       const summary = summarizeProgress(us);
@@ -175,6 +177,7 @@ export async function GET(request: NextRequest) {
         status: us.status || "watching",
         isCompleted: us.status === "completed",
         isFavorite: us.isFavorite,
+        hasNote: noted.has(us.showId),
         totalSeasons: us.totalSeasons || 1,
         totalEpisodes,
         dubbing: us.dubbing,

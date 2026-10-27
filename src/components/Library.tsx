@@ -1,25 +1,25 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { privateFetch } from '@/lib/private-fetch';
+import Link from "next/link";
+import { privateFetch } from "@/lib/private-fetch";
 import {
   useCallback,
   useEffect,
   useRef,
   useState,
   type ReactNode,
-} from 'react';
-import { useSearchParams } from 'next/navigation';
-import { useSession } from 'next-auth/react';
-import NavigationIcon from './NavigationIcon';
-import useQuickProgress, { type ProgressPatch } from './useQuickProgress';
+} from "react";
+import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import NavigationIcon from "./NavigationIcon";
+import useQuickProgress, { type ProgressPatch } from "./useQuickProgress";
 import {
   filterLibrary,
   libraryProgress,
   libraryStatuses,
   personalRating,
   type LibraryItem,
-} from '@/lib/library';
+} from "@/lib/library";
 
 type Resource = {
   userId: string;
@@ -29,14 +29,14 @@ type Resource = {
   unauthorized: boolean;
 };
 const control =
-  'min-h-11 rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-200 outline-none focus-visible:border-rose-400 focus-visible:ring-2 focus-visible:ring-rose-500/20';
+  "min-h-11 rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-sm text-neutral-200 outline-none focus-visible:border-rose-400 focus-visible:ring-2 focus-visible:ring-rose-500/20";
 const primaryLink =
-  'inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 text-sm font-semibold text-rose-400 transition-colors hover:bg-rose-500/20 focus-visible:outline-2 focus-visible:outline-rose-400';
+  "inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 text-sm font-semibold text-rose-400 transition-colors hover:bg-rose-500/20 focus-visible:outline-2 focus-visible:outline-rose-400";
 
 function Poster({ item, large }: { item: LibraryItem; large: boolean }) {
   return (
     <div
-      className={`${large ? 'aspect-[2/3] w-full' : 'h-24 w-16 sm:h-28 sm:w-20'} shrink-0 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950`}
+      className={`${large ? "aspect-[2/3] w-full" : "h-24 w-16 sm:h-28 sm:w-20"} shrink-0 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950`}
     >
       {item.posterUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -72,31 +72,32 @@ function LibraryCard({
 }) {
   const progress = libraryProgress(item);
   const rating = personalRating(item);
-  const cardHref = `/show/${item.showId}?type=${progress.movie ? 'movie' : 'tv'}`;
+  const cardHref = `/show/${item.showId}?type=${progress.movie ? "movie" : "tv"}`;
   const status =
     libraryStatuses.find((status) => status.value === item.status)?.label ||
     item.status;
   const subtitle =
-    item.status === 'watching' && !progress.movie
+    item.status === "watching" && !progress.movie
       ? progress.next
         ? `Следующая: сезон ${progress.next.season}, серия ${progress.next.episode}`
         : progress.total > 0 && progress.watched >= progress.total
-          ? 'Все доступные серии отмечены'
-          : 'Откройте трекер, чтобы уточнить серии'
+          ? "Все доступные серии отмечены"
+          : "Откройте трекер, чтобы уточнить серии"
       : status;
   return (
     <article
       aria-label={item.title}
-      className={`scroll-mt-20 rounded-2xl border border-neutral-800 bg-neutral-900/60 ${posters ? 'flex flex-col overflow-hidden' : 'grid grid-cols-[4rem_minmax(0,1fr)] gap-4 p-4 sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:items-center sm:gap-5 sm:p-5'}`}
+      className={`scroll-mt-20 rounded-2xl border border-neutral-800 bg-neutral-900/60 ${posters ? "flex flex-col overflow-hidden" : "grid grid-cols-[4rem_minmax(0,1fr)] gap-4 p-4 sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:items-center sm:gap-5 sm:p-5"}`}
     >
-      <div className={posters ? 'p-3 pb-0' : ''}>
+      <div className={posters ? "p-3 pb-0" : ""}>
         <Poster item={item} large={posters} />
       </div>
       <div
-        className={`min-w-0 ${posters ? 'flex-1 space-y-3 p-3 sm:p-4' : 'space-y-2'}`}
+        className={`min-w-0 ${posters ? "flex-1 space-y-3 p-3 sm:p-4" : "space-y-2"}`}
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-400">
-          <span>{progress.movie ? 'Фильм' : 'Сериал'}</span>
+          <span>{progress.movie ? "Фильм" : "Сериал"}</span>
+          {item.hasNote && <span>Есть заметка</span>}
           {item.year && <span>· {item.year}</span>}
           {rating !== null && (
             <span
@@ -120,7 +121,7 @@ function LibraryCard({
           <div className="space-y-2 pt-1">
             <div className="flex flex-wrap justify-between gap-1 text-xs text-neutral-400">
               <span>
-                Отмечено: {progress.watched} из {progress.total || '—'} серий
+                Отмечено: {progress.watched} из {progress.total || "—"} серий
               </span>
               {progress.percent !== null && <span>{progress.percent}%</span>}
             </div>
@@ -141,11 +142,11 @@ function LibraryCard({
             )}
           </div>
         )}
-        {progress.stopped && item.status !== 'completed' && (
+        {progress.stopped && item.status !== "completed" && (
           <p className="inline-block rounded-lg border border-neutral-700 bg-neutral-800/50 px-2 py-1 text-xs text-neutral-300">
             {!progress.movie && progress.stoppedEpisode
               ? `С${progress.stoppedEpisode.season} · Э${progress.stoppedEpisode.episode} · `
-              : ''}
+              : ""}
             Остановились на {progress.stopped.stoppedAt}
           </p>
         )}
@@ -154,32 +155,32 @@ function LibraryCard({
       <div
         className={
           posters
-            ? 'px-3 pb-3 sm:px-4 sm:pb-4'
-            : 'col-span-2 flex flex-wrap items-center gap-3 sm:col-span-1 sm:flex-col sm:items-stretch'
+            ? "px-3 pb-3 sm:px-4 sm:pb-4"
+            : "col-span-2 flex flex-wrap items-center gap-3 sm:col-span-1 sm:flex-col sm:items-stretch"
         }
       >
-        {((progress.movie && ['watching', 'planned'].includes(item.status)) ||
-          (!progress.movie && item.status === 'watching' && progress.next)) && (
+        {((progress.movie && ["watching", "planned"].includes(item.status)) ||
+          (!progress.movie && item.status === "watching" && progress.next)) && (
           <button
             type="button"
             disabled={disabled}
             data-quick-progress={item.userShowId}
             aria-busy={saving}
-            aria-label={`${progress.movie ? 'Отметить фильм просмотренным' : 'Отметить следующую серию'}: ${item.title}`}
+            aria-label={`${progress.movie ? "Отметить фильм просмотренным" : "Отметить следующую серию"}: ${item.title}`}
             onClick={() => mark(item)}
-            className={`min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-wait disabled:opacity-60 ${posters ? 'mb-2 w-full' : 'flex-1 sm:flex-none'}`}
+            className={`min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-wait disabled:opacity-60 ${posters ? "mb-2 w-full" : "flex-1 sm:flex-none"}`}
           >
             {saving
-              ? 'Сохраняем…'
+              ? "Сохраняем…"
               : progress.movie
-                ? 'Просмотрено'
-                : 'Отметить серию'}
+                ? "Просмотрено"
+                : "Отметить серию"}
           </button>
         )}
         <Link
           href={`/library/${item.showId}`}
           aria-label={`Открыть трекер: ${item.title}`}
-          className={`${primaryLink} ${posters ? 'w-full' : 'flex-1 sm:flex-none'}`}
+          className={`${primaryLink} ${posters ? "w-full" : "flex-1 sm:flex-none"}`}
         >
           Открыть трекер
         </Link>
@@ -205,23 +206,23 @@ export default function Library() {
   const [resource, setResource] = useState<Resource | null>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const status =
-    libraryStatuses.find((status) => status.value === params.get('status')) ||
+    libraryStatuses.find((status) => status.value === params.get("status")) ||
     libraryStatuses[0];
-  const query = params.get('q') || '';
-  const type = ['movie', 'series'].includes(params.get('type') || '')
-    ? params.get('type')!
-    : 'all';
-  const sort = ['title', 'rating'].includes(params.get('sort') || '')
-    ? params.get('sort')!
-    : 'updated';
-  const posters = params.get('view') === 'posters';
+  const query = params.get("q") || "";
+  const type = ["movie", "series"].includes(params.get("type") || "")
+    ? params.get("type")!
+    : "all";
+  const sort = ["title", "rating"].includes(params.get("sort") || "")
+    ? params.get("sort")!
+    : "updated";
+  const posters = params.get("view") === "posters";
   const current =
     resource && resource.userId === userId && resource.attempt === attempt
       ? resource
       : null;
   const loading =
-    sessionStatus === 'loading' ||
-    (sessionStatus === 'authenticated' && !current);
+    sessionStatus === "loading" ||
+    (sessionStatus === "authenticated" && !current);
   const items = current?.items || [];
   const applyProgress = useCallback(
     (patch: ProgressPatch) => {
@@ -244,16 +245,28 @@ export default function Library() {
   const undoButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!quick.undo) return;
-    const markButton = document.querySelector<HTMLButtonElement>(`[data-quick-progress="${quick.undo.id}"]`);
-    if (document.activeElement !== document.body && document.activeElement !== markButton) return;
-    (quick.undo.focus ? undoButton.current : markButton)?.focus({ preventScroll: true });
-    const card = undoButton.current?.closest('article');
+    const markButton = document.querySelector<HTMLButtonElement>(
+      `[data-quick-progress="${quick.undo.id}"]`,
+    );
+    if (
+      document.activeElement !== document.body &&
+      document.activeElement !== markButton
+    )
+      return;
+    (quick.undo.focus ? undoButton.current : markButton)?.focus({
+      preventScroll: true,
+    });
+    const card = undoButton.current?.closest("article");
     if (card) {
       const rect = card.getBoundingClientRect();
-      const headerBottom = document.querySelector('header')?.getBoundingClientRect().bottom || 0;
-      const bar = document.querySelector('nav[aria-label="Мобильная навигация"]')?.getBoundingClientRect();
+      const headerBottom =
+        document.querySelector("header")?.getBoundingClientRect().bottom || 0;
+      const bar = document
+        .querySelector('nav[aria-label="Мобильная навигация"]')
+        ?.getBoundingClientRect();
       const bottom = bar?.height ? bar.top : window.innerHeight;
-      if (rect.top < headerBottom || rect.bottom > bottom) card.scrollIntoView({ block: 'start' });
+      if (rect.top < headerBottom || rect.bottom > bottom)
+        card.scrollIntoView({ block: "start" });
     }
   }, [quick.undo]);
 
@@ -270,9 +283,9 @@ export default function Library() {
   }, [status.value, current?.items.length]);
 
   useEffect(() => {
-    if (sessionStatus !== 'authenticated' || !userId) return;
+    if (sessionStatus !== "authenticated" || !userId) return;
     const controller = new AbortController();
-    privateFetch('/api/user-shows?status=library', controller.signal)
+    privateFetch("/api/user-shows?status=library", controller.signal)
       .then(async (response) => {
         if (response.status === 401)
           return {
@@ -282,9 +295,9 @@ export default function Library() {
             error: null,
             unauthorized: true,
           };
-        if (!response.ok) throw new Error('library unavailable');
+        if (!response.ok) throw new Error("library unavailable");
         const data: unknown = await response.json();
-        if (!Array.isArray(data)) throw new Error('invalid library');
+        if (!Array.isArray(data)) throw new Error("invalid library");
         return {
           userId,
           attempt,
@@ -303,7 +316,7 @@ export default function Library() {
             attempt,
             items: [],
             unauthorized: false,
-            error: 'Не удалось загрузить библиотеку. Попробуйте ещё раз.',
+            error: "Не удалось загрузить библиотеку. Попробуйте ещё раз.",
           });
       });
     return () => controller.abort();
@@ -311,11 +324,11 @@ export default function Library() {
 
   useEffect(() => {
     const refresh = (event: Event) => {
-      if ((event as CustomEvent).detail?.source !== 'quick-progress')
+      if ((event as CustomEvent).detail?.source !== "quick-progress")
         setAttempt((value) => value + 1);
     };
-    window.addEventListener('user-shows-updated', refresh);
-    return () => window.removeEventListener('user-shows-updated', refresh);
+    window.addEventListener("user-shows-updated", refresh);
+    return () => window.removeEventListener("user-shows-updated", refresh);
   }, []);
 
   const href = (changes: Record<string, string>) => {
@@ -323,18 +336,18 @@ export default function Library() {
     for (const [key, value] of Object.entries(changes)) {
       if (
         !value ||
-        (key === 'status' && value === 'watching') ||
-        (key === 'type' && value === 'all') ||
-        (key === 'sort' && value === 'updated') ||
-        (key === 'view' && value === 'list')
+        (key === "status" && value === "watching") ||
+        (key === "type" && value === "all") ||
+        (key === "sort" && value === "updated") ||
+        (key === "view" && value === "list")
       )
         next.delete(key);
       else next.set(key, value);
     }
-    return `/watching${next.size ? `?${next}` : ''}`;
+    return `/watching${next.size ? `?${next}` : ""}`;
   };
   const update = (changes: Record<string, string>) =>
-    window.history.replaceState(null, '', href(changes));
+    window.history.replaceState(null, "", href(changes));
   const visible = filterLibrary(items, status.value, query, type, sort);
   const statusCount = items.filter(
     (item) => item.status === status.value,
@@ -350,8 +363,8 @@ export default function Library() {
       aria-label="Последнее изменение прогресса"
       className={
         inline
-          ? 'mt-3 space-y-2 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3'
-          : 'fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-40 space-y-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-4 shadow-2xl xl:inset-x-auto xl:bottom-5 xl:right-6 xl:w-96'
+          ? "mt-3 space-y-2 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3"
+          : "fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-40 space-y-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-4 shadow-2xl xl:inset-x-auto xl:bottom-5 xl:right-6 xl:w-96"
       }
     >
       {quick.error ? (
@@ -395,7 +408,7 @@ export default function Library() {
             onClick={() => void quick.undoLast()}
             className={primaryLink}
           >
-            {quick.pending?.action === 'undo' ? 'Отменяем…' : 'Отменить'}
+            {quick.pending?.action === "undo" ? "Отменяем…" : "Отменить"}
           </button>
         )}
         <button
@@ -412,7 +425,7 @@ export default function Library() {
 
   return (
     <section
-      className={`space-y-6 ${(quick.undo || quick.error) && !inlineUndo ? 'pb-48' : 'pb-4'}`}
+      className={`space-y-6 ${(quick.undo || quick.error) && !inlineUndo ? "pb-48" : "pb-4"}`}
     >
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -435,8 +448,8 @@ export default function Library() {
           </Link>
         </div>
       </header>
-      {sessionStatus === 'unauthenticated' ||
-      (sessionStatus === 'authenticated' && !userId) ||
+      {sessionStatus === "unauthenticated" ||
+      (sessionStatus === "authenticated" && !userId) ||
       current?.unauthorized ? (
         <div className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900/50 p-6 sm:p-8">
           <h2 className="text-lg font-semibold">
@@ -464,14 +477,14 @@ export default function Library() {
                 key={tab.value}
                 href={href({ status: tab.value })}
                 scroll={false}
-                aria-current={status.value === tab.value ? 'page' : undefined}
-                className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-rose-400 ${status.value === tab.value ? 'border-rose-500/40 bg-rose-500/15 text-rose-400' : 'border-neutral-800 bg-neutral-900/50 text-neutral-400 hover:text-neutral-100'}`}
+                aria-current={status.value === tab.value ? "page" : undefined}
+                className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-rose-400 ${status.value === tab.value ? "border-rose-500/40 bg-rose-500/15 text-rose-400" : "border-neutral-800 bg-neutral-900/50 text-neutral-400 hover:text-neutral-100"}`}
               >
                 {tab.label}
                 <span className="rounded-md bg-neutral-800/70 px-1.5 py-0.5 text-xs">
                   {current && !current.error
                     ? items.filter((item) => item.status === tab.value).length
-                    : '—'}
+                    : "—"}
                 </span>
               </Link>
             ))}
@@ -532,9 +545,9 @@ export default function Library() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p role="status" className="text-xs text-neutral-400">
               {loading
-                ? 'Загружаем библиотеку…'
+                ? "Загружаем библиотеку…"
                 : current?.error
-                  ? 'Библиотека недоступна'
+                  ? "Библиотека недоступна"
                   : `Показано ${visible.length} из ${statusCount}`}
             </p>
             <div
@@ -543,15 +556,15 @@ export default function Library() {
               className="flex gap-1 rounded-xl border border-neutral-800 bg-neutral-900 p-1"
             >
               {[
-                { value: 'list', label: 'Список' },
-                { value: 'posters', label: 'Постеры' },
+                { value: "list", label: "Список" },
+                { value: "posters", label: "Постеры" },
               ].map((view) => (
                 <button
                   key={view.value}
                   type="button"
-                  aria-pressed={posters === (view.value === 'posters')}
+                  aria-pressed={posters === (view.value === "posters")}
                   onClick={() => update({ view: view.value })}
-                  className={`min-h-11 rounded-lg px-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-rose-400 ${posters === (view.value === 'posters') ? 'bg-rose-500/15 text-rose-400' : 'text-neutral-400 hover:text-neutral-100'}`}
+                  className={`min-h-11 rounded-lg px-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-rose-400 ${posters === (view.value === "posters") ? "bg-rose-500/15 text-rose-400" : "text-neutral-400 hover:text-neutral-100"}`}
                 >
                   {view.label}
                 </button>
@@ -586,8 +599,8 @@ export default function Library() {
               aria-label="Тайтлы библиотеки"
               className={
                 posters
-                  ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
-                  : 'space-y-3'
+                  ? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                  : "space-y-3"
               }
             >
               {visible.map((item) => (
@@ -603,7 +616,7 @@ export default function Library() {
                   mark={(item) => void quick.mark(item)}
                   disabled={Boolean(quick.pending)}
                   saving={
-                    quick.pending?.action === 'mark' &&
+                    quick.pending?.action === "mark" &&
                     quick.pending.id === item.userShowId
                   }
                 />
@@ -612,19 +625,19 @@ export default function Library() {
           ) : (
             <div className="space-y-3 rounded-2xl border border-dashed border-neutral-800 p-6 text-center sm:p-10">
               <h2 className="text-lg font-semibold">
-                {statusCount && (query.trim() || type !== 'all')
-                  ? 'Ничего не найдено'
+                {statusCount && (query.trim() || type !== "all")
+                  ? "Ничего не найдено"
                   : status.empty}
               </h2>
               <p className="text-sm text-neutral-400">
-                {statusCount && (query.trim() || type !== 'all')
-                  ? 'Попробуйте другое название или сбросьте фильтры.'
-                  : 'Добавляйте фильмы и сериалы, чтобы вести свою историю просмотра.'}
+                {statusCount && (query.trim() || type !== "all")
+                  ? "Попробуйте другое название или сбросьте фильтры."
+                  : "Добавляйте фильмы и сериалы, чтобы вести свою историю просмотра."}
               </p>
-              {statusCount && (query.trim() || type !== 'all') ? (
+              {statusCount && (query.trim() || type !== "all") ? (
                 <button
                   type="button"
-                  onClick={() => update({ q: '', type: 'all' })}
+                  onClick={() => update({ q: "", type: "all" })}
                   className={primaryLink}
                 >
                   Сбросить фильтры
@@ -640,7 +653,7 @@ export default function Library() {
       )}
       {(quick.error || quick.undo) &&
         !inlineUndo &&
-        sessionStatus === 'authenticated' &&
+        sessionStatus === "authenticated" &&
         renderNotice(false)}
     </section>
   );
