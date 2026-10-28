@@ -40,7 +40,7 @@ export function publicDuel(state: DuelState, attempts: number) {
     limitReached: state.phase === "paid",
     attemptsLeft: Math.max(0, MAX_DUEL_ATTEMPTS - attempts),
     questionType: state.round % 2 ? "rating" : "year",
-    rewardForRound: 3 + (state.round === 3 ? 5 : state.round === 5 ? 10 : 0),
+    rewardForRound: 1,
     leftMovie: state.leftMovie,
     rightMovie:
       state.phase === "question"
@@ -59,9 +59,7 @@ export function answerDuel(state: DuelState, choice: "higher" | "lower") {
   const right =
     state.round % 2 ? state.rightMovie.rating : Number(state.rightMovie.year);
   const correct = choice === "higher" ? right >= left : right <= left;
-  const bank = correct
-    ? state.bank + 3 + (state.round === 3 ? 5 : state.round === 5 ? 10 : 0)
-    : 0;
+  const bank = correct ? state.bank + 1 : 0;
   return {
     correct,
     state: {

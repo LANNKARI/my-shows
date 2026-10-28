@@ -171,7 +171,7 @@ export default function HigherLowerPage() {
           {cashoutDone
             ? data?.practice
               ? "Тренировка завершена. Валюта не начисляется."
-              : `Начислено +${data?.reward ?? 0} 🍿 с учётом общего дневного лимита двух игр.`
+              : `Начислено +${data?.reward ?? 0} 🍿 на баланс. Дневного лимита наград нет.`
             : data?.message || "Вы исчерпали все 5 попыток на сегодня."}
         </p>
         {data?.practiceAvailable && (
@@ -181,7 +181,7 @@ export default function HigherLowerPage() {
             disabled={submitting}
             onClick={() => void requestAction("practice")}
           >
-            Сыграть ещё без награды
+            Сыграть ещё
           </button>
         )}
         <div className="pt-2">
@@ -196,7 +196,7 @@ export default function HigherLowerPage() {
     );
   }
 
-  const { questionType, leftMovie, rightMovie, attemptsLeft } = data!;
+  const { questionType, leftMovie, rightMovie } = data!;
 
   return (
     <div className="max-w-5xl mx-auto py-6 px-4 space-y-6 pb-20">
@@ -223,19 +223,15 @@ export default function HigherLowerPage() {
                     : "bg-neutral-950 text-neutral-500 border-neutral-800"
               }`}
             >
-              Раунд {r}{" "}
-              <span className="opacity-80">
-                (+{3 + (r === 3 ? 5 : r === 5 ? 10 : 0)} 🍿)
-              </span>
+              Раунд {r} <span className="opacity-80">(+{1} 🍿)</span>
             </div>
           ))}
         </div>
 
         {/* Счётчики попыток и банка */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-neutral-300 bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded-xl whitespace-nowrap">
-            Попытки:{" "}
-            <strong className="text-rose-400">{attemptsLeft} / 5</strong>
+            +1 🍿 · без лимита
           </span>
           <span className="text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl whitespace-nowrap">
             Банк: <strong>{accumulatedBank} 🍿</strong>
@@ -261,7 +257,7 @@ export default function HigherLowerPage() {
       {/* Карточки дуэли */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch max-w-4xl mx-auto">
         {/* ЛЕВЫЙ ФИЛЬМ */}
-        <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 flex flex-col justify-between items-center text-center shadow-xl">
+        <div className="min-w-0 bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 flex flex-col justify-between items-center text-center shadow-xl">
           <div className="aspect-[2/3] w-52 rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 mb-4 bg-neutral-950">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -272,7 +268,7 @@ export default function HigherLowerPage() {
           </div>
 
           <div className="space-y-1 w-full">
-            <h3 className="text-sm font-bold text-white line-clamp-1">
+            <h3 className="text-sm font-bold text-white whitespace-normal break-words">
               {leftMovie.title}
             </h3>
             <span className="text-xs text-neutral-400 block">
@@ -290,7 +286,7 @@ export default function HigherLowerPage() {
         </div>
 
         {/* ПРАВЫЙ ФИЛЬМ */}
-        <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 flex flex-col justify-between items-center text-center shadow-xl">
+        <div className="min-w-0 bg-neutral-900/90 border border-neutral-800 rounded-3xl p-6 flex flex-col justify-between items-center text-center shadow-xl">
           <div className="aspect-[2/3] w-52 rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 mb-4 bg-neutral-950 relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -309,7 +305,7 @@ export default function HigherLowerPage() {
 
           <div className="space-y-3 w-full">
             <div>
-              <h3 className="text-sm font-bold text-white line-clamp-1">
+              <h3 className="text-sm font-bold text-white whitespace-normal break-words">
                 {rightMovie.title}
               </h3>
               {hasAnswered ? (
@@ -375,7 +371,7 @@ export default function HigherLowerPage() {
           <div>
             <h3 className="text-lg font-black">
               {isCorrect
-                ? `🎉 Точно! +${currentRound} 🍿 в банк (Всего: ${accumulatedBank} 🍿)`
+                ? `🎉 Точно! +1 🍿 в банк (Всего: ${accumulatedBank} 🍿)`
                 : "💥 Ошибка! Накопленный банк сгорел."}
             </h3>
             <p className="text-xs text-neutral-400 mt-1">
@@ -383,9 +379,7 @@ export default function HigherLowerPage() {
                 ? currentRound === 5
                   ? "Вы прошли все 5 раундов! Награда зачислена на ваш баланс."
                   : "Продолжайте игру ради большего куша или заберите банк прямо сейчас!"
-                : attemptsLeft > 0
-                  ? `Осталось попыток: ${attemptsLeft}. Попробуйте ещё раз!`
-                  : "У вас закончились попытки на сегодня. Возвращайтесь завтра!"}
+                : "Можно сразу начать новую игру. Число попыток не ограничено."}
             </p>
           </div>
 
@@ -411,18 +405,17 @@ export default function HigherLowerPage() {
               </>
             )}
 
-            {!isCorrect && attemptsLeft > 0 && (
+            {!isCorrect && (
               <button
                 type="button"
                 onClick={handleRestart}
                 className="w-full sm:w-auto px-6 py-3 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-all cursor-pointer shadow-lg"
               >
-                🔄 Попробовать снова (осталось {attemptsLeft} поп.)
+                🔄 Попробовать снова
               </button>
             )}
 
-            {(!isCorrect && attemptsLeft <= 0) ||
-            (isCorrect && currentRound === 5) ? (
+            {isCorrect && currentRound === 5 ? (
               <Link
                 href="/rewards"
                 className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all shadow-lg shadow-amber-500/20"

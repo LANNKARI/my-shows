@@ -51,6 +51,7 @@ interface UserProfileData {
     totalCompleted: number;
     moviesCount: number;
     seriesCount: number;
+    addedSeriesCount?: number;
     ratingsCount: number;
     hoursWatched: number;
   };
@@ -425,9 +426,9 @@ export default function UserProfilePage({
                 </span>
 
                 <span className="px-3 py-1.5 bg-neutral-900/90 backdrop-blur-sm rounded-xl border border-neutral-800 text-neutral-300 flex items-center gap-1.5 shadow-sm">
-                  <span>📺 Сериалов:</span>
+                  <span>📺 Добавлено сериалов:</span>
                   <strong className="text-indigo-400 font-bold">
-                    {stats.seriesCount}
+                    {stats.addedSeriesCount ?? stats.seriesCount}
                   </strong>
                 </span>
 

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useRef } from 'react';
+import React, { useRef } from "react";
 
 interface Actor {
   id: number;
@@ -8,6 +8,8 @@ interface Actor {
   character?: string;
   profileUrl?: string | null;
   image?: string | null;
+  photoUrl?: string | null;
+  profile_path?: string | null;
 }
 
 interface CastListProps {
@@ -17,10 +19,10 @@ interface CastListProps {
 export default function CastList({ cast }: CastListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const scroll = (direction: 'left' | 'right') => {
+  const scroll = (direction: "left" | "right") => {
     if (scrollRef.current) {
-      const scrollAmount = direction === 'left' ? -380 : 380;
-      scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+      const scrollAmount = direction === "left" ? -380 : 380;
+      scrollRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
     }
   };
 
@@ -32,14 +34,16 @@ export default function CastList({ cast }: CastListProps) {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
           <span>🎭 В главных ролях</span>
-          <span className="text-xs font-normal text-neutral-500">({cast.length})</span>
+          <span className="text-xs font-normal text-neutral-500">
+            ({cast.length})
+          </span>
         </h2>
 
         {cast.length > 5 && (
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => scroll('left')}
+              onClick={() => scroll("left")}
               className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white flex items-center justify-center text-sm transition-all shadow-md cursor-pointer active:scale-95"
               aria-label="Назад"
             >
@@ -47,7 +51,7 @@ export default function CastList({ cast }: CastListProps) {
             </button>
             <button
               type="button"
-              onClick={() => scroll('right')}
+              onClick={() => scroll("right")}
               className="w-8 h-8 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white flex items-center justify-center text-sm transition-all shadow-md cursor-pointer active:scale-95"
               aria-label="Вперёд"
             >
@@ -61,10 +65,16 @@ export default function CastList({ cast }: CastListProps) {
       <div
         ref={scrollRef}
         className="flex gap-4 overflow-x-auto pb-2 scroll-smooth no-scrollbar"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
         {cast.map((actor) => {
-          const photo = actor.profileUrl || actor.image;
+          const photo =
+            actor.profileUrl ||
+            actor.photoUrl ||
+            actor.image ||
+            (actor.profile_path
+              ? `https://image.tmdb.org/t/p/w185${actor.profile_path}`
+              : null);
           return (
             <div
               key={actor.id}

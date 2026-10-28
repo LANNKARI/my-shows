@@ -65,10 +65,11 @@ function transaction<T>(work: (tx: Tx) => Promise<T>) {
 export async function writeWatched(
   tx: Tx,
   userShowId: number,
-  episodes: { id: number }[],
+  episodes: { id: number; season: number; episode: number }[],
   previous: { episodeId: number; watched: boolean; watchedAt: Date | null }[],
   watched: boolean,
   at: Date,
+  entry: Pick<Entry, "userId" | "show">,
 ) {
   const ids = episodes.map((episode) => episode.id);
   const existing = new Set(previous.map((progress) => progress.episodeId));
@@ -84,16 +85,12 @@ export async function writeWatched(
       skipDuplicates: true,
     });
   if (watched) {
-    const entry = await tx.userShow.findUniqueOrThrow({
-      where: { id: userShowId },
-      include: { show: true },
-    });
     const alreadyWatched = new Set(
       previous.filter((p) => p.watched).map((p) => p.episodeId),
     );
-    const newlyWatched = await tx.episode.findMany({
-      where: { id: { in: ids.filter((id) => !alreadyWatched.has(id)) } },
-    });
+    const newlyWatched = episodes.filter(
+      (episode) => !alreadyWatched.has(episode.id),
+    );
     const identity = titleIdentity(entry.show);
     await activityEvents(
       tx,
@@ -174,6 +171,7 @@ export async function saveLibrary(
         entry.progress,
         true,
         at,
+        entry,
       );
     }
     await tx.userShow.update({
@@ -304,7 +302,15 @@ async function changeProgress(
       "Сначала снимите отметку просмотра с этой серии, чтобы указать время остановки.",
     );
   if (typeof watched === "boolean")
-    await writeWatched(tx, entry.id, episodes, entry.progress, watched, at);
+    await writeWatched(
+      tx,
+      entry.id,
+      episodes,
+      entry.progress,
+      watched,
+      at,
+      entry,
+    );
   if (!season && body.stoppedAt !== undefined)
     await tx.episodeProgress.upsert({
       where: {

@@ -230,6 +230,7 @@ export async function POST(
           entry.progress,
           true,
           revision,
+          entry,
         );
         for (const episode of affected) watched.add(episode.id);
         const total = Math.max(entry.totalEpisodes, entry.show.episodes.length);

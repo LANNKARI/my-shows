@@ -155,10 +155,13 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
   const [editingTime, setEditingTime] = useState<Episode | null>(null);
   const [timeInput, setTimeInput] = useState("");
   const [reload, setReload] = useState(0);
-  const quick = useQuickProgress(userId, (patch) =>
-    setData((previous) =>
-      previous ? withProgress(previous, patch) : previous,
-    ),
+  const quick = useQuickProgress(
+    userId,
+    (patch) =>
+      setData((previous) =>
+        previous ? withProgress(previous, patch) : previous,
+      ),
+    true,
   );
 
   useEffect(() => {
@@ -204,6 +207,28 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
     lock.current = true;
     setBusy(true);
     setSaveError("");
+    const before = data;
+    if (method === "POST" && typeof body.watched === "boolean") {
+      const progress = data.seasons
+        .flatMap((season) => season.episodes)
+        .map((episode) => ({
+          episodeId: episode.id,
+          watched:
+            episode.id === body.episodeId ||
+            episode.season === body.seasonNumber
+              ? (body.watched as boolean)
+              : episode.watched,
+          stoppedAt: episode.stoppedAt,
+        }));
+      setData(
+        withProgress(data, {
+          userShowId: data.userShow.id,
+          status: data.userShow.status,
+          updatedAt: data.userShow.updatedAt,
+          progress,
+        }),
+      );
+    }
     try {
       // This legacy endpoint takes Show.id; quick-progress takes UserShow.id.
       const response = await fetch(`/api/user-shows/${data.show.id}`, {
@@ -239,18 +264,21 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
             : updated;
         });
       } else {
-        const fresh = await fetch(`/api/user-shows/${data.show.id}`, {
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!fresh.ok)
-          throw new Error(
-            "Изменение отправлено, но проверить результат не удалось. Обновите трекер.",
-          );
-        setData(await fresh.json());
+        setData((previous) =>
+          previous
+            ? withProgress(previous, {
+                userShowId: result.item.id,
+                status: result.item.status,
+                updatedAt: result.item.updatedAt,
+                progress: result.item.progress,
+              })
+            : previous,
+        );
       }
       window.dispatchEvent(new Event("user-shows-updated"));
       return true;
     } catch (error) {
+      setData(before);
       setSaveError(
         error instanceof Error && error.name === "Error"
           ? error.message

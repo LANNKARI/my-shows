@@ -286,7 +286,7 @@ test('a correct answer is validated by the server and cannot be replayed', async
   assert.equal((await owner.request('/api/higher-lower', 'POST', { action: 'cashout', roundId: game.id, currentBank: 999999 })).status, 400);
   const answer = await owner.request('/api/higher-lower', 'POST', { action: 'answer', roundId: game.id, choice: 'higher', currentBank: 999999 });
   assert.equal(answer.status, 200); const result = await answer.json();
-  assert.equal(result.isCorrect, true); assert.equal(result.bank, 3); assert.equal(result.rightMovie.rating, 9);
+  assert.equal(result.isCorrect, true); assert.equal(result.bank, 1); assert.equal(result.rightMovie.rating, 9);
   assert.equal((await owner.request('/api/higher-lower', 'POST', { action: 'answer', roundId: game.id, choice: 'higher' })).status, 409);
   assert.equal((await other.request('/api/higher-lower', 'POST', { action: 'cashout', roundId: result.roundId })).status, 409);
 });
@@ -300,14 +300,14 @@ test('parallel cashouts pay the stored bank exactly once and ignore client amoun
   assert.equal(user.popcorn, 3); assert.equal(user.higherLowerCompleted, true);
 });
 
-test('five rounds produce at most 30 and the last answer pays once', async () => {
+test('five rounds produce five popcorn and the last answer pays once', async () => {
   let bank = 0;
   for (let round = 1; round <= 5; round++) bank = answerDuel(state(round, 'question', bank), 'higher').state.bank;
-  assert.equal(bank, 30);
-  const game = state(5, 'question', 17); await seedDuel(game);
+  assert.equal(bank, 5);
+  const game = state(5, 'question', 4); await seedDuel(game);
   const responses = await Promise.all([owner.request('/api/higher-lower', 'POST', { action: 'answer', roundId: game.id, choice: 'higher' }), owner.request('/api/higher-lower', 'POST', { action: 'answer', roundId: game.id, choice: 'higher' })]);
   assert.equal(responses.filter(r => r.status === 200).length, 1);
-  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 30);
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 5);
 });
 
 test('wrong answers consume attempts and prevent claiming a lost bank', async () => {
@@ -316,7 +316,7 @@ test('wrong answers consume attempts and prevent claiming a lost bank', async ()
   assert.equal(response.status, 200); const result = await response.json();
   assert.equal(result.phase, 'failed'); assert.equal(result.bank, 0); assert.equal(result.attemptsLeft, 0);
   assert.equal((await owner.request('/api/higher-lower', 'POST', { action: 'cashout', roundId: result.roundId })).status, 409);
-  assert.equal((await (await owner.request('/api/higher-lower')).json()).limitReached, true);
+  assert.equal((await (await owner.request('/api/higher-lower')).json()).limitReached, false);
   assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 0);
 });
 
@@ -566,6 +566,9 @@ test('profile, achievements and leaderboard agree without counting films or fore
     if (inTop) assert.equal(inTop.current, Math.min(expected, inTop.target));
   }
   assert.equal(top.completedCount, profile.stats.totalCompleted);
+  const addedSeries = await prisma.userShow.count({ where: { userId: alice.id, status: { not: "dropped" }, show: { kind: "series" } } });
+  assert.equal(profile.stats.addedSeriesCount, addedSeries);
+  assert.equal(profile.achievements.find((a: {id: string}) => a.id === "bibliophile").current, Math.min(50, addedSeries));
   assert.equal((await (await owner.request(`/api/user-shows/${f.show.id}`)).json()).stats.watchedEpisodesCount, 1);
 });
 
@@ -1342,19 +1345,19 @@ test("activity awards survive removal and re-addition, respect the daily cap and
   );
 });
 
-test("server quiz rounds hide the answer, settle once and share the game payout cap", async () => {
+test("server quiz rounds hide the answer, settle once and keep paying beyond the former game cap", async () => {
   const { record, client } = await featureAccount();
   await prisma.popcornEntry.create({
     data: {
       userId: record.id,
       eventKey: "prior-game",
       category: "game",
-      amount: 48,
+      amount: 58,
       reason: "fixture",
       day: new Date(new Date().toISOString().slice(0, 10)),
     },
   });
-  await prisma.user.update({ where: { id: record.id }, data: { popcorn: 48 } });
+  await prisma.user.update({ where: { id: record.id }, data: { popcorn: 58 } });
   const round = await prisma.popcornQuizRound.create({
     data: {
       userId: record.id,
@@ -1400,11 +1403,11 @@ test("server quiz rounds hide the answer, settle once and share the game payout 
   const answers = await Promise.all(results.map((r) => r.json()));
   assert.equal(
     answers.reduce((s, v) => s + v.reward, 0),
-    2,
+    1,
   );
   assert.equal(
     (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
-    50,
+    59,
   );
   assert.equal(
     (
@@ -1435,7 +1438,7 @@ test("server quiz rounds hide the answer, settle once and share the game payout 
     })
   ).json();
   assert.equal(practice.isCorrect, true);
-  assert.equal(practice.reward, 0);
+  assert.equal(practice.reward, 1);
   assert.equal(
     await prisma.popcornEntry.count({
       where: { userId: record.id, category: "game-event" },
@@ -1530,7 +1533,7 @@ test("import batches resume by cursor and an old retry never consumes the next b
   );
 });
 
-test("different games competing for the last daily popcorn cannot exceed their shared cap", async () => {
+test("different games pay full rewards concurrently beyond fifty popcorn", async () => {
   const { record, client } = await featureAccount();
   const game = state(2, "answered", 30);
   await prisma.user.update({
@@ -1579,11 +1582,11 @@ test("different games competing for the last daily popcorn cannot exceed their s
   const results = await Promise.all(responses.map((r) => r.json()));
   assert.equal(
     results.reduce((sum, v) => sum + v.reward, 0),
-    2,
+    31,
   );
   assert.equal(
     (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
-    50,
+    79,
   );
 });
 

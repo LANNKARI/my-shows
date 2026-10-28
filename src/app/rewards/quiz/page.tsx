@@ -4,6 +4,8 @@ import Link from "next/link";
 import { privateFetch } from "@/lib/private-fetch";
 type Question = { roundId: string; options: string[]; backdropUrl: string };
 type Answer = {
+  alreadyAnswered?: boolean;
+  originalReward?: number;
   isCorrect: boolean;
   correctTitle: string;
   reward: number;
@@ -77,8 +79,7 @@ export default function QuizPage() {
       </Link>
       <h1 className="text-2xl font-bold">Угадай фильм по кадру</h1>
       <p className="text-sm text-neutral-400">
-        +5 🍿 за верный ответ. Бонусы за 3 и 5 подряд. Общий лимит двух игр — 50
-        🍿 в день, затем можно играть без валюты.
+        +1 🍿 за каждый верный ответ. Дневного лимита наград нет.
       </p>
       {error && (
         <p role="alert" className="text-rose-400">
@@ -99,8 +100,22 @@ export default function QuizPage() {
                 key={title}
                 disabled={busy || !!result}
                 onClick={() => void answer(title)}
-                className={`btn btn-secondary ${result?.correctTitle === title ? "border-emerald-500 text-emerald-400" : selected === title ? "border-rose-500" : ""}`}
+                data-answer={
+                  result
+                    ? result.correctTitle === title
+                      ? "correct"
+                      : selected === title
+                        ? "wrong"
+                        : "neutral"
+                    : "pending"
+                }
+                className="quiz-option"
               >
+                {result?.correctTitle === title
+                  ? "✓ "
+                  : result && selected === title
+                    ? "✕ "
+                    : ""}
                 {title}
               </button>
             ))}
@@ -110,7 +125,11 @@ export default function QuizPage() {
       {result && (
         <p role="status">
           {result.isCorrect ? "Верно!" : "Верный ответ: " + result.correctTitle}{" "}
-          Начислено {result.reward} 🍿.
+          {result.alreadyAnswered
+            ? `Этот ответ уже учтён: ранее начислено ${result.originalReward ?? 0} 🍿. Повторного списания или начисления нет.`
+            : result.isCorrect
+              ? `Начислено +${result.reward} 🍿.`
+              : "За неверный ответ награда не начисляется."}
           {result.streak ? ` Серия: ${result.streak}.` : ""}
         </p>
       )}

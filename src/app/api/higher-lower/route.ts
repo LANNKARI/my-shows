@@ -8,7 +8,6 @@ import {
   answerDuel,
   createDuel,
   publicDuel,
-  MAX_DUEL_ATTEMPTS,
   type DuelState,
 } from "@/lib/higher-lower";
 
@@ -50,18 +49,6 @@ export async function GET() {
     const previous = user.higherLowerState as unknown as DuelState | null;
     if (previous?.day === day && previous.practice && previous.phase !== "paid")
       return NextResponse.json(publicDuel(previous, attempts));
-    if (
-      (sameDay && user.higherLowerCompleted) ||
-      attempts >= MAX_DUEL_ATTEMPTS
-    ) {
-      return NextResponse.json({
-        ...(previous?.day === day ? publicDuel(previous, attempts) : {}),
-        practiceAvailable: true,
-        limitReached: true,
-        attemptsLeft: Math.max(0, MAX_DUEL_ATTEMPTS - attempts),
-        message: "Игра на сегодня завершена. Возвращайтесь завтра!",
-      });
-    }
     if (previous?.day === day)
       return NextResponse.json(publicDuel(previous, attempts));
     const state = await createDuel(day);
@@ -111,7 +98,7 @@ export async function POST(request: NextRequest) {
       body.action === "practice" &&
       (state.phase === "paid" || state.phase === "failed")
     ) {
-      const next = { ...(await createDuel(day)), practice: true };
+      const next = await createDuel(day);
       const changed = await prisma.user.updateMany({
         where: { id: user.id, higherLowerState: { equals: jsonState(state) } },
         data: {
@@ -123,9 +110,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(publicDuel(next, user.higherLowerAttempts));
     }
     if (
-      !state.practice &&
-      (user.higherLowerCompleted ||
-        user.higherLowerAttempts >= MAX_DUEL_ATTEMPTS)
+      state.phase === "paid" ||
+      (state.phase === "failed" && body.action !== "restart")
     )
       return conflict();
     let next: DuelState;

@@ -20,7 +20,7 @@ type Data = {
   activityEarned?: number;
   activityLimit?: number;
   gameEarned?: number;
-  gameLimit?: number;
+  gameLimit?: number | null;
   tasks?: Quest[];
   allTasksClaimed?: boolean;
   nextResetAt?: string;
@@ -174,9 +174,7 @@ function Rewards() {
           </div>
           <div>
             Мини-игры сегодня:{" "}
-            <strong>
-              {data.gameEarned ?? 0} / {data.gameLimit ?? 50} 🍿
-            </strong>
+            <strong>{data.gameEarned ?? 0} 🍿 · без дневного лимита</strong>
           </div>
         </div>
         <p className="text-xs text-neutral-400 mt-4">
@@ -268,14 +266,14 @@ function Rewards() {
         <Link href="/rewards/quiz" className="card p-6">
           <h2 className="font-bold text-lg">🎬 Угадай фильм по кадру</h2>
           <p className="text-sm text-neutral-400 mt-2">
-            +5 🍿 за ответ. Бонусы за 3 и 5 подряд.
+            +1 🍿 за верный ответ. Без дневного лимита наград.
           </p>
         </Link>
         <Link href="/rewards/higher-lower" className="card p-6">
           <h2 className="font-bold text-lg">⚖️ Больше или меньше</h2>
           <p className="text-sm text-neutral-400 mt-2">
-            +3 🍿 в банк за ответ, бонусы на 3-м и 5-м раундах. До 30 🍿 за
-            полную серию.
+            +1 🍿 в банк за верный ответ. Заберите банк или пройдите 5 раундов.
+            Играть и получать награды можно без дневного лимита.
           </p>
         </Link>
       </section>

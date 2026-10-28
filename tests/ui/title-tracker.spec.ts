@@ -69,7 +69,8 @@ async function setup(
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
       path = new URL(request.url()).pathname;
-    if(path.endsWith("/note")) return route.fulfill({json:{text:"",updatedAt:null}});
+    if (path.endsWith("/note"))
+      return route.fulfill({ json: { text: "", updatedAt: null } });
     if (path === "/api/auth/session")
       return route.fulfill({
         json: options.guest
@@ -102,7 +103,7 @@ async function setup(
               english: null,
             },
             description: "История о выборе и поиске своего места.",
-            cast: [{ id: 1, name: "Тестовый актёр" }],
+            cast: [{ id: 1, name: "Тестовый актёр", photoUrl: poster }],
             comments: [],
           },
           userShow: options.guest
@@ -311,6 +312,9 @@ test("film sections preserve discussion and status survives rating, favorite and
   ).toBeVisible();
   await main(page).getByRole("button", { name: "Актёры", exact: true }).click();
   await expect(main(page).getByText("Тестовый актёр")).toBeVisible();
+  await expect(
+    main(page).getByRole("img", { name: "Тестовый актёр", exact: true }),
+  ).toHaveAttribute("src", poster);
   await main(page)
     .getByRole("button", { name: "Обсуждение", exact: true })
     .click();
@@ -628,11 +632,80 @@ test("unmarking a completed episode resumes watching and status selection preser
   );
 });
 
-test('private note saves separately, retains a failed draft and warns before leaving',async({page},testInfo)=>{
- const calls=await setup(page);let text='Старая заметка',fail=true;const saves:string[]=[];
- await page.route('**/api/user-shows/10/note',route=>{if(route.request().method()==='GET')return route.fulfill({json:{text}});saves.push(route.request().postDataJSON().text);if(fail)return route.fulfill({status:503,json:{error:'Unavailable'}});text=route.request().postDataJSON().text;return route.fulfill({json:{text}});});
- await page.goto('/library/10');const note=main(page).getByRole('region',{name:'Личная заметка'});await expect(note.getByRole('textbox')).toHaveValue('Старая заметка');
- await note.getByRole('textbox').fill('Мой новый черновик');await note.getByRole('button',{name:'Сохранить заметку',exact:true}).click();await expect(note.getByRole('alert')).toContainText('черновик');await expect(note.getByRole('textbox')).toHaveValue('Мой новый черновик');expect(calls).toHaveLength(0);
- page.once('dialog',dialog=>dialog.dismiss());await main(page).getByRole('link',{name:/Открыть карточку сериала/}).first().click().catch(()=>{});await expect(page).toHaveURL(/\/library\/10$/);
- fail=false;await note.getByRole('button',{name:'Сохранить заметку',exact:true}).click();await expect(note.getByRole('status')).toHaveText('Заметка сохранена');expect(saves).toHaveLength(2);expect(calls).toHaveLength(0);await note.screenshot({path:testInfo.outputPath('personal-note.png')});
+test("private note saves separately, retains a failed draft and warns before leaving", async ({
+  page,
+}, testInfo) => {
+  const calls = await setup(page);
+  let text = "Старая заметка",
+    fail = true;
+  const saves: string[] = [];
+  await page.route("**/api/user-shows/10/note", (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({ json: { text } });
+    saves.push(route.request().postDataJSON().text);
+    if (fail)
+      return route.fulfill({ status: 503, json: { error: "Unavailable" } });
+    text = route.request().postDataJSON().text;
+    return route.fulfill({ json: { text } });
+  });
+  await page.goto("/library/10");
+  const note = main(page).getByRole("region", { name: "Личная заметка" });
+  await expect(note.getByRole("textbox")).toHaveValue("Старая заметка");
+  await note.getByRole("textbox").fill("Мой новый черновик");
+  await note
+    .getByRole("button", { name: "Сохранить заметку", exact: true })
+    .click();
+  await expect(note.getByRole("alert")).toContainText("черновик");
+  await expect(note.getByRole("textbox")).toHaveValue("Мой новый черновик");
+  expect(calls).toHaveLength(0);
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await main(page)
+    .getByRole("link", { name: /Открыть карточку сериала/ })
+    .first()
+    .click()
+    .catch(() => {});
+  await expect(page).toHaveURL(/\/library\/10$/);
+  fail = false;
+  await note
+    .getByRole("button", { name: "Сохранить заметку", exact: true })
+    .click();
+  await expect(note.getByRole("status")).toHaveText("Заметка сохранена");
+  expect(saves).toHaveLength(2);
+  expect(calls).toHaveLength(0);
+  await note.screenshot({ path: testInfo.outputPath("personal-note.png") });
+});
+
+test("episode marks display before the server responds and failures roll them back", async ({
+  page,
+}) => {
+  await setup(page, { fail: true, delay: true });
+  await page.goto("/library/10");
+  await current(page).getByRole("button", { name: "Отметить серию" }).click();
+  await expect(main(page).getByRole("progressbar")).toHaveAttribute(
+    "aria-valuenow",
+    "25",
+    { timeout: 200 },
+  );
+  await expect(main(page).getByRole("alert")).toBeVisible();
+  await expect(main(page).getByRole("progressbar")).toHaveAttribute(
+    "aria-valuenow",
+    "19",
+  );
+});
+
+test("unchecking an episode displays immediately and rolls back on save failure", async ({
+  page,
+}) => {
+  await setup(page, { fail: true, delay: true });
+  await page.goto("/library/10");
+  const checkbox = main(page).getByRole("checkbox", {
+    name: "Сезон 1, серия 1: просмотрено",
+    exact: true,
+  });
+  await checkbox.click();
+  await expect(checkbox).toHaveAttribute("aria-checked", "false", {
+    timeout: 200,
+  });
+  await expect(main(page).getByRole("alert")).toBeVisible();
+  await expect(checkbox).toHaveAttribute("aria-checked", "true");
 });
