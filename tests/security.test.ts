@@ -105,6 +105,15 @@ before(async () => {
   assert.deepEqual(await prisma.episodeProgress.findUniqueOrThrow({ where: { id: legacyProgress.id } }), legacyProgress);
   const cosmeticRls = await prisma.$queryRaw<{ relrowsecurity: boolean }[]>`SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ${schema} AND c.relname = 'CosmeticPurchase'`;
   assert.equal(cosmeticRls[0].relrowsecurity, true);
+  for (const [table, folder] of [['PersonalNote','20261027010000_personal_notes'],['LibraryImportJob','20261027020000_library_import'],['PopcornEntry','20261027030000_popcorn_economy']] as const) {
+    if(table==='PopcornEntry')await prisma.$executeRawUnsafe('DROP TABLE "PopcornQuizRound"');
+    await prisma.$executeRawUnsafe(`DROP TABLE "${table}"`);
+    const migration=await readFile(`prisma/migrations/${folder}/migration.sql`,'utf8');
+    await prisma.$transaction(async tx=>{for(const statement of migration.replace(/^--.*$/gm,'').split(';').map(v=>v.trim()).filter(v=>v&&!['BEGIN','COMMIT'].includes(v)))await tx.$executeRawUnsafe(statement);});
+    const flags=await prisma.$queryRawUnsafe<{relrowsecurity:boolean}[]>('SELECT relrowsecurity FROM pg_class WHERE oid=$1::regclass',`"${table}"`);assert.equal(flags[0].relrowsecurity,true);
+  }
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:legacyUser.id}})).popcorn,321);
+  assert.equal((await prisma.popcornEntry.findUniqueOrThrow({where:{userId_eventKey:{userId:legacyUser.id,eventKey:'opening'}}})).amount,321);
   await prisma.user.delete({ where: { id: legacyUser.id } }); await prisma.show.delete({ where: { id: legacyShow.id } });
   const passwordHash = await bcrypt.hash(password, 10);
   alice = await prisma.user.create({ data: { username: 'security_alice', email: 'alice@example.test', passwordHash } });
@@ -259,6 +268,7 @@ function state(round = 1, phase: DuelState['phase'] = 'question', bank = 0): Due
   return { id: randomUUID(), day: new Date().toISOString().slice(0, 10), round, phase, bank, usedIds: [1, 2], leftMovie: { id: 1, title: 'Левый', posterUrl: '/left.jpg', rating: 5, year: '2000' }, rightMovie: { id: 2, title: 'Правый', posterUrl: '/right.jpg', rating: 9, year: '2010' } };
 }
 async function seedDuel(game: DuelState, attempts = 0) {
+  await prisma.popcornEntry.deleteMany({where:{userId:alice.id,category:{in:['game','game-event']}}});
   await prisma.user.update({ where: { id: alice.id }, data: { higherLowerState: game, higherLowerAttempts: attempts, higherLowerCompleted: false, lastHigherLowerDate: new Date(), popcorn: 0 } });
 }
 
@@ -276,7 +286,7 @@ test('a correct answer is validated by the server and cannot be replayed', async
   assert.equal((await owner.request('/api/higher-lower', 'POST', { action: 'cashout', roundId: game.id, currentBank: 999999 })).status, 400);
   const answer = await owner.request('/api/higher-lower', 'POST', { action: 'answer', roundId: game.id, choice: 'higher', currentBank: 999999 });
   assert.equal(answer.status, 200); const result = await answer.json();
-  assert.equal(result.isCorrect, true); assert.equal(result.bank, 1); assert.equal(result.rightMovie.rating, 9);
+  assert.equal(result.isCorrect, true); assert.equal(result.bank, 3); assert.equal(result.rightMovie.rating, 9);
   assert.equal((await owner.request('/api/higher-lower', 'POST', { action: 'answer', roundId: game.id, choice: 'higher' })).status, 409);
   assert.equal((await other.request('/api/higher-lower', 'POST', { action: 'cashout', roundId: result.roundId })).status, 409);
 });
@@ -290,14 +300,14 @@ test('parallel cashouts pay the stored bank exactly once and ignore client amoun
   assert.equal(user.popcorn, 3); assert.equal(user.higherLowerCompleted, true);
 });
 
-test('five rounds produce at most 15 and the last answer pays once', async () => {
+test('five rounds produce at most 30 and the last answer pays once', async () => {
   let bank = 0;
   for (let round = 1; round <= 5; round++) bank = answerDuel(state(round, 'question', bank), 'higher').state.bank;
-  assert.equal(bank, 15);
-  const game = state(5, 'question', 10); await seedDuel(game);
+  assert.equal(bank, 30);
+  const game = state(5, 'question', 17); await seedDuel(game);
   const responses = await Promise.all([owner.request('/api/higher-lower', 'POST', { action: 'answer', roundId: game.id, choice: 'higher' }), owner.request('/api/higher-lower', 'POST', { action: 'answer', roundId: game.id, choice: 'higher' })]);
   assert.equal(responses.filter(r => r.status === 200).length, 1);
-  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 15);
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).popcorn, 30);
 });
 
 test('wrong answers consume attempts and prevent claiming a lost bank', async () => {
@@ -726,6 +736,7 @@ test('notification pagination has no duplicates and never returns another owners
 });
 
 async function resetCosmetics(balance = 500) {
+  await prisma.popcornEntry.deleteMany({where:{userId:alice.id}});
   await prisma.cosmeticPurchase.deleteMany({ where: { userId: alice.id } });
   await prisma.user.update({ where: { id: alice.id }, data: { popcorn: balance, avatarFrame: 'frame-standard', profileStyle: 'profile-standard' } });
 }
@@ -935,4 +946,900 @@ test('repeated wrong current passwords are limited without changing the stored p
   const response = await client.request('/api/users/me/password', 'POST', { currentPassword: password, newPassword: 'new-test-password' });
   assert.equal(response.status, 429); assert.ok(Number(response.headers.get('retry-after')) > 0);
   assert.equal(await bcrypt.compare(password, (await prisma.user.findUniqueOrThrow({ where: { id: account.id } })).passwordHash!), true);
+});
+
+async function featureAccount() {
+  const record = await prisma.user.create({
+    data: {
+      username: `features_${randomBytes(5).toString("hex")}`,
+      email: `${randomUUID()}@example.test`,
+      passwordHash: await bcrypt.hash(password, 10),
+    },
+  });
+  const client = new Client();
+  await client.login(record);
+  return { record, client };
+}
+test("personal notes are private, limited and never change progress or viewing order", async () => {
+  const { record, client } = await featureAccount();
+  const f = await fixture("series", 2, record.id);
+  const path = `/api/user-shows/${f.show.id}/note`;
+  const before = await prisma.userShow.findUniqueOrThrow({
+    where: { id: f.entry.id },
+  });
+  assert.equal((await guest.request(path)).status, 401);
+  assert.equal(
+    (await owner.request(path, "PUT", { text: " чужая " })).status,
+    404,
+  );
+  assert.equal(
+    (
+      await client.request(path, "PUT", {
+        text: "секретная заметка",
+        userId: alice.id,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await client.request(path, "PUT", { text: "x".repeat(2001) })).status,
+    400,
+  );
+  assert.equal(
+    (await client.request(path, "PUT", { text: "секретная заметка" })).status,
+    200,
+  );
+  assert.equal(
+    (await (await client.request(path)).json()).text,
+    "секретная заметка",
+  );
+  assert.deepEqual(
+    await prisma.userShow.findUniqueOrThrow({ where: { id: f.entry.id } }),
+    before,
+  );
+  const library = await (
+    await client.request("/api/user-shows?status=library")
+  ).json();
+  assert.equal(library[0].hasNote, true);
+  const publicProfile = await (
+    await guest.request(`/api/users/${record.username}`)
+  ).text();
+  assert.equal(publicProfile.includes("секретная заметка"), false);
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    0,
+  );
+});
+
+test("continue watching is owner-scoped, read-only and excludes completed or dropped titles", async () => {
+  const { record, client } = await featureAccount();
+  const watching = await fixture("series", 3, record.id);
+  const dropped = await fixture("series", 1, record.id);
+  const completed = await fixture("movie", 1, record.id);
+  await prisma.userShow.update({
+    where: { id: dropped.entry.id },
+    data: { status: "dropped" },
+  });
+  await prisma.userShow.update({
+    where: { id: completed.entry.id },
+    data: { status: "completed" },
+  });
+  await prisma.episodeProgress.create({
+    data: {
+      userShowId: watching.entry.id,
+      episodeId: watching.show.episodes[0].id,
+      watched: true,
+      watchedAt: new Date(),
+    },
+  });
+  await prisma.episodeProgress.create({
+    data: {
+      userShowId: watching.entry.id,
+      episodeId: watching.show.episodes[1].id,
+      stoppedAt: "18:42",
+    },
+  });
+  assert.equal((await guest.request("/api/continue-watching")).status, 401);
+  const before = await prisma.episodeProgress.count({
+    where: { userShowId: watching.entry.id },
+  });
+  const response = await client.request("/api/continue-watching");
+  assert.equal(response.status, 200);
+  const rows = await response.json();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].showId, watching.show.id);
+  assert.equal(rows[0].stoppedAt, "18:42");
+  assert.equal(rows[0].next.episode, 2);
+  assert.equal(rows[0].watched, 1);
+  assert.equal(
+    await prisma.episodeProgress.count({
+      where: { userShowId: watching.entry.id },
+    }),
+    before,
+  );
+});
+
+function importBackup(tmdbId: number) {
+  return {
+    meta: { version: 2, generator: "EpisyHub" },
+    user: { popcorn: 999999 },
+    userShows: [
+      {
+        show: {
+          id: 777,
+          name: "Backup fixture",
+          kind: "series",
+          tmdbId,
+          genres: [],
+          runtime: 45,
+        },
+        status: "planned",
+        note: "Приватная импортированная заметка",
+        settings: { totalSeasons: 1, totalEpisodes: 2, isFavorite: true },
+        episodes: [
+          { season: 1, episode: 1 },
+          { season: 1, episode: 2 },
+        ],
+        ratings: [
+          { season: null, episode: null, score: 8 },
+          { season: 1, episode: 1, score: 9 },
+        ],
+        progress: [
+          {
+            season: 1,
+            episode: 1,
+            watched: true,
+            stoppedAt: null,
+            watchedAt: "2024-01-01T10:00:00Z",
+          },
+          {
+            season: 1,
+            episode: 2,
+            watched: false,
+            stoppedAt: "12:34",
+            watchedAt: null,
+          },
+        ],
+      },
+    ],
+    collections: [{ name: "Из бэкапа", items: [{ showId: 777 }] }],
+    comments: [{ text: "Не публиковать" }],
+  };
+}
+test("import preview writes no library data, commits once and preserves existing data on repeats", async () => {
+  const { record, client } = await featureAccount();
+  const raw = importBackup(800000000 + Math.floor(Math.random() * 100000));
+  await seedImportCatalog(raw);
+  const path = "/api/library-import";
+  assert.equal(
+    (await guest.request(path, "POST", { action: "preview", backup: raw }))
+      .status,
+    401,
+  );
+  const preview = await (
+    await client.request(path, "POST", { action: "preview", backup: raw })
+  ).json();
+  assert.equal(preview.rows[0].state, "new");
+  assert.equal(
+    await prisma.userShow.count({ where: { userId: record.id } }),
+    0,
+  );
+  assert.equal(
+    (
+      await owner.request(path, "POST", {
+        action: "commit",
+        jobId: preview.jobId,
+        cursor: 0,
+      })
+    ).status,
+    404,
+  );
+  const responses = await Promise.all([
+    client.request(path, "POST", {
+      action: "commit",
+      jobId: preview.jobId,
+      cursor: 0,
+    }),
+    client.request(path, "POST", {
+      action: "commit",
+      jobId: preview.jobId,
+      cursor: 0,
+    }),
+  ]);
+  assert.ok(responses.every((r) => r.status === 200));
+  const entry = await prisma.userShow.findFirstOrThrow({
+    where: { userId: record.id },
+    include: { progress: true, ratings: true },
+  });
+  assert.equal(entry.status, "planned");
+  assert.equal(entry.progress.length, 2);
+  assert.equal(entry.ratings.length, 2);
+  assert.equal(entry.progress.find((p) => !p.watched)?.stoppedAt, "12:34");
+  assert.equal(
+    (
+      await prisma.personalNote.findUniqueOrThrow({
+        where: { userId_showId: { userId: record.id, showId: entry.showId } },
+      })
+    ).text,
+    raw.userShows[0].note,
+  );
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    0,
+  );
+  assert.equal(await prisma.comment.count({ where: { userId: record.id } }), 0);
+  assert.equal(
+    await prisma.collection.count({ where: { userId: record.id } }),
+    1,
+  );
+  const again = await (
+    await client.request(path, "POST", { action: "preview", backup: raw })
+  ).json();
+  assert.equal(again.completed, true);
+  assert.equal(again.jobId, preview.jobId);
+  assert.equal(((await prisma.libraryImportJob.findUniqueOrThrow({where:{id:preview.jobId}})).payload as {rows:unknown[]}).rows.length,0);
+  const second = structuredClone(raw);
+  second.userShows[0].note = "Не перезаписывать";
+  const next = await (
+    await client.request(path, "POST", { action: "preview", backup: second })
+  ).json();
+  assert.equal(next.rows[0].state, "skip");
+  await client.request(path, "POST", {
+    action: "commit",
+    jobId: next.jobId,
+    cursor: 0,
+  });
+  assert.equal(
+    (
+      await prisma.personalNote.findUniqueOrThrow({
+        where: { userId_showId: { userId: record.id, showId: entry.showId } },
+      })
+    ).text,
+    raw.userShows[0].note,
+  );
+  const exported = await (await client.request("/api/export")).json();
+  assert.equal(exported.meta.version, 2);
+  assert.equal(exported.userShows[0].status, "planned");
+  assert.equal(exported.userShows[0].note, raw.userShows[0].note);
+  assert.equal(
+    exported.userShows[0].ratings.find(
+      (r: { episode: number | null }) => r.episode === 1,
+    ).score,
+    9,
+  );
+  // Re-marking imported watches cannot award retrospective currency.
+  const episode = entry.progress.find((p) => p.watched)!;
+  await client.request(`/api/user-shows/${entry.showId}`, "POST", {
+    episodeId: episode.episodeId,
+    watched: false,
+  });
+  await client.request(`/api/user-shows/${entry.showId}`, "POST", {
+    episodeId: episode.episodeId,
+    watched: true,
+  });
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    0,
+  );
+});
+
+test("old backups require an explicit missing status and invalid import files are rejected", async () => {
+  const { client } = await featureAccount();
+  const raw = importBackup(801000000 + Math.floor(Math.random() * 100000));
+  const legacy = {
+    ...raw,
+    meta: { version: 1, generator: "EpisyHub" },
+    userShows: raw.userShows.map((t) => ({
+      ...t,
+      ratings: [{ episodeId: null, score: 8 }],
+      settings: { ...t.settings, isCompleted: false },
+    })),
+  };
+  await seedImportCatalog(raw);
+  const missing = await (
+    await client.request("/api/library-import", "POST", {
+      action: "preview",
+      backup: legacy,
+    })
+  ).json();
+  assert.equal(missing.rows[0].state, "attention");
+  const explicit = await (
+    await client.request("/api/library-import", "POST", {
+      action: "preview",
+      backup: legacy,
+      legacyStatus: "planned",
+    })
+  ).json();
+  assert.equal(explicit.rows[0].state, "new");
+  assert.ok(explicit.warnings.length > 0);
+  const invalid = structuredClone(raw);
+  invalid.userShows[0].ratings[0].score = 999;
+  assert.equal(
+    (
+      await client.request("/api/library-import", "POST", {
+        action: "preview",
+        backup: invalid,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await client.request("/api/library-import", "POST", {
+        action: "preview",
+        backup: { meta: { version: 200 } },
+      })
+    ).status,
+    400,
+  );
+});
+
+test("activity awards survive removal and re-addition, respect the daily cap and fund tasks once", async () => {
+  const { record, client } = await featureAccount();
+  const f = await fixture("series", 25, record.id);
+  assert.equal(
+    (
+      await client.request(`/api/user-shows/${f.show.id}`, "POST", {
+        seasonNumber: 1,
+        markSeasonWatched: true,
+      })
+    ).status,
+    200,
+  );
+  let wallet = await (await client.request("/api/popcorn")).json();
+  assert.equal(wallet.popcorn, 60);
+  assert.equal(wallet.activityEarned, 60);
+  assert.equal(
+    wallet.tasks.find((t: { id: string }) => t.id === "episodes").count,
+    2,
+  );
+  const outcomes = await Promise.all(
+    Array.from({ length: 3 }, () =>
+      client.request("/api/popcorn", "POST", {
+        action: "claim-task",
+        taskId: "episodes",
+      }),
+    ),
+  );
+  assert.ok(outcomes.every((r) => r.status === 200));
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    70,
+  );
+  await prisma.userShow.delete({ where: { id: f.entry.id } });
+  await client.request("/api/user-shows", "POST", {
+    showId: f.show.id,
+    status: "watching",
+  });
+  await client.request(`/api/user-shows/${f.show.id}`, "POST", {
+    seasonNumber: 1,
+    markSeasonWatched: true,
+  });
+  wallet = await (await client.request("/api/popcorn")).json();
+  assert.equal(wallet.popcorn, 70);
+  assert.equal(
+    await prisma.popcornEntry.count({
+      where: { userId: record.id, category: "activity" },
+    }),
+    25,
+  );
+  assert.equal(
+    (
+      await client.request("/api/popcorn", "POST", {
+        action: "claim-task",
+        taskId: "ratings",
+      })
+    ).status,
+    409,
+  );
+  const history = await (await client.request("/api/popcorn-history")).json();
+  assert.ok(history.items.length > 0);
+  assert.ok(
+    history.items.some(
+      (v: { reason: string; amount: number }) =>
+        v.reason === "Просмотреть 2 серии" && v.amount === 10,
+    ),
+  );
+});
+
+test("server quiz rounds hide the answer, settle once and share the game payout cap", async () => {
+  const { record, client } = await featureAccount();
+  await prisma.popcornEntry.create({
+    data: {
+      userId: record.id,
+      eventKey: "prior-game",
+      category: "game",
+      amount: 48,
+      reason: "fixture",
+      day: new Date(new Date().toISOString().slice(0, 10)),
+    },
+  });
+  await prisma.user.update({ where: { id: record.id }, data: { popcorn: 48 } });
+  const round = await prisma.popcornQuizRound.create({
+    data: {
+      userId: record.id,
+      data: {
+        targetId: 99,
+        correctTitle: "Верный фильм",
+        options: [
+          "Верный фильм",
+          "Другой фильм",
+          "Третий фильм",
+          "Четвёртый фильм",
+        ],
+        backdropUrl: "https://image.tmdb.org/t/p/original/test.jpg",
+      },
+    },
+  });
+  const question = await (
+    await client.request("/api/popcorn?action=get-quiz")
+  ).json();
+  assert.equal(question.roundId, round.id);
+  assert.equal("targetId" in question, false);
+  assert.equal("correctTitle" in question, false);
+  assert.equal(
+    (
+      await owner.request("/api/popcorn", "POST", {
+        action: "submit-quiz",
+        roundId: round.id,
+        selectedTitle: "Верный фильм",
+      })
+    ).status,
+    404,
+  );
+  const results = await Promise.all(
+    Array.from({ length: 3 }, () =>
+      client.request("/api/popcorn", "POST", {
+        action: "submit-quiz",
+        roundId: round.id,
+        selectedTitle: "Верный фильм",
+      }),
+    ),
+  );
+  assert.ok(results.every((r) => r.status === 200));
+  const answers = await Promise.all(results.map((r) => r.json()));
+  assert.equal(
+    answers.reduce((s, v) => s + v.reward, 0),
+    2,
+  );
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    50,
+  );
+  assert.equal(
+    (
+      await client.request("/api/popcorn", "POST", {
+        action: "submit-quiz",
+        targetId: 99,
+        selectedTitle: "Верный фильм",
+      })
+    ).status,
+    400,
+  );
+  const next = await prisma.popcornQuizRound.create({
+    data: {
+      userId: record.id,
+      data: {
+        targetId: 100,
+        correctTitle: "Верный фильм",
+        options: ["Верный фильм", "Другой фильм"],
+        backdropUrl: "/test.jpg",
+      },
+    },
+  });
+  const practice = await (
+    await client.request("/api/popcorn", "POST", {
+      action: "submit-quiz",
+      roundId: next.id,
+      selectedTitle: "Верный фильм",
+    })
+  ).json();
+  assert.equal(practice.isCorrect, true);
+  assert.equal(practice.reward, 0);
+  assert.equal(
+    await prisma.popcornEntry.count({
+      where: { userId: record.id, category: "game-event" },
+    }),
+    2,
+  );
+});
+
+async function fixture(kind: string, episodes: number, userId: string) {
+  const show = await prisma.show.create({
+    data: {
+      name: "Feature fixture " + randomBytes(3).toString("hex"),
+      kind,
+      countries: [],
+      studios: [],
+      genres: [],
+      creators: [],
+      episodes: {
+        create: Array.from({ length: episodes }, (_, i) => ({
+          season: 1,
+          episode: i + 1,
+        })),
+      },
+    },
+    include: { episodes: { orderBy: { episode: "asc" } } },
+  });
+  const entry = await prisma.userShow.create({
+    data: {
+      userId,
+      showId: show.id,
+      kind,
+      status: "watching",
+      totalEpisodes: episodes,
+    },
+  });
+  return { show, entry };
+}
+
+test("import batches resume by cursor and an old retry never consumes the next batch", async () => {
+  const { record, client } = await featureAccount();
+  const raw = importBackup(820000000 + Math.floor(Math.random() * 100000));
+  raw.userShows = Array.from({ length: 6 }, (_, i) => ({
+    ...structuredClone(raw.userShows[0]),
+    show: {
+      ...raw.userShows[0].show,
+      id: 100 + i,
+      tmdbId: raw.userShows[0].show.tmdbId + i,
+      name: `Batch ${i}`,
+    },
+  }));
+  raw.collections = [];
+  await seedImportCatalog(raw);
+  const preview = await (
+    await client.request("/api/library-import", "POST", {
+      action: "preview",
+      backup: raw,
+    })
+  ).json();
+  const first = await (
+    await client.request("/api/library-import", "POST", {
+      action: "commit",
+      jobId: preview.jobId,
+      cursor: 0,
+    })
+  ).json();
+  assert.equal(first.cursor, 5);
+  assert.equal(first.completed, false);
+  const repeated = await (
+    await client.request("/api/library-import", "POST", {
+      action: "commit",
+      jobId: preview.jobId,
+      cursor: 0,
+    })
+  ).json();
+  assert.equal(repeated.cursor, 5);
+  assert.equal(
+    await prisma.userShow.count({ where: { userId: record.id } }),
+    5,
+  );
+  const final = await (
+    await client.request("/api/library-import", "POST", {
+      action: "commit",
+      jobId: preview.jobId,
+      cursor: 5,
+    })
+  ).json();
+  assert.equal(final.completed, true);
+  assert.equal(final.result.added, 6);
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    0,
+  );
+});
+
+test("different games competing for the last daily popcorn cannot exceed their shared cap", async () => {
+  const { record, client } = await featureAccount();
+  const game = state(2, "answered", 30);
+  await prisma.user.update({
+    where: { id: record.id },
+    data: {
+      popcorn: 48,
+      higherLowerState: game,
+      higherLowerAttempts: 0,
+      higherLowerCompleted: false,
+      lastHigherLowerDate: new Date(),
+    },
+  });
+  await prisma.popcornEntry.create({
+    data: {
+      userId: record.id,
+      eventKey: "earlier-game",
+      category: "game",
+      amount: 48,
+      reason: "fixture",
+      day: new Date(new Date().toISOString().slice(0, 10)),
+    },
+  });
+  const round = await prisma.popcornQuizRound.create({
+    data: {
+      userId: record.id,
+      data: {
+        targetId: 99,
+        correctTitle: "Правильный",
+        options: ["Правильный", "Другой"],
+        backdropUrl: "/test.jpg",
+      },
+    },
+  });
+  const responses = await Promise.all([
+    client.request("/api/popcorn", "POST", {
+      action: "submit-quiz",
+      roundId: round.id,
+      selectedTitle: "Правильный",
+    }),
+    client.request("/api/higher-lower", "POST", {
+      action: "cashout",
+      roundId: game.id,
+    }),
+  ]);
+  assert.ok(responses.every((r) => r.status === 200));
+  const results = await Promise.all(responses.map((r) => r.json()));
+  assert.equal(
+    results.reduce((sum, v) => sum + v.reward, 0),
+    2,
+  );
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    50,
+  );
+});
+
+test("new registrations receive a single welcome award and do not import another accounts balance", async () => {
+  const username = "welcome_" + randomBytes(4).toString("hex");
+  const body = { username, email: username + "@example.test", password };
+  const response = await guest.request("/api/register", "POST", body);
+  assert.equal(response.status, 201);
+  const user = await response.json();
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).popcorn,
+    100,
+  );
+  assert.equal(
+    await prisma.popcornEntry.count({
+      where: { userId: user.id, eventKey: "welcome" },
+    }),
+    1,
+  );
+  assert.equal(
+    (await guest.request("/api/register", "POST", body)).status,
+    409,
+  );
+});
+
+test("practice games cannot create a payout even from a forged winning bank", async () => {
+  const { record, client } = await featureAccount();
+  const game = { ...state(5, "question", 9999), practice: true };
+  await prisma.user.update({
+    where: { id: record.id },
+    data: {
+      higherLowerState: game,
+      higherLowerAttempts: 5,
+      higherLowerCompleted: false,
+      lastHigherLowerDate: new Date(),
+    },
+  });
+  const response = await client.request("/api/higher-lower", "POST", {
+    action: "answer",
+    roundId: game.id,
+    choice: "higher",
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.reward, 0);
+  assert.equal(result.practice, true);
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    0,
+  );
+  const reloaded = await (await client.request("/api/higher-lower")).json();
+  assert.equal(reloaded.reward, 0);
+  assert.equal(reloaded.practiceAvailable, true);
+});
+
+test("wallet cutover reconciliation records old deployment changes without creating or losing currency", async () => {
+  const { record, client } = await featureAccount();
+  await prisma.popcornEntry.create({
+    data: {
+      userId: record.id,
+      eventKey: "opening",
+      category: "opening",
+      amount: 40,
+      reason: "fixture",
+      day: new Date(new Date().toISOString().slice(0, 10)),
+    },
+  });
+  await prisma.user.update({ where: { id: record.id }, data: { popcorn: 75 } });
+  const response = await client.request("/api/popcorn", "POST", {
+    action: "claim-daily",
+  });
+  assert.equal(response.status, 200);
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    85,
+  );
+  assert.equal(
+    (
+      await prisma.popcornEntry.aggregate({
+        where: { userId: record.id },
+        _sum: { amount: true },
+      })
+    )._sum.amount,
+    85,
+  );
+  assert.equal(
+    await prisma.popcornEntry.count({
+      where: { userId: record.id, category: "adjustment" },
+    }),
+    1,
+  );
+});
+
+test("parallel public reviews pay once and deletion never resets the award", async () => {
+  const { record, client } = await featureAccount();
+  const f = await fixture("movie", 1, record.id);
+  const path = `/api/shows/${f.show.id}/comments`;
+  const responses = await Promise.all([
+    client.request(path, "POST", { text: "Отзыв ".repeat(30) }),
+    client.request(path, "POST", { text: "Другой отзыв ".repeat(20) }),
+  ]);
+  assert.ok(responses.every((r) => r.status === 201));
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    10,
+  );
+  await prisma.comment.deleteMany({ where: { userId: record.id } });
+  assert.equal(
+    (await client.request(path, "POST", { text: "Новый отзыв ".repeat(20) }))
+      .status,
+    201,
+  );
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    10,
+  );
+  assert.equal(
+    await prisma.popcornEntry.count({
+      where: { userId: record.id, eventKey: { startsWith: "review:" } },
+    }),
+    1,
+  );
+});
+
+async function seedImportCatalog(raw: ReturnType<typeof importBackup>) {
+  for (const title of raw.userShows)
+    await prisma.show.create({
+      data: {
+        name: title.show.name,
+        kind: title.show.kind,
+        tmdbId: title.show.tmdbId,
+        countries: [],
+        studios: [],
+        genres: [],
+        creators: [],
+        episodes: {
+          create: title.episodes.map((e) => ({
+            season: e.season,
+            episode: e.episode,
+          })),
+        },
+      },
+    });
+}
+
+test("new shared catalog metadata and episode coordinates must be verified against TMDB", async () => {
+  const { verifiedImportCatalog } = await import("../src/lib/import-catalog");
+  const old = process.env.TMDB_API_KEY;
+  process.env.TMDB_API_KEY = "fixture-only";
+  const input = {
+    kind: "series" as const,
+    tmdbId: 42,
+    episodes: [
+      { season: 1, episode: 1, name: "Поддельное имя", airDate: null },
+    ],
+  };
+  const source: typeof fetch = async () =>
+    Response.json({
+      id: 42,
+      name: "Подтверждённое название",
+      original_name: "Canonical title",
+      poster_path: "/poster.jpg",
+      seasons: [{ season_number: 1, episode_count: 2 }],
+      genres: [{ name: "Драма" }],
+      first_air_date: "2020-01-01",
+      episode_run_time: [45],
+    });
+  try {
+    const actual = await verifiedImportCatalog(input, source);
+    assert.equal(actual.name, "Подтверждённое название");
+    assert.equal(actual.runtime, 45);
+    await assert.rejects(
+      () =>
+        verifiedImportCatalog(
+          { ...input, episodes: [{ ...input.episodes[0], episode: 99 }] },
+          source,
+        ),
+      /серии/,
+    );
+  } finally {
+    if (old === undefined) delete process.env.TMDB_API_KEY;
+    else process.env.TMDB_API_KEY = old;
+  }
+});
+
+test("an unavailable catalog source never lets a backup publish an unverified TMDB card", async () => {
+  const { record, client } = await featureAccount();
+  const raw = importBackup(850000000 + Math.floor(Math.random() * 100000));
+  const preview = await (
+    await client.request("/api/library-import", "POST", {
+      action: "preview",
+      backup: raw,
+    })
+  ).json();
+  assert.equal(
+    (
+      await client.request("/api/library-import", "POST", {
+        action: "commit",
+        jobId: preview.jobId,
+        cursor: 0,
+      })
+    ).status,
+    503,
+  );
+  assert.equal(
+    await prisma.userShow.count({ where: { userId: record.id } }),
+    0,
+  );
+  assert.equal(
+    await prisma.show.count({
+      where: { tmdbId: raw.userShows[0].show.tmdbId },
+    }),
+    0,
+  );
+});
+
+test("import cannot append unverified episodes to somebody elses custom catalog card", async () => {
+  const { record, client } = await featureAccount();
+  const existing = await fixture("series", 1, alice.id);
+  const raw = importBackup(860000000);
+  const backup = {
+    ...raw,
+    userShows: raw.userShows.map((t) => ({
+      ...t,
+      show: { ...t.show, name: existing.show.name, tmdbId: null },
+    })),
+  };
+  const preview = await (
+    await client.request("/api/library-import", "POST", {
+      action: "preview",
+      backup,
+      mapping: { 0: existing.show.id },
+    })
+  ).json();
+  const result = await (
+    await client.request("/api/library-import", "POST", {
+      action: "commit",
+      jobId: preview.jobId,
+      cursor: 0,
+    })
+  ).json();
+  assert.equal(result.result.skipped, 1);
+  assert.equal(result.result.added, 0);
+  assert.equal(
+    await prisma.episode.count({ where: { showId: existing.show.id } }),
+    1,
+  );
+  assert.equal(
+    await prisma.userShow.count({ where: { userId: record.id } }),
+    0,
+  );
+});
+
+test('a completed backup can start a fresh explicitly confirmed recovery without replaying an old job',async()=>{
+ const {record,client}=await featureAccount();const raw=importBackup(870000000+Math.floor(Math.random()*100000));await seedImportCatalog(raw);
+ const first=await (await client.request('/api/library-import','POST',{action:'preview',backup:raw})).json();await client.request('/api/library-import','POST',{action:'commit',jobId:first.jobId,cursor:0});await prisma.userShow.deleteMany({where:{userId:record.id}});
+ const second=await (await client.request('/api/library-import','POST',{action:'preview',backup:raw,newRun:true})).json();assert.notEqual(second.jobId,first.jobId);assert.equal(await prisma.userShow.count({where:{userId:record.id}}),0);assert.equal((await client.request('/api/library-import','POST',{action:'commit',jobId:first.jobId,cursor:0})).status,404);
+ await client.request('/api/library-import','POST',{action:'commit',jobId:second.jobId,cursor:0});assert.equal(await prisma.userShow.count({where:{userId:record.id}}),1);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).popcorn,0);
 });

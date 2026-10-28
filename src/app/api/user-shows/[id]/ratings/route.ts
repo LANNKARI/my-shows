@@ -1,3 +1,4 @@
+import { saveLibrary, mutationErrorResponse } from "@/lib/library-mutations";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
@@ -5,7 +6,7 @@ import { getCurrentUser } from "@/lib/current-user";
 // GET — оценки этого UserShow
 export async function GET(
   _: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -16,7 +17,8 @@ export async function GET(
   const userShow = await prisma.userShow.findFirst({
     where: { id: userShowId, userId: me.id },
   });
-  if (!userShow) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!userShow)
+    return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const ratings = await prisma.rating.findMany({
     where: { userShowId },
@@ -29,7 +31,7 @@ export async function GET(
 // POST — поставить/обновить оценку
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -40,23 +42,32 @@ export async function POST(
   const userShow = await prisma.userShow.findFirst({
     where: { id: userShowId, userId: me.id },
   });
-  if (!userShow) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!userShow)
+    return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const body = await req.json();
   const { score, episodeId } = body;
 
   const numScore = Number(score);
-  if (typeof score !== 'number' || !Number.isInteger(numScore) || numScore < 1 || numScore > 10) {
+  if (
+    typeof score !== "number" ||
+    !Number.isInteger(numScore) ||
+    numScore < 1 ||
+    numScore > 10
+  ) {
     return NextResponse.json(
       { error: "Оценка должна быть от 1 до 10" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
   // Если оценка за серию — обновляем существующую или создаём
   if (episodeId) {
-    const episode = await prisma.episode.findFirst({ where: { id: Number(episodeId), showId: userShow.showId } });
-    if (!episode) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    const episode = await prisma.episode.findFirst({
+      where: { id: Number(episodeId), showId: userShow.showId },
+    });
+    if (!episode)
+      return NextResponse.json({ error: "not found" }, { status: 404 });
     const existing = await prisma.rating.findFirst({
       where: {
         userShowId,
@@ -82,29 +93,24 @@ export async function POST(
     return NextResponse.json(rating, { status: 201 });
   }
 
-  // Оценка за весь тайтл — ищем оценку без episodeId
-  const existingWhole = await prisma.rating.findFirst({
-    where: { userShowId, episodeId: null },
-  });
-
-  if (existingWhole) {
-    const updated = await prisma.rating.update({
-      where: { id: existingWhole.id },
-      data: { score: numScore },
+  try {
+    const existing = await prisma.rating.findFirst({
+      where: { userShowId, episodeId: null },
     });
-    return NextResponse.json(updated);
+    await saveLibrary(me.id, userShow.showId, { score: numScore });
+    return NextResponse.json(
+      await prisma.rating.findFirst({ where: { userShowId, episodeId: null } }),
+      { status: existing ? 200 : 201 },
+    );
+  } catch (error) {
+    return mutationErrorResponse(error);
   }
-
-  const rating = await prisma.rating.create({
-    data: { userShowId, episodeId: null, score: numScore },
-  });
-  return NextResponse.json(rating, { status: 201 });
 }
 
 // DELETE — удалить оценку (все или конкретную)
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -115,7 +121,8 @@ export async function DELETE(
   const userShow = await prisma.userShow.findFirst({
     where: { id: userShowId, userId: me.id },
   });
-  if (!userShow) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!userShow)
+    return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const ratingId = new URL(req.url).searchParams.get("ratingId");
 

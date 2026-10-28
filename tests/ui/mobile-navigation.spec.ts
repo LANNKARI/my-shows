@@ -4,6 +4,7 @@ async function mockApi(page: Page, signedIn = false) {
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/auth/session') return route.fulfill({ json: signedIn ? { user: { id: 'ui-user', username: 'ui_user', name: 'Тестовый профиль', email: 'ui@example.test' }, expires: '2099-01-01T00:00:00Z' } : null });
+    if(path==='/api/continue-watching')return route.fulfill({json:[]});
     if (path === '/api/home') return route.fulfill({ json: { heroSlides: [], recentOnline: [], universes: [], directors: [] } });
     if (path === '/api/users/counts') return route.fulfill({ json: { watchingCount: 2, plannedCount: 3 } });
     if (path === '/api/user-shows' || path === '/api/collections') return route.fulfill({ json: [] });

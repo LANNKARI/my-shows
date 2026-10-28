@@ -12,6 +12,7 @@ export const libraryStatuses = [
 export type LibraryStatus = (typeof libraryStatuses)[number]["value"];
 export type LibraryEpisode = { id: number; season: number; episode: number };
 export type LibraryItem = {
+  hasNote?: boolean;
   id: number;
   userShowId: number;
   showId: number;

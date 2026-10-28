@@ -1,3 +1,4 @@
+import { lockWallet, economyDay } from "./popcorn-economy";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
@@ -120,6 +121,7 @@ export async function mutateCosmetics(userId: string, input: unknown) {
             409,
             "Цена изменилась. Обновите магазин и подтвердите новую стоимость.",
           );
+        await lockWallet(tx, userId);
         const charged = await tx.user.updateMany({
           where: { id: userId, popcorn: { gte: item.price } },
           data: { popcorn: { decrement: item.price } },
@@ -129,6 +131,16 @@ export async function mutateCosmetics(userId: string, input: unknown) {
             409,
             "Не хватает попкорна. Баланс мог измениться в другой вкладке.",
           );
+        await tx.popcornEntry.create({
+          data: {
+            userId,
+            eventKey: `purchase:${item.id}`,
+            category: "purchase",
+            amount: -item.price,
+            reason: `Покупка: ${item.name}`,
+            day: economyDay(),
+          },
+        });
         const created = await tx.cosmeticPurchase.create({
           data: { userId, itemId: item.id, pricePaid: item.price },
         });

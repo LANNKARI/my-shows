@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { credit } from "@/lib/popcorn-economy";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const email = String(body.email || "").toLowerCase().trim();
-    const username = String(body.username || "").toLowerCase().trim();
+    const email = String(body.email || "")
+      .toLowerCase()
+      .trim();
+    const username = String(body.username || "")
+      .toLowerCase()
+      .trim();
     const password = String(body.password || "");
     const name = body.name ? String(body.name).trim() : null;
 
@@ -14,7 +19,7 @@ export async function POST(req: NextRequest) {
     if (!email || !username || !password) {
       return NextResponse.json(
         { error: "Заполните все обязательные поля" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -23,13 +28,13 @@ export async function POST(req: NextRequest) {
     if (!/^[a-z0-9_]{3,20}$/.test(username)) {
       return NextResponse.json(
         { error: "Username: 3–20 символов, только a-z, 0-9, _" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     if (password.length < 6) {
       return NextResponse.json(
         { error: "Пароль — минимум 6 символов" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -45,29 +50,40 @@ export async function POST(req: NextRequest) {
               ? "Этот email уже зарегистрирован"
               : "Этот username занят",
         },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
     // Хешируем пароль
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        username,
-        passwordHash,
-        name,
-      },
-      select: { id: true, email: true, username: true },
-    });
+    const user = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          username,
+          passwordHash,
+          name,
+        },
+        select: { id: true, email: true, username: true },
+      });
 
+      await credit(
+        tx,
+        user.id,
+        "welcome",
+        "welcome",
+        100,
+        "Подарок новому пользователю",
+      );
+      return user;
+    });
     return NextResponse.json(user, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Register error:", err);
     return NextResponse.json(
-      { error: err.message || "Ошибка сервера" },
-      { status: 500 }
+      { error: "Не удалось создать аккаунт. Попробуйте позже." },
+      { status: 500 },
     );
   }
 }

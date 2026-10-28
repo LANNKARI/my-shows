@@ -69,6 +69,7 @@ async function setup(
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
       path = new URL(request.url()).pathname;
+    if(path.endsWith("/note")) return route.fulfill({json:{text:"",updatedAt:null}});
     if (path === "/api/auth/session")
       return route.fulfill({
         json: options.guest
@@ -625,4 +626,13 @@ test("unmarking a completed episode resumes watching and status selection preser
     "aria-valuenow",
     "94",
   );
+});
+
+test('private note saves separately, retains a failed draft and warns before leaving',async({page},testInfo)=>{
+ const calls=await setup(page);let text='Старая заметка',fail=true;const saves:string[]=[];
+ await page.route('**/api/user-shows/10/note',route=>{if(route.request().method()==='GET')return route.fulfill({json:{text}});saves.push(route.request().postDataJSON().text);if(fail)return route.fulfill({status:503,json:{error:'Unavailable'}});text=route.request().postDataJSON().text;return route.fulfill({json:{text}});});
+ await page.goto('/library/10');const note=main(page).getByRole('region',{name:'Личная заметка'});await expect(note.getByRole('textbox')).toHaveValue('Старая заметка');
+ await note.getByRole('textbox').fill('Мой новый черновик');await note.getByRole('button',{name:'Сохранить заметку',exact:true}).click();await expect(note.getByRole('alert')).toContainText('черновик');await expect(note.getByRole('textbox')).toHaveValue('Мой новый черновик');expect(calls).toHaveLength(0);
+ page.once('dialog',dialog=>dialog.dismiss());await main(page).getByRole('link',{name:/Открыть карточку сериала/}).first().click().catch(()=>{});await expect(page).toHaveURL(/\/library\/10$/);
+ fail=false;await note.getByRole('button',{name:'Сохранить заметку',exact:true}).click();await expect(note.getByRole('status')).toHaveText('Заметка сохранена');expect(saves).toHaveLength(2);expect(calls).toHaveLength(0);await note.screenshot({path:testInfo.outputPath('personal-note.png')});
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
+import PersonalNoteEditor from "@/components/PersonalNoteEditor";
 import ReleaseFollowButton from "@/components/ReleaseFollowButton";
 import "@/components/releases.css";
 import Link from "next/link";
@@ -542,6 +543,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
               </p>
             </form>
           )}
+          <PersonalNoteEditor showId={show.id} />
           <div className="lg:hidden">
             <PersonalNotes
               value={userShow}
