@@ -14,6 +14,10 @@ datasource db {
 // ==================== ПОЛЬЗОВАТЕЛИ ====================
 
 model User {
+  personalNotes PersonalNote[]
+  importJobs LibraryImportJob[]
+  popcornEntries PopcornEntry[]
+  quizRounds PopcornQuizRound[]
   id            String    @id @default(cuid())
   email         String    @unique
   username      String    @unique
@@ -228,6 +232,7 @@ model Comment {
 // ==================== ОБЩИЙ КАТАЛОГ ====================
 
 model Show {
+  personalNotes PersonalNote[]
   id            Int      @id @default(autoincrement())
   name          String
   originalName  String?
@@ -345,4 +350,54 @@ model CosmeticPurchase {
   purchasedAt DateTime @default(now())
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([userId, itemId])
+}
+
+
+model PersonalNote {
+  id Int @id @default(autoincrement())
+  userId String
+  showId Int
+  text String
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show Show @relation(fields: [showId], references: [id], onDelete: Cascade)
+  @@unique([userId, showId])
+}
+model LibraryImportJob {
+  id String @id @default(cuid())
+  userId String
+  digest String
+  payload Json
+  cursor Int @default(0)
+  result Json
+  completed Boolean @default(false)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, digest])
+}
+model PopcornEntry {
+  id String @id @default(cuid())
+  userId String
+  eventKey String
+  category String
+  amount Int
+  reason String
+  day DateTime @db.Date
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, eventKey])
+  @@index([userId, day, category])
+}
+model PopcornQuizRound {
+  id String @id @default(cuid())
+  userId String
+  data Json
+  answered Boolean @default(false)
+  correct Boolean @default(false)
+  streak Int @default(0)
+  reward Int @default(0)
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, createdAt])
 }

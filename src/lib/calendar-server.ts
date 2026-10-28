@@ -45,12 +45,15 @@ export function calendarFailure(error: unknown) {
   if (error instanceof CalendarError)
     return NextResponse.json(
       { error: error.message },
-      { status: error.status },
+      {
+        status: error.status,
+        headers: { "Cache-Control": "private, no-store" },
+      },
     );
   console.error("Calendar request failed", error);
   return NextResponse.json(
     { error: "Сервис временно недоступен. Попробуйте ещё раз." },
-    { status: 503 },
+    { status: 503, headers: { "Cache-Control": "private, no-store" } },
   );
 }
 export const privateJson = (data: unknown) =>
