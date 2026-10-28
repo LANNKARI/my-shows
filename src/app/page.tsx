@@ -1,7 +1,8 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import Link from "next/link";
+import ContinueWatching from "@/components/ContinueWatching";
 
 interface MediaItem {
   id: number;
@@ -45,18 +46,18 @@ export default function HomePage() {
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const autoSlideTimerRef = useRef<any>(null);
+  const autoSlideTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const fetchHome = async () => {
       try {
-        const res = await fetch('/api/home');
+        const res = await fetch("/api/home");
         if (res.ok) {
           const json: HomeData = await res.json();
           setData(json);
         }
       } catch (err) {
-        console.error('Ошибка загрузки главной страницы:', err);
+        console.error("Ошибка загрузки главной страницы:", err);
       } finally {
         setLoading(false);
       }
@@ -92,6 +93,7 @@ export default function HomePage() {
   if (loading) {
     return (
       <div className="space-y-10 animate-pulse pb-16">
+        <ContinueWatching />
         <div className="w-full h-80 sm:h-[440px] bg-neutral-900/60 rounded-3xl border border-neutral-800" />
         <div className="h-64 bg-neutral-900/40 rounded-3xl" />
         <div className="h-64 bg-neutral-900/40 rounded-3xl" />
@@ -106,6 +108,7 @@ export default function HomePage() {
 
   return (
     <div className="space-y-14 pb-16">
+      <ContinueWatching />
       {/* 1. HERO-БАННЕР (8.0+, БЕЗ АНИМЕ И КОРЕИ) */}
       {currentHero && (
         <div
@@ -117,7 +120,7 @@ export default function HomePage() {
             <div
               key={`${slide.kind}-${slide.id}`}
               className={`absolute inset-0 pointer-events-none transition-opacity duration-700 ease-in-out ${
-                idx === currentSlide ? 'opacity-100 z-0' : 'opacity-0 z-[-1]'
+                idx === currentSlide ? "opacity-100 z-0" : "opacity-0 z-[-1]"
               }`}
             >
               {slide.backdropUrl ? (
@@ -169,12 +172,12 @@ export default function HomePage() {
 
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                  currentHero.kind === 'series'
-                    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  currentHero.kind === "series"
+                    ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
                 }`}
               >
-                {currentHero.kind === 'series' ? 'Сериал' : 'Фильм'}
+                {currentHero.kind === "series" ? "Сериал" : "Фильм"}
               </span>
 
               {currentHero.rating && (
@@ -202,7 +205,7 @@ export default function HomePage() {
 
             <div className="pt-2 flex items-center gap-3">
               <Link
-                href={`/show/${currentHero.id}?type=${currentHero.kind === 'series' ? 'tv' : 'movie'}`}
+                href={`/show/${currentHero.id}?type=${currentHero.kind === "series" ? "tv" : "movie"}`}
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-rose-600/30 flex items-center gap-2"
               >
                 <span>Открыть карточку</span>
@@ -219,8 +222,8 @@ export default function HomePage() {
                     onClick={() => setCurrentSlide(dotIdx)}
                     className={`h-1.5 rounded-full transition-all cursor-pointer ${
                       dotIdx === currentSlide
-                        ? 'w-7 bg-rose-500'
-                        : 'w-2 bg-neutral-700 hover:bg-neutral-500'
+                        ? "w-7 bg-rose-500"
+                        : "w-2 bg-neutral-700 hover:bg-neutral-500"
                     }`}
                     aria-label={`Слайд ${dotIdx + 1}`}
                   />
@@ -238,7 +241,8 @@ export default function HomePage() {
             <span>⚡ Свежие премьеры и сезоны</span>
           </h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Мировые блокбастеры и новые сезоны главных сериалов (обновляется автоматически)
+            Мировые блокбастеры и новые сезоны главных сериалов (обновляется
+            автоматически)
           </p>
         </div>
 
@@ -247,8 +251,8 @@ export default function HomePage() {
             <MediaCard
               key={`recent-${item.kind}-${item.id}`}
               item={item}
-              badge={item.kind === 'series' ? 'Сериал' : 'Фильм'}
-              badgeColor={item.kind === 'series' ? 'indigo' : 'blue'}
+              badge={item.kind === "series" ? "Сериал" : "Фильм"}
+              badgeColor={item.kind === "series" ? "indigo" : "blue"}
             />
           ))}
         </div>
@@ -264,7 +268,8 @@ export default function HomePage() {
             </span>
           </h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Нажмите на баннер вселенной, чтобы открыть все её фильмы и сериалы в хронологическом порядке
+            Нажмите на баннер вселенной, чтобы открыть все её фильмы и сериалы в
+            хронологическом порядке
           </p>
         </div>
 
@@ -307,7 +312,8 @@ export default function HomePage() {
             </span>
           </h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Выберите режиссёра, чтобы открыть полную хронологию его фильмов и сериалов от новых к старым
+            Выберите режиссёра, чтобы открыть полную хронологию его фильмов и
+            сериалов от новых к старым
           </p>
         </div>
 
@@ -347,7 +353,7 @@ export default function HomePage() {
 function MediaCard({
   item,
   badge,
-  badgeColor = 'blue',
+  badgeColor = "blue",
 }: {
   item: MediaItem;
   badge?: string;
@@ -355,19 +361,19 @@ function MediaCard({
 }) {
   const getBadgeStyle = () => {
     switch (badgeColor) {
-      case 'amber':
-        return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
-      case 'purple':
-        return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-      case 'indigo':
-        return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30';
-      case 'blue':
+      case "amber":
+        return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+      case "purple":
+        return "bg-purple-500/20 text-purple-300 border-purple-500/30";
+      case "indigo":
+        return "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
+      case "blue":
       default:
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+        return "bg-blue-500/20 text-blue-300 border-blue-500/30";
     }
   };
 
-  const linkHref = `/show/${item.id}?type=${item.kind === 'series' ? 'tv' : 'movie'}`;
+  const linkHref = `/show/${item.id}?type=${item.kind === "series" ? "tv" : "movie"}`;
 
   return (
     <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-lg">

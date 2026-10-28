@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import LibraryImport from "@/components/LibraryImport";
 import ChangePasswordForm from "@/components/ChangePasswordForm";
 import { privateFetch } from "@/lib/private-fetch";
 
@@ -101,10 +102,6 @@ export default function SettingsPage() {
     }
   }
 
-  function downloadBackup() {
-    window.location.href = "/api/export";
-  }
-
   if (status === "unauthenticated") return null;
   if (!loading && !username)
     return <p role="alert">{error || "Не удалось загрузить настройки."}</p>;
@@ -123,13 +120,9 @@ export default function SettingsPage() {
             Скачайте бэкап своей библиотеки в формате JSON. Файл содержит все
             ваши сериалы, прогресс, оценки, коллекции и комментарии.
           </p>
-          <button
-            type="button"
-            onClick={downloadBackup}
-            className="btn btn-secondary"
-          >
+          <a href="/api/export" className="btn btn-secondary">
             ⬇️ Скачать бэкап
-          </button>
+          </a>
         </div>
         {/* Аватарка */}
         <div className="card p-5">
@@ -236,6 +229,7 @@ export default function SettingsPage() {
           </button>
         </div>
       </form>
+      <LibraryImport />
       <ChangePasswordForm />
     </div>
   );

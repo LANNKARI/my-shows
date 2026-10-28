@@ -26,7 +26,7 @@ export async function GET() {
   const userShows = await prisma.userShow.findMany({
     where: { userId: me.id },
     include: {
-      show: true,
+      show: { include: { episodes: true } },
       ratings: true,
       progress: {
         include: { episode: true },
@@ -66,13 +66,17 @@ export async function GET() {
   });
 
   const friends = friendships.map((f) =>
-    f.requesterId === me.id ? f.addressee : f.requester
+    f.requesterId === me.id ? f.addressee : f.requester,
   );
 
   // ── Собираем JSON ──
+  const notes = await prisma.personalNote.findMany({
+    where: { userId: me.id },
+  });
+  const noteMap = new Map(notes.map((n) => [n.showId, n.text]));
   const backup = {
     meta: {
-      version: 1,
+      version: 2,
       generator: "EpisyHub",
       exportedAt: new Date().toISOString(),
       user: user.username,
@@ -85,7 +89,7 @@ export async function GET() {
       friendsCount: friends.length,
       totalWatchedEpisodes: userShows.reduce(
         (sum, us) => sum + us.progress.filter((p) => p.watched).length,
-        0
+        0,
       ),
     },
     userShows: userShows.map((us) => ({
@@ -97,8 +101,17 @@ export async function GET() {
         kind: us.show.kind,
         tmdbId: us.show.tmdbId,
         year: us.show.year,
+        runtime: us.show.runtime,
         genres: us.show.genres,
       },
+      status: us.status,
+      note: noteMap.get(us.showId) || "",
+      episodes: us.show.episodes.map((e) => ({
+        season: e.season,
+        episode: e.episode,
+        name: e.name,
+        airDate: e.airDate,
+      })),
       settings: {
         totalSeasons: us.totalSeasons,
         totalEpisodes: us.totalEpisodes,
@@ -107,18 +120,34 @@ export async function GET() {
         dubbing: us.dubbing,
         watchSite: us.watchSite,
       },
-      ratings: us.ratings.map((r) => ({
-        score: r.score,
-        episodeId: r.episodeId,
-        createdAt: r.createdAt,
-      })),
-      progress: us.progress.map((p) => ({
-        season: p.episode.season,
-        episode: p.episode.episode,
-        watched: p.watched,
-        stoppedAt: p.stoppedAt,
-        watchedAt: p.watchedAt,
-      })),
+      ratings: us.ratings
+        .filter(
+          (r) =>
+            r.episodeId === null ||
+            us.show.episodes.some((e) => e.id === r.episodeId),
+        )
+        .map((r) => ({
+          season:
+            r.episodeId === null
+              ? null
+              : us.show.episodes.find((e) => e.id === r.episodeId)!.season,
+          episode:
+            r.episodeId === null
+              ? null
+              : us.show.episodes.find((e) => e.id === r.episodeId)!.episode,
+          score: r.score,
+          episodeId: r.episodeId,
+          createdAt: r.createdAt,
+        })),
+      progress: us.progress
+        .filter((p) => p.episode.showId === us.showId)
+        .map((p) => ({
+          season: p.episode.season,
+          episode: p.episode.episode,
+          watched: p.watched,
+          stoppedAt: p.stoppedAt,
+          watchedAt: p.watchedAt,
+        })),
     })),
     collections: collections.map((c) => ({
       name: c.name,
@@ -146,6 +175,7 @@ export async function GET() {
   return new NextResponse(JSON.stringify(backup, null, 2), {
     status: 200,
     headers: {
+      "Cache-Control": "private, no-store",
       "Content-Type": "application/json; charset=utf-8",
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
