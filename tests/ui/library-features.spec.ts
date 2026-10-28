@@ -63,6 +63,11 @@ for (const width of [320, 390, 1440])
     await page.goto("/");
     const shelf = page.getByRole("region", { name: "Продолжить просмотр" });
     await expect(shelf.getByText("Остановились на 18:42")).toBeVisible();
+    await expect(shelf.getByText("2 сезон · 4 серия")).toBeVisible();
+    await expect(shelf.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "63",
+    );
     await expect(
       shelf.getByRole("link", { name: "Открыть трекер →" }),
     ).toHaveAttribute("href", "/library/10");
@@ -142,18 +147,16 @@ test("import requires preview and explicit confirmation, then resumes a failed b
   });
   await page.goto("/settings");
   const region = page.getByRole("region", { name: "Импорт библиотеки" });
-  await region
-    .getByLabel("Файл резервной копии")
-    .setInputFiles({
-      name: "backup.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(
-        JSON.stringify({
-          meta: { version: 2, generator: "EpisyHub" },
-          userShows: [],
-        }),
-      ),
-    });
+  await region.getByLabel("Файл резервной копии").setInputFiles({
+    name: "backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        meta: { version: 2, generator: "EpisyHub" },
+        userShows: [],
+      }),
+    ),
+  });
   expect(commits).toBe(0);
   await region.getByRole("button", { name: "Проверить файл" }).click();
   await expect(
@@ -168,5 +171,122 @@ test("import requires preview and explicit confirmation, then resumes a failed b
   await region.getByRole("button", { name: "Продолжить импорт" }).click();
   await expect(region.getByRole("status")).toContainText("добавлено 6");
   expect(commits).toBe(3);
+  const nextPreview = page.waitForRequest(
+    (request) =>
+      new URL(request.url()).pathname === "/api/library-import" &&
+      request.postDataJSON().action === "preview",
+  );
+  await region
+    .getByRole("button", { name: "Проверить файл для нового импорта" })
+    .click();
+  expect((await nextPreview).postDataJSON().newRun).toBe(true);
+  await expect(
+    region.getByRole("button", { name: "Подтвердить импорт" }),
+  ).toBeEnabled();
+  expect(commits).toBe(3);
 });
 
+test("task rewards show server-confirmed balance and disable a claimed reward", async ({
+  page,
+}, testInfo) => {
+  await shell(page);
+  let claimed = false,
+    calls = 0;
+  await page.route("**/api/popcorn", (route) => {
+    if (route.request().method() === "POST") {
+      calls++;
+      expect(route.request().postDataJSON()).toEqual({
+        action: "claim-task",
+        taskId: "episodes",
+      });
+      claimed = true;
+      return route.fulfill({ json: { reward: 10 } });
+    }
+    return route.fulfill({
+      json: {
+        popcorn: claimed ? 110 : 100,
+        canClaimDaily: false,
+        dailyStreak: 3,
+        nextStreak: 4,
+        streakRewards: { 1: 10, 2: 15, 3: 20, 4: 25, 5: 30, 6: 40, 7: 50 },
+        activityEarned: 6,
+        activityLimit: 60,
+        gameEarned: 20,
+        gameLimit: 50,
+        tasks: [
+          {
+            id: "episodes",
+            name: "Просмотреть 2 серии",
+            count: 2,
+            target: 2,
+            reward: 10,
+            claimed,
+          },
+        ],
+        allTasksClaimed: false,
+      },
+    });
+  });
+  await page.route("**/api/popcorn-history", (route) =>
+    route.fulfill({ json: { items: [], nextCursor: null } }),
+  );
+  await page.goto("/rewards");
+  const main = page.getByRole("main");
+  await main
+    .getByRole("button", { name: "Забрать +10 🍿", exact: true })
+    .click();
+  await expect(main.getByText("110 🍿", { exact: true })).toBeVisible();
+  await expect(
+    main.getByRole("button", { name: "Получено", exact: true }),
+  ).toBeDisabled();
+  expect(calls).toBe(1);
+  await main.screenshot({ path: testInfo.outputPath("rewards-economy.png") });
+});
+
+test("quiz submits a server round instead of a user-selected target and recovers after an uncertain response", async ({
+  page,
+}) => {
+  await shell(page);
+  let attempts = 0;
+  await page.route("**/api/popcorn*", (route) => {
+    const req = route.request(),
+      url = new URL(req.url());
+    if (req.method() === "POST") {
+      const body = req.postDataJSON();
+      expect(body).toEqual({
+        action: "submit-quiz",
+        roundId: "server-round",
+        selectedTitle: "Верный фильм",
+      });
+      attempts++;
+      if (attempts === 1) return route.abort();
+      return route.fulfill({
+        json: {
+          isCorrect: true,
+          correctTitle: "Верный фильм",
+          reward: 0,
+          alreadyAnswered: true,
+        },
+      });
+    }
+    if (url.searchParams.get("action") === "get-quiz")
+      return route.fulfill({
+        json: {
+          roundId: "server-round",
+          options: ["Верный фильм", "Другой фильм"],
+          backdropUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+        },
+      });
+    return route.fulfill({ json: { popcorn: 100 } });
+  });
+  await page.goto("/rewards/quiz");
+  await page.getByRole("button", { name: "Верный фильм", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Повтор ответа не начисляет награду дважды",
+  );
+  await page.getByRole("button", { name: "Повторить проверку ответа" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
+    "Начислено 0",
+  );
+  expect(attempts).toBe(2);
+});

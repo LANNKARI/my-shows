@@ -88,19 +88,37 @@ function Shelf() {
               <div className="min-w-0 flex-1">
                 <h3 className="font-bold break-words">{item.title}</h3>
                 <p className="text-xs text-neutral-400 mt-2">
-                  {item.stoppedAt
-                    ? `Остановились на ${item.stoppedAt}`
-                    : item.next
-                      ? `${item.next.season} сезон · ${item.next.episode} серия`
-                      : item.kind === "movie"
-                        ? "Вернуться к фильму"
-                        : "Ждём новые серии"}
+                  {item.kind === "series" && item.next
+                    ? `${item.next.season} сезон · ${item.next.episode} серия`
+                    : item.kind === "movie"
+                      ? "Фильм"
+                      : "Ждём новые серии"}
                 </p>
+                {item.stoppedAt && (
+                  <p className="text-xs text-neutral-400 mt-1">
+                    Остановились на {item.stoppedAt}
+                  </p>
+                )}
                 <p className="text-xs text-neutral-400 mt-1">
                   {item.kind === "series"
                     ? `${item.watched} из ${item.total} серий`
                     : ""}
                 </p>
+                {item.kind === "series" && item.percent !== null && (
+                  <div
+                    role="progressbar"
+                    aria-label={`Прогресс: ${item.title}`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={item.percent}
+                    className="h-1 rounded-full bg-neutral-800 mt-3"
+                  >
+                    <div
+                      className="h-full rounded-full bg-rose-500"
+                      style={{ width: `${item.percent}%` }}
+                    />
+                  </div>
+                )}
                 <Link
                   href={`/library/${item.showId}`}
                   className="inline-flex mt-4 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold"

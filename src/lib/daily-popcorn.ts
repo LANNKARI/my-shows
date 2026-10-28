@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { credit, lockWallet } from "./popcorn-economy";
 export const STREAK_REWARDS: Record<number, number> = {
   1: 10,
   2: 15,
@@ -18,36 +19,47 @@ export function nextDailyStreak(
     (Date.parse(now.toISOString().slice(0, 10)) -
       Date.parse(last.toISOString().slice(0, 10))) /
     86400000;
-  if (days <= 0) return streak;
-  return days === 1 ? (streak % 7) + 1 : 1;
+  return days <= 0 ? streak : days === 1 ? (streak % 7) + 1 : 1;
 }
 export async function claimDaily(
   user: { id: string; lastDailyClaim: Date | null; dailyStreak: number },
   now = new Date(),
 ) {
-  if (
-    user.lastDailyClaim &&
-    user.lastDailyClaim.toISOString().slice(0, 10) >=
-      now.toISOString().slice(0, 10)
-  )
-    return null;
-  const streak = nextDailyStreak(user.lastDailyClaim, user.dailyStreak, now),
-    reward = STREAK_REWARDS[streak];
-  const changed = await prisma.user.updateMany({
-    where: {
-      id: user.id,
-      lastDailyClaim: user.lastDailyClaim,
-      dailyStreak: user.dailyStreak,
-    },
-    data: {
-      popcorn: { increment: reward },
-      lastDailyClaim: now,
-      dailyStreak: streak,
-    },
+  return prisma.$transaction(async (tx) => {
+    await lockWallet(tx, user.id);
+    const fresh = await tx.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: { lastDailyClaim: true, dailyStreak: true },
+    });
+    if (
+      fresh.lastDailyClaim &&
+      fresh.lastDailyClaim.toISOString().slice(0, 10) >=
+        now.toISOString().slice(0, 10)
+    )
+      return null;
+    const streak = nextDailyStreak(
+        fresh.lastDailyClaim,
+        fresh.dailyStreak,
+        now,
+      ),
+      reward = STREAK_REWARDS[streak];
+    const paid = await credit(
+      tx,
+      user.id,
+      `daily:${now.toISOString().slice(0, 10)}`,
+      "daily",
+      reward,
+      "Ежедневный бонус",
+      now,
+    );
+    await tx.user.update({
+      where: { id: user.id },
+      data: { lastDailyClaim: now, dailyStreak: streak },
+    });
+    return { streak, reward: paid.duplicate ? 0 : paid.amount };
   });
-  return changed.count ? { streak, reward } : null;
 }
-
+// Kept for internal compatibility; public quiz answers use server-owned rounds.
 export async function recordQuizAttempt(
   user: { id: string; lastQuizDate: Date | null; quizAttemptsToday: number },
   correct: boolean,
@@ -58,18 +70,26 @@ export async function recordQuizAttempt(
     last = user.lastQuizDate?.toISOString().slice(0, 10);
   const attempts = last === today ? user.quizAttemptsToday : 0;
   if (attempts >= 10 || (last && last > today)) return null;
-  const reward = correct ? 5 : 0;
-  const changed = await db.user.updateMany({
-    where: {
-      id: user.id,
-      lastQuizDate: user.lastQuizDate,
-      quizAttemptsToday: user.quizAttemptsToday,
-    },
-    data: {
-      popcorn: { increment: reward },
-      lastQuizDate: now,
-      quizAttemptsToday: attempts + 1,
-    },
+  return db.$transaction(async (tx) => {
+    await lockWallet(tx, user.id);
+    const changed = await tx.user.updateMany({
+      where: {
+        id: user.id,
+        lastQuizDate: user.lastQuizDate,
+        quizAttemptsToday: user.quizAttemptsToday,
+      },
+      data: { lastQuizDate: now, quizAttemptsToday: attempts + 1 },
+    });
+    if (!changed.count) return null;
+    const paid = await credit(
+      tx,
+      user.id,
+      `legacy-quiz:${today}:${attempts + 1}`,
+      "game",
+      correct ? 5 : 0,
+      "Ответ в викторине",
+      now,
+    );
+    return { reward: paid.amount, attemptsLeft: 10 - attempts - 1 };
   });
-  return changed.count ? { reward, attemptsLeft: 10 - attempts - 1 } : null;
 }

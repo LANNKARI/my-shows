@@ -1,3 +1,4 @@
+import { activityEvents, titleIdentity } from "@/lib/popcorn-economy";
 import { releaseDefaults } from "@/lib/release-defaults";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
@@ -83,6 +84,36 @@ export async function writeWatched(
       skipDuplicates: true,
     });
   if (watched) {
+    const entry = await tx.userShow.findUniqueOrThrow({
+      where: { id: userShowId },
+      include: { show: true },
+    });
+    const alreadyWatched = new Set(
+      previous.filter((p) => p.watched).map((p) => p.episodeId),
+    );
+    const newlyWatched = await tx.episode.findMany({
+      where: { id: { in: ids.filter((id) => !alreadyWatched.has(id)) } },
+    });
+    const identity = titleIdentity(entry.show);
+    await activityEvents(
+      tx,
+      entry.userId,
+      entry.show.kind === "movie"
+        ? newlyWatched.length
+          ? [
+              {
+                key: `watch:${identity}`,
+                amount: 10,
+                reason: `Просмотрен фильм: ${entry.show.name}`,
+              },
+            ]
+          : []
+        : newlyWatched.map((e) => ({
+            key: `watch:${identity}:${e.season}:${e.episode}`,
+            amount: 3,
+            reason: `Просмотрена серия: ${entry.show.name}, ${e.season}×${e.episode}`,
+          })),
+    );
     await tx.episodeProgress.updateMany({
       where: { userShowId, episodeId: { in: ids }, watched: false },
       data: { watched: true, watchedAt: at, stoppedAt: null },
@@ -178,6 +209,13 @@ export async function saveLibrary(
       },
     });
     if (typeof body.score === "number") {
+      await activityEvents(tx, userId, [
+        {
+          key: `rating:${titleIdentity(entry.show)}`,
+          amount: 2,
+          reason: `Первая оценка: ${entry.show.name}`,
+        },
+      ]);
       const updated = await tx.rating.updateMany({
         where: { userShowId: entry.id, episodeId: null },
         data: { score: body.score },
