@@ -582,3 +582,9 @@
     display: none;
   }
 }
+
+.td-card-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 16px; border: 1px solid #f72d6666; border-radius: 14px; background: linear-gradient(120deg, #411426, #24121c); color: #fff; text-decoration: none; font-size: .875rem; font-weight: 650; box-shadow: 0 5px 22px #e7003f12; transition: background .15s ease, border-color .15s ease; }
+.td-card-link > span:not(.td-card-link-icon) { flex: 1; overflow-wrap: anywhere; }
+.td-card-link-icon, .td-card-link svg { flex-shrink: 0; color: #ff7299; }
+.td-card-link:hover { background: linear-gradient(120deg, #581c33, #331725); border-color: #fb719b; }
+@media (min-width: 1024px) { .td-card-link.lg\:hidden { display: none; } }

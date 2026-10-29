@@ -374,8 +374,24 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
         <aside className="td-tracker-side">
           {poster}
           <PersonalNotes value={userShow} busy={disabled} save={save} />
-          <Link className="td-text-button block mt-4" href={`/show/${show.id}`}>
-            Открыть карточку {show.kind === "movie" ? "фильма" : "сериала"} →
+          <Link className="td-card-link mt-4" href={`/show/${show.id}`}>
+            <span aria-hidden="true" className="td-card-link-icon">
+              🎬
+            </span>
+            <span>
+              Открыть карточку {show.kind === "movie" ? "фильма" : "сериала"}
+            </span>
+            <svg
+              aria-hidden="true"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M5 12h14m-6-6 6 6-6 6" />
+            </svg>
           </Link>
         </aside>
         <section className="td-tracker-header" aria-label="Тайтл и статус">
@@ -778,8 +794,24 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
               );
             })}
           </section>
-          <Link className="td-text-button lg:hidden" href={`/show/${show.id}`}>
-            Открыть карточку {show.kind === "movie" ? "фильма" : "сериала"} →
+          <Link className="td-card-link lg:hidden" href={`/show/${show.id}`}>
+            <span aria-hidden="true" className="td-card-link-icon">
+              🎬
+            </span>
+            <span>
+              Открыть карточку {show.kind === "movie" ? "фильма" : "сериала"}
+            </span>
+            <svg
+              aria-hidden="true"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M5 12h14m-6-6 6 6-6 6" />
+            </svg>
           </Link>
         </div>
       </div>
