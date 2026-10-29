@@ -566,7 +566,7 @@ test('profile, achievements and leaderboard agree without counting films or fore
     if (inTop) assert.equal(inTop.current, Math.min(expected, inTop.target));
   }
   assert.equal(top.completedCount, profile.stats.totalCompleted);
-  const addedSeries = await prisma.userShow.count({ where: { userId: alice.id, status: { not: "dropped" }, show: { kind: "series" } } });
+  const addedSeries = await prisma.userShow.count({ where: { userId: alice.id, status: { in: ["watching", "completed"] }, show: { kind: "series" } } });
   assert.equal(profile.stats.addedSeriesCount, addedSeries);
   assert.equal(profile.achievements.find((a: {id: string}) => a.id === "bibliophile").current, Math.min(50, addedSeries));
   assert.equal((await (await owner.request(`/api/user-shows/${f.show.id}`)).json()).stats.watchedEpisodesCount, 1);

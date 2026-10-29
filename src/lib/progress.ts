@@ -48,7 +48,9 @@ export function summarizeLibrary(
   return {
     totalTitles: entries.filter((entry) => entry.status !== "dropped").length,
     addedSeriesCount: entries.filter(
-      (entry) => entry.status !== "dropped" && entry.show.kind === "series",
+      (entry) =>
+        ["watching", "completed"].includes(entry.status) &&
+        entry.show.kind === "series",
     ).length,
     completedCount: entries.filter((entry) => entry.status === "completed")
       .length,
