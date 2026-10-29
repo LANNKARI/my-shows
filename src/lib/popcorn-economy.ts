@@ -115,17 +115,7 @@ export async function credit(
   });
   if (existing) return { amount: existing.amount, duplicate: true };
   const day = economyDay(now);
-  const used =
-    category === "game"
-      ? (
-          await tx.popcornEntry.aggregate({
-            where: { userId, day, category },
-            _sum: { amount: true },
-          })
-        )._sum.amount || 0
-      : 0;
-  const amount =
-    category === "game" ? Math.max(0, Math.min(wanted, 50 - used)) : wanted;
+  const amount = wanted;
   await tx.popcornEntry.create({
     data: { userId, eventKey, category, amount, reason, day },
   });
@@ -215,7 +205,7 @@ export async function economyView(
     activityEarned: Number(row.activity),
     activityLimit: 60,
     gameEarned: Number(row.games),
-    gameLimit: 50,
+    gameLimit: null,
     tasks: quests,
     allTasksClaimed: Number(row.allClaimed) > 0,
     nextResetAt: new Date(day.getTime() + 86400000).toISOString(),

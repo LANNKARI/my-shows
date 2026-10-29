@@ -286,7 +286,94 @@ test("quiz submits a server round instead of a user-selected target and recovers
   );
   await page.getByRole("button", { name: "Повторить проверку ответа" }).click();
   await expect(page.getByRole("main").getByRole("status")).toContainText(
-    "Начислено 0",
+    "Этот ответ уже учтён",
   );
   expect(attempts).toBe(2);
 });
+
+for (const correct of [true, false]) {
+  test(`quiz colors answers and wraps long titles (${correct})`, async ({
+    page,
+  }) => {
+    await shell(page);
+    const longTitle = "Очень длинное название фильма ".repeat(7);
+    await page.route("**/api/popcorn*", (route) => {
+      if (route.request().method() === "POST")
+        return route.fulfill({
+          json: {
+            isCorrect: correct,
+            correctTitle: longTitle,
+            reward: correct ? 1 : 0,
+          },
+        });
+      if (new URL(route.request().url()).searchParams.has("action"))
+        return route.fulfill({
+          json: {
+            roundId: "color-round",
+            options: [longTitle, "Ошибка"],
+            backdropUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+          },
+        });
+      return route.fulfill({ json: { popcorn: 100 } });
+    });
+    await page.goto("/rewards/quiz");
+    const chosen = page.getByRole("button", {
+      name: correct ? longTitle : "Ошибка",
+      exact: true,
+    });
+    await chosen.click();
+    const green = page.locator('[data-answer="correct"]');
+    await expect(green).toContainText(longTitle);
+    await expect(green).toHaveCSS("background-color", "rgb(6, 78, 59)");
+    if (!correct)
+      await expect(page.locator('[data-answer="wrong"]')).toHaveCSS(
+        "background-color",
+        "rgb(136, 19, 55)",
+      );
+    const fits = await green.evaluate((el) => el.scrollWidth <= el.clientWidth);
+    expect(fits).toBe(true);
+    await expect(page.getByRole("main")).toContainText(
+      "Дневного лимита наград нет",
+    );
+  });
+}
+
+for (const width of [320, 390, 1440]) {
+  test(`higher lower rewards and long titles fit ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await shell(page);
+    const title = "Очень длинное название фильма ".repeat(8);
+    const movie = {
+      id: 1,
+      title,
+      posterUrl: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+      rating: 7,
+      year: "2020",
+    };
+    await page.route("**/api/higher-lower", (route) =>
+      route.fulfill({
+        json: {
+          roundId: "duel-ui",
+          phase: "question",
+          bank: 0,
+          round: 1,
+          rewardForRound: 1,
+          questionType: "rating",
+          attemptsLeft: 0,
+          limitReached: false,
+          leftMovie: movie,
+          rightMovie: { ...movie, id: 2 },
+        },
+      }),
+    );
+    await page.goto("/rewards/higher-lower");
+    await expect(page.getByRole("main")).toContainText("+1 🍿 · без лимита");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}

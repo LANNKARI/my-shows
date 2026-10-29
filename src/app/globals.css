@@ -241,3 +241,9 @@ body {
     scrollbar-width: none;
   }
 }
+
+.quiz-option { min-width: 0; width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; padding: .8rem 1rem; border-radius: 12px; border: 1px solid #343434; background: #18181b; color: #fafafa; font-weight: 600; cursor: pointer; }
+.quiz-option:disabled { cursor: default; }
+.quiz-option[data-answer="correct"] { background: #064e3b; border-color: #34d399; color: #d1fae5; }
+.quiz-option[data-answer="wrong"] { background: #881337; border-color: #fb7185; color: #ffe4e6; }
+.quiz-option[data-answer="neutral"] { color: #a3a3a3; }

@@ -343,8 +343,45 @@ export async function GET(
       });
     }
 
+    let displayCast = Array.isArray(show.cast) ? show.cast : [];
+    if (
+      apiKey &&
+      show.tmdbId &&
+      (displayCast.length === 0 ||
+        displayCast.some(
+          (a) =>
+            a &&
+            typeof a === "object" &&
+            !Array.isArray(a) &&
+            !a.profileUrl &&
+            !a.image &&
+            !a.photoUrl &&
+            !a.profile_path,
+        ))
+    ) {
+      try {
+        const type = show.kind === "series" ? "tv" : "movie";
+        const url = new URL(
+          `https://api.themoviedb.org/3/${type}/${show.tmdbId}/credits`,
+        );
+        url.searchParams.set("language", "ru-RU");
+        if (!apiKey.startsWith("eyJ")) url.searchParams.set("api_key", apiKey);
+        const response = await fetch(url, {
+          headers,
+          signal: AbortSignal.timeout(4000),
+          next: { revalidate: 86400 },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data.cast)) displayCast = data.cast.slice(0, 25);
+        }
+      } catch {
+        /* Keep the saved cast when the external service is unavailable. */
+      }
+    }
     const serializedShow = {
       ...show,
+      cast: displayCast,
       title: show.name,
       originalTitle: show.originalName,
       budget: show.budget ? Number(show.budget) : null,

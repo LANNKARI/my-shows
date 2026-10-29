@@ -136,6 +136,7 @@ export async function answerQuiz(
         correctTitle: data.correctTitle,
         reward: 0,
         alreadyAnswered: true,
+        originalReward: round.reward,
       };
     if (round.createdAt.getTime() < Date.now() - 10 * 60000)
       throw new CalendarError(
@@ -155,10 +156,8 @@ export async function answerQuiz(
       userId,
       `quiz:${round.id}`,
       "game",
-      correct ? 5 + (streak === 3 ? 10 : streak === 5 ? 20 : 0) : 0,
-      correct
-        ? `Верный ответ в викторине${streak === 3 || streak === 5 ? " и бонус за серию" : ""}`
-        : "Ответ в викторине",
+      correct ? 1 : 0,
+      correct ? "Верный ответ в викторине" : "Ответ в викторине",
     );
     await gameEvent(tx, userId, `quiz:${round.id}`);
     await tx.popcornQuizRound.update({
@@ -176,7 +175,7 @@ export async function answerQuiz(
       reward: paid.amount,
       streak,
       gameEarned: view.gameEarned,
-      gameLimit: 50,
+      gameLimit: null,
     };
   });
 }

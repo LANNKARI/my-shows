@@ -184,6 +184,7 @@ export async function GET(
           totalCompleted: completedShows.length,
           moviesCount,
           seriesCount,
+          addedSeriesCount,
           ratingsCount,
           hoursWatched,
         },

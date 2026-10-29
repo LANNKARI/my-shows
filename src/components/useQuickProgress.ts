@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import { libraryProgress, type LibraryItem } from '@/lib/library';
+import { useEffect, useRef, useState } from "react";
+import { libraryProgress, type LibraryItem } from "@/lib/library";
 
 export type ProgressPatch = Pick<
   LibraryItem,
-  'userShowId' | 'status' | 'updatedAt' | 'progress'
+  "userShowId" | "status" | "updatedAt" | "progress"
 >;
 type Undo = {
   userId: string;
@@ -21,12 +21,13 @@ type NoticeError = { userId: string; message: string };
 export default function useQuickProgress(
   userId: string | undefined,
   apply: (patch: ProgressPatch) => void,
+  optimistic = false,
 ) {
   const busy = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const [pending, setPending] = useState<{
     id: number;
-    action: 'mark' | 'undo';
+    action: "mark" | "undo";
     userId: string;
   } | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
@@ -43,7 +44,7 @@ export default function useQuickProgress(
   }, [undo]);
 
   async function send(
-    action: 'mark' | 'undo',
+    action: "mark" | "undo",
     id: number,
     body: object,
     item?: LibraryItem,
@@ -55,25 +56,44 @@ export default function useQuickProgress(
     const timer = setTimeout(() => abort.abort(), 15000);
     setPending({ id, action, userId });
     setError(null);
+    // Show the mark immediately, but keep the server revision until confirmed.
+    if (optimistic && action === "mark" && item) {
+      const next = libraryProgress(item).next;
+      const progress = [...item.progress];
+      if (next) {
+        const index = progress.findIndex((p) => p.episodeId === next.id);
+        const marked = { episodeId: next.id, watched: true, stoppedAt: null };
+        if (index >= 0) progress[index] = { ...progress[index], ...marked };
+        else progress.push(marked);
+      }
+      apply({
+        userShowId: id,
+        status: item.status,
+        updatedAt: item.updatedAt,
+        progress,
+      });
+    }
     try {
       const response = await fetch(`/api/user-shows/${id}/quick-progress`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...body }),
         signal: abort.signal,
       });
       const data = await response.json();
       if (!response.ok) {
-        if ([400, 409].includes(response.status) && action === 'undo') setUndo(null);
+        if (item) apply(item);
+        if ([400, 409].includes(response.status) && action === "undo")
+          setUndo(null);
         setError({
           userId,
           message:
-            data.error || 'Не удалось сохранить изменение. Попробуйте ещё раз.',
+            data.error || "Не удалось сохранить изменение. Попробуйте ещё раз.",
         });
         return;
       }
       apply(data.item as ProgressPatch);
-      if (action === 'mark' && item) {
+      if (action === "mark" && item) {
         setUndo({
           userId,
           id,
@@ -85,15 +105,17 @@ export default function useQuickProgress(
         });
       } else setUndo(null);
       window.dispatchEvent(
-        new CustomEvent('user-shows-updated', {
-          detail: { source: 'quick-progress' },
+        new CustomEvent("user-shows-updated", {
+          detail: { source: "quick-progress" },
         }),
       );
+      window.dispatchEvent(new Event("popcorn-updated"));
     } catch {
+      if (item) apply(item);
       setError({
         userId,
         message:
-          'Не удалось подтвердить сохранение. Обновите библиотеку перед повтором.',
+          "Не удалось подтвердить сохранение. Обновите библиотеку перед повтором.",
       });
     } finally {
       clearTimeout(timer);
@@ -108,7 +130,7 @@ export default function useQuickProgress(
     undo: undo?.userId === userId ? undo : null,
     mark: (item: LibraryItem) =>
       send(
-        'mark',
+        "mark",
         item.userShowId,
         {
           expectedUpdatedAt: item.updatedAt,
@@ -118,7 +140,7 @@ export default function useQuickProgress(
       ),
     undoLast: () =>
       undo && undo.userId === userId
-        ? send('undo', undo.id, { token: undo.token })
+        ? send("undo", undo.id, { token: undo.token })
         : undefined,
     dismiss: () => {
       setError(null);
