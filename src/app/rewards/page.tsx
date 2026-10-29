@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import DailyBonus from "@/components/DailyBonus";
 import { privateFetch } from "@/lib/private-fetch";
 type Quest = {
   id: string;
@@ -185,41 +186,11 @@ function Rewards() {
           . Ежедневный бонус и задания учитываются отдельно.
         </p>
       </section>
-      <section className="card p-6 space-y-4">
-        <h2 className="text-xl font-bold">Ежедневный бонус</h2>
-        <p className="text-sm text-neutral-400">
-          Серия: {data.dailyStreak} из 7 дней
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(
-            data.streakRewards || {
-              1: 10,
-              2: 15,
-              3: 20,
-              4: 25,
-              5: 30,
-              6: 40,
-              7: 50,
-            },
-          ).map(([day, reward]) => (
-            <span
-              key={day}
-              className="rounded-xl border border-neutral-800 p-3 text-sm"
-            >
-              День {day} · +{reward} 🍿
-            </span>
-          ))}
-        </div>
-        <button
-          disabled={busy || !data.canClaimDaily}
-          className="btn btn-primary"
-          onClick={() => void claim("claim-daily")}
-        >
-          {data.canClaimDaily
-            ? `Забрать +${data.streakRewards?.[data.nextStreak] ?? 10} 🍿`
-            : "Сегодня уже получено"}
-        </button>
-      </section>
+      <DailyBonus
+        {...data}
+        busy={busy}
+        onClaim={() => void claim("claim-daily")}
+      />
       {message && (
         <p role="status" className="text-amber-300">
           {message}
