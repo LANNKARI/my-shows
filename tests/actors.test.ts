@@ -134,3 +134,81 @@ test("failed translation preserves the profile while 404 and invalid filmography
     ActorError,
   );
 });
+
+test("filmography excludes talk shows, reality and news and self or host appearances", () => {
+  const sample = (
+    id: number,
+    character: string,
+    genre_ids: number[] = [],
+    media_type = "tv",
+  ) => ({
+    id,
+    character,
+    genre_ids,
+    media_type,
+    title: `Фильм ${id}`,
+    name: `Сериал ${id}`,
+  });
+  const excluded = [
+    sample(1, "Self / Self - Guest", [10767, 35]),
+    sample(2, "", [10767]),
+    sample(3, "Участник", [10764]),
+    sample(4, "", [10763]),
+    sample(5, "Self - Presenter", [], "movie"),
+    sample(6, "Himself (archive footage)", [], "movie"),
+    sample(7, "Herself - Guest"),
+    sample(8, "Ведущий", [], "movie"),
+    sample(9, "Самого себя", [], "movie"),
+    sample(10, "Presenter", [], "movie"),
+    sample(11, "Self (voice)", [], "movie"),
+  ];
+  assert.deepEqual(actorCredits(excluded), []);
+  const kept = [
+    sample(20, "Peter Parker", [28], "movie"),
+    sample(21, "Danny Sullivan", [18]),
+    sample(22, "", []),
+    sample(23, "Selfie", [35], "movie"),
+    sample(24, "Персонаж", [10766]),
+    sample(25, "Narrator (voice)", [16], "movie"),
+  ];
+  assert.equal(actorCredits([...excluded, ...kept]).length, kept.length);
+});
+test("filtering is applied before role deduplication and preserves a genuine acting credit", () => {
+  const base = { id: 30, media_type: "movie", title: "Фильм" };
+  const [credit] = actorCredits([
+    { ...base, character: "Self - Interviewee" },
+    { ...base, character: "Главный герой" },
+  ]);
+  assert.deepEqual(credit.roles, ["Главный герой"]);
+});
+test("cached source responses are filtered before producing public actor data", async () => {
+  const actor = await loadActor(123, {
+    apiKey: "fixture",
+    fetcher: async () =>
+      Response.json({
+        ...person,
+        combined_credits: {
+          cast: [
+            {
+              id: 1,
+              media_type: "tv",
+              name: "Шоу",
+              genre_ids: [10767],
+              character: "Self",
+            },
+            {
+              id: 2,
+              media_type: "tv",
+              name: "Драма",
+              genre_ids: [18],
+              character: "Главный герой",
+            },
+          ],
+        },
+      }),
+  });
+  assert.deepEqual(
+    actor.credits.map((c) => c.title),
+    ["Драма"],
+  );
+});
