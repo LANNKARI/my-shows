@@ -6,7 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import CastList from "@/components/CastList";
 import ShowDetails from "@/components/ShowDetails";
-import CommentSection, { type CommentRecord } from "@/components/CommentSection";
+import CommentSection, {
+  type CommentRecord,
+} from "@/components/CommentSection";
 import TrailerPlayer, { type TrailerItem } from "@/components/TrailerPlayer";
 import {
   PersonalNotes,
@@ -56,13 +58,16 @@ export default function ShowPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const type = useSearchParams().get("type");
+  const search = useSearchParams();
+  const type = search.get("type");
+  const source = search.get("source");
   const { data: session, status: authStatus } = useSession();
   return (
     <ShowContent
-      key={`${id}:${type}:${authStatus}:${session?.user?.id}`}
+      key={`${id}:${type}:${source}:${authStatus}:${session?.user?.id}`}
       id={id}
       type={type}
+      source={source}
       authStatus={authStatus}
     />
   );
@@ -71,10 +76,12 @@ export default function ShowPage({
 function ShowContent({
   id,
   type,
+  source,
   authStatus,
 }: {
   id: string;
   type: string | null;
+  source: string | null;
   authStatus: string;
 }) {
   const router = useRouter();
@@ -91,7 +98,7 @@ function ShowContent({
   useEffect(() => {
     const abort = new AbortController();
     fetch(
-      `/api/shows/${encodeURIComponent(id)}${type ? `?type=${encodeURIComponent(type)}` : ""}`,
+      `/api/shows/${encodeURIComponent(id)}?${new URLSearchParams({ ...(type ? { type } : {}), ...(source === "tmdb" ? { source } : {}) })}`,
       { signal: abort.signal },
     )
       .then(async (response) => {
@@ -121,7 +128,7 @@ function ShowContent({
         if (!abort.signal.aborted) setLoading(false);
       });
     return () => abort.abort();
-  }, [id, type, reload, authStatus]);
+  }, [id, type, source, reload, authStatus]);
 
   async function save(values: Record<string, unknown>) {
     if (authStatus !== "authenticated") {

@@ -1846,3 +1846,35 @@ test('a completed backup can start a fresh explicitly confirmed recovery without
  const second=await (await client.request('/api/library-import','POST',{action:'preview',backup:raw,newRun:true})).json();assert.notEqual(second.jobId,first.jobId);assert.equal(await prisma.userShow.count({where:{userId:record.id}}),0);assert.equal((await client.request('/api/library-import','POST',{action:'commit',jobId:first.jobId,cursor:0})).status,404);
  await client.request('/api/library-import','POST',{action:'commit',jobId:second.jobId,cursor:0});assert.equal(await prisma.userShow.count({where:{userId:record.id}}),1);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).popcorn,0);
 });
+
+
+test("actor pages reject malformed IDs and private marks require an authenticated account", async () => {
+  const response=await guest.request("/api/actors/invalid");
+  assert.equal(response.status,400);
+  assert.match(response.headers.get("cache-control")||"",/no-store/);
+  assert.equal((await guest.request("/api/actors/1/library")).status,401);
+  assert.equal((await owner.request("/api/actors/invalid/library")).status,400);
+});
+test("actor library marks use owner, TMDB ID and media type without adding titles", async () => {
+  const {actorLibrary}=await import("../src/lib/actor-library");
+  const {record}=await featureAccount();
+  const tmdbId=880000000+Math.floor(Math.random()*100000);
+  const movie=await prisma.show.create({data:{name:"Actor movie",kind:"movie",tmdbId}});
+  const series=await prisma.show.create({data:{name:"Actor series",kind:"series",tmdbId}});
+  await prisma.userShow.create({data:{userId:record.id,showId:movie.id,kind:"movie"}});
+  await prisma.userShow.create({data:{userId:alice.id,showId:series.id,kind:"series"}});
+  const before=await prisma.userShow.count();
+  assert.deepEqual(await actorLibrary(record.id,[{id:tmdbId,kind:"movie"},{id:tmdbId,kind:"series"}],prisma),[`movie:${tmdbId}`]);
+  assert.deepEqual(await actorLibrary(bob.id,[{id:tmdbId,kind:"movie"},{id:tmdbId,kind:"series"}],prisma),[]);
+  assert.equal(await prisma.userShow.count(),before);
+});
+test("TMDB actor links resolve the external ID rather than a colliding local Show ID", async () => {
+  const local=await prisma.show.create({data:{name:"Local ID decoy",kind:"movie"}});
+  const real=await prisma.show.create({data:{name:"Actor credited movie",kind:"movie",tmdbId:local.id}});
+  const normal=await (await owner.request(`/api/shows/${local.id}?type=movie`)).json();
+  assert.equal(normal.show.id,local.id);
+  const response=await owner.request(`/api/shows/${local.id}?type=movie&source=tmdb`);
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).show.id,real.id);
+  assert.equal((await owner.request(`/api/shows/${local.id}?source=tmdb&type=wrong`)).status,400);
+});

@@ -313,6 +313,11 @@ test("film sections preserve discussion and status survives rating, favorite and
   await main(page).getByRole("button", { name: "Актёры", exact: true }).click();
   await expect(main(page).getByText("Тестовый актёр")).toBeVisible();
   await expect(
+    main(page).getByRole("link", {
+      name: "Открыть страницу актёра Тестовый актёр",
+    }),
+  ).toHaveAttribute("href", "/actors/1");
+  await expect(
     main(page).getByRole("img", { name: "Тестовый актёр", exact: true }),
   ).toHaveAttribute("src", poster);
   await main(page)

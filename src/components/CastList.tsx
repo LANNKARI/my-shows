@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useRef } from "react";
 
 interface Actor {
@@ -76,9 +77,11 @@ export default function CastList({ cast }: CastListProps) {
               ? `https://image.tmdb.org/t/p/w185${actor.profile_path}`
               : null);
           return (
-            <div
+            <Link
+              href={`/actors/${actor.id}`}
+              aria-label={`Открыть страницу актёра ${actor.name}`}
               key={actor.id}
-              className="w-32 sm:w-36 flex-shrink-0 bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-2 flex flex-col group hover:border-neutral-700 transition-all shadow-md"
+              className="w-32 sm:w-36 flex-shrink-0 bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-2 flex flex-col group hover:border-neutral-700 transition-all shadow-md focus-visible:outline-2 focus-visible:outline-rose-400"
             >
               <div className="aspect-[3/4] w-full rounded-xl overflow-hidden bg-neutral-950 mb-2 relative">
                 {photo ? (
@@ -103,7 +106,7 @@ export default function CastList({ cast }: CastListProps) {
                   {actor.character}
                 </p>
               )}
-            </div>
+            </Link>
           );
         })}
       </div>
