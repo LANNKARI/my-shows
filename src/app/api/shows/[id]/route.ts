@@ -36,6 +36,12 @@ export async function GET(
     }
 
     const requestedType = request.nextUrl.searchParams.get("type");
+    const tmdbSource = request.nextUrl.searchParams.get("source") === "tmdb";
+    if (tmdbSource && !["movie", "tv"].includes(requestedType || ""))
+      return NextResponse.json(
+        { error: "Укажите тип тайтла" },
+        { status: 400 },
+      );
 
     // Определение сессии пользователя
     const session = await auth();
@@ -49,31 +55,33 @@ export async function GET(
     }
 
     // 1. ПРИОРИТЕТ 1: Если тайтл с таким id уже есть в базе данных Show
-    let show = await prisma.show.findFirst({
-      where: {
-        id: numId,
-        ...(requestedType
-          ? { kind: requestedType === "tv" ? "series" : "movie" }
-          : {}),
-      },
-      include: {
-        episodes: true,
-        comments: {
+    let show = tmdbSource
+      ? null
+      : await prisma.show.findFirst({
+          where: {
+            id: numId,
+            ...(requestedType
+              ? { kind: requestedType === "tv" ? "series" : "movie" }
+              : {}),
+          },
           include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-                avatarUrl: true,
-                avatarFrame: true,
+            episodes: true,
+            comments: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    username: true,
+                    avatarUrl: true,
+                    avatarFrame: true,
+                  },
+                },
               },
+              orderBy: { createdAt: "desc" },
             },
           },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
+        });
 
     // 2. ПРИОРИТЕТ 2: Поиск по tmdbId в Show
     if (!show) {
@@ -187,6 +195,13 @@ export async function GET(
         }
       }
 
+      if (
+        tmdbSource &&
+        requestedType &&
+        targetKind !==
+          (["tv", "series"].includes(requestedType) ? "series" : "movie")
+      )
+        return NextResponse.json({ error: "Тайтл не найден" }, { status: 404 });
       if (tmdbRes && tmdbRes.ok) {
         const data = await tmdbRes.json();
         const name = data.title || data.name || "Без названия";
@@ -232,7 +247,7 @@ export async function GET(
 
         show = await prisma.show.create({
           data: {
-            id: numId,
+            ...(tmdbSource ? {} : { id: numId }),
             tmdbId: numId,
             name,
             originalName,
