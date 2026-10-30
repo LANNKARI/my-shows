@@ -11,3 +11,5 @@ Authenticated users load library badges separately from `/api/actors/{id}/librar
 Filmography links include `source=tmdb` and the media type so local Show IDs cannot shadow a credited title with the same number. Existing local links retain their previous meaning. The actor feature needs no database migration. It uses the existing TMDB server credentials.
 
 Validation includes source fixtures for biography fallback, malformed data and deduplication; real local database/API tests for owner scoping and ID collisions; browser checks for responsive layout, filters, sorting, pagination, errors and cast links. External TMDB delivery and production credentials are not verified by fixture tests.
+
+Filmography excludes TMDB television genres News (10763), Reality (10764) and Talk (10767), and credits explicitly labelled as self/host/presenter/guest appearances, including ceremonies marked as movies. This filtering happens before deduplication and sorting, so all tabs, counts and private badges use the same selection. Titles are not filtered by name: fictional works containing the word “show” stay eligible. Accuracy depends on the genres and roles supplied by TMDB.

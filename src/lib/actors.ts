@@ -40,6 +40,19 @@ const picture = (value: unknown, size: string) =>
 type Raw = Record<string, unknown>;
 const object = (value: unknown): value is Raw =>
   !!value && typeof value === "object" && !Array.isArray(value);
+// TMDB's movie/tv media type also includes broadcasts and award ceremonies.
+const programmeGenres = new Set([10763, 10764, 10767]); // News, Reality, Talk.
+const appearanceRole =
+  /^(?:self|himself|herself|themselves|host|co-host|presenter|guest|самого себя|саму себя|сам себя|сама себя|в роли себя|ведущий|ведущая|соведущий|соведущая)(?=$|[\s(/,:–—-])/iu;
+function programmeAppearance(item: Raw) {
+  if (
+    item.media_type === "tv" &&
+    Array.isArray(item.genre_ids) &&
+    item.genre_ids.some((id) => programmeGenres.has(id))
+  )
+    return true;
+  return appearanceRole.test(text(item.character));
+}
 export function actorCredits(raw: unknown): ActorCredit[] {
   if (!Array.isArray(raw))
     throw new ActorError(503, "Фильмография временно недоступна");
@@ -51,7 +64,8 @@ export function actorCredits(raw: unknown): ActorCredit[] {
       !Number.isSafeInteger(item.id) ||
       Number(item.id) <= 0 ||
       Number(item.id) > 2147483647 ||
-      !["movie", "tv"].includes(String(item.media_type))
+      !["movie", "tv"].includes(String(item.media_type)) ||
+      programmeAppearance(item)
     )
       continue;
     const kind = item.media_type === "movie" ? "movie" : "series";
