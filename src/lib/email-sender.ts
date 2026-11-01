@@ -50,8 +50,17 @@ export function emailRejection(httpStatus: number, result: unknown) {
   );
 }
 export function emailConfiguration() {
-  const apiKey = process.env.UNISENDER_GO_API_KEY?.trim();
-  const from = process.env.EMAIL_FROM;
+  const provider = (process.env.EMAIL_PROVIDER || "unisender")
+    .trim()
+    .toLowerCase();
+  if (!["unisender", "smtpbz"].includes(provider))
+    throw new EmailError("Неизвестный сервис отправки писем");
+  const apiKey = (
+    provider === "smtpbz"
+      ? process.env.SMTPBZ_API_KEY
+      : process.env.UNISENDER_GO_API_KEY
+  )?.trim();
+  const from = process.env.EMAIL_FROM?.trim();
   const name = process.env.EMAIL_FROM_NAME || "EpisyHub";
   const app = new URL(process.env.APP_URL || "https://episyhub.space");
   if (
@@ -68,24 +77,34 @@ export function emailConfiguration() {
   )
     throw new EmailError("Отправка писем ещё не настроена");
   const endpoint = new URL(
-    process.env.UNISENDER_GO_API_URL ||
-      "https://go2.unisender.ru/ru/transactional/api/v1/email/send.json",
+    provider === "smtpbz"
+      ? process.env.SMTPBZ_API_URL || "https://api.smtp.bz/v1/smtp/send"
+      : process.env.UNISENDER_GO_API_URL ||
+        "https://go2.unisender.ru/ru/transactional/api/v1/email/send.json",
   );
   const testLocal =
     process.env.NODE_ENV !== "production" &&
     ["127.0.0.1", "localhost"].includes(endpoint.hostname) &&
     endpoint.protocol === "http:";
+  const permitted =
+    provider === "smtpbz"
+      ? endpoint.hostname === "api.smtp.bz" &&
+        endpoint.pathname === "/v1/smtp/send"
+      : ["go1.unisender.ru", "go2.unisender.ru"].includes(endpoint.hostname) &&
+        endpoint.pathname === "/ru/transactional/api/v1/email/send.json";
   if (
     !testLocal &&
     (endpoint.protocol !== "https:" ||
-      !["go1.unisender.ru", "go2.unisender.ru"].includes(endpoint.hostname) ||
-      endpoint.pathname !== "/ru/transactional/api/v1/email/send.json" ||
+      !permitted ||
       endpoint.username ||
       endpoint.password ||
-      endpoint.search)
+      endpoint.search ||
+      endpoint.hash ||
+      endpoint.port)
   )
     throw new EmailError("Некорректный адрес сервера отправки");
   return {
+    provider,
     apiKey,
     from,
     name,
@@ -100,6 +119,35 @@ export async function sendVerificationEmail(
 ) {
   const config = emailConfiguration();
   const link = `${config.origin}/verify-email#token=${token}`;
+  const plaintext = `Вы начали регистрацию в EpisyHub. Подтвердите почту: ${link}\nСсылка действует 24 часа. Если вы не регистрировались, просто проигнорируйте письмо.`;
+  const escapedLink = link.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        char
+      ]!,
+  );
+  const payload =
+    config.provider === "smtpbz"
+      ? {
+          name: config.name,
+          from: config.from,
+          to: email,
+          subject: "Подтвердите почту для EpisyHub",
+          html: `<!doctype html><html lang="ru"><body><h1>Подтвердите почту</h1><p>Вы начали регистрацию в EpisyHub.</p><p><a href="${escapedLink}">Подтвердить почту</a></p><p>Ссылка действует 24 часа. Если вы не регистрировались, проигнорируйте письмо.</p></body></html>`,
+          text: plaintext,
+        }
+      : {
+          message: {
+            recipients: [{ email }],
+            from_email: config.from,
+            from_name: config.name,
+            subject: "Подтвердите почту для EpisyHub",
+            body: { plaintext },
+            track_links: 0,
+            track_read: 0,
+          },
+        };
   let response: Response;
   try {
     response = await fetcher(config.endpoint, {
@@ -107,22 +155,12 @@ export async function sendVerificationEmail(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        "X-API-KEY": config.apiKey,
+        ...(config.provider === "smtpbz"
+          ? { Authorization: config.apiKey }
+          : { "X-API-KEY": config.apiKey }),
       },
       signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({
-        message: {
-          recipients: [{ email }],
-          from_email: config.from,
-          from_name: config.name,
-          subject: "Подтвердите почту для EpisyHub",
-          body: {
-            plaintext: `Вы начали регистрацию в EpisyHub. Подтвердите почту: ${link}\nСсылка действует 24 часа. Если вы не регистрировались, просто проигнорируйте письмо.`,
-          },
-          track_links: 0,
-          track_read: 0,
-        },
-      }),
+      body: JSON.stringify(payload),
     });
   } catch {
     throw new EmailError(
@@ -130,6 +168,29 @@ export async function sendVerificationEmail(
     );
   }
   const result: unknown = await response.json().catch(() => null);
+  if (config.provider === "smtpbz") {
+    // The official Swagger documents HTTP 200 as success, without a response body schema.
+    const rejected =
+      result &&
+      typeof result === "object" &&
+      (("error" in result && !!result.error) ||
+        ("success" in result && result.success === false) ||
+        ("status" in result &&
+          (result.status === false ||
+            result.status === "error" ||
+            result.status === "failed")) ||
+        ("result" in result && result.result === false));
+    if (response.status !== 200 || rejected) {
+      console.error("SMTP.bz rejected email", {
+        httpStatus: response.status,
+        explicitFailure: !!rejected,
+      });
+      throw new EmailError(
+        `Не удалось отправить письмо. Код поддержки: MAIL-SMTPBZ-HTTP-${response.status}.`,
+      );
+    }
+    return;
+  }
   if (
     !response.ok ||
     !result ||

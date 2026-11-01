@@ -29,6 +29,7 @@ let mailServer: Server;
 const mailRequests: {message:{recipients:{email:string}[];body:{plaintext:string};track_links:number;track_read:number}}[]=[];
 let mailFails=false;
 let mailFailureCode=0;
+const mailProvider=process.env.SECURITY_TEST_EMAIL_PROVIDER==="smtpbz"?"smtpbz":"unisender";
 let serverOutput = '';
 let seeded = false;
 let nextEnv: string | undefined;
@@ -139,12 +140,23 @@ before(async () => {
   foreignProgressId = (await prisma.episodeProgress.create({ data: { userShowId: foreignLibrary.id, episodeId: show.episodes[0].id } })).id;
   const otherShow = await prisma.show.create({ data: { name: 'Another test', kind: 'series', countries: [], studios: [], genres: [], creators: [], episodes: { create: { season: 1, episode: 1 } } }, include: { episodes: true } });
   otherEpisodeId = otherShow.episodes[0].id;
-  mailServer=createServer((req,res)=>{let data="";req.on("data",chunk=>data+=chunk);req.on("end",()=>{res.setHeader("Content-Type","application/json");if(req.headers["x-api-key"]!=="fixture-email-key"){res.statusCode=401;res.end(JSON.stringify({status:"error"}));return;}mailRequests.push(JSON.parse(data));res.end(JSON.stringify(mailFails?{status:"error",code:mailFailureCode||undefined,message:"Sensitive provider details fixture"}:{status:"success",job_id:"fixture"}));});});
+  mailServer=createServer((req,res)=>{let data="";req.on("data",chunk=>data+=chunk);req.on("end",()=>{
+    res.setHeader("Content-Type","application/json");
+    const authorized=mailProvider==="smtpbz"?req.headers.authorization==="fixture-smtpbz-key":req.headers["x-api-key"]==="fixture-email-key";
+    if(!authorized){res.statusCode=401;res.end(JSON.stringify({status:"error"}));return;}
+    const body=JSON.parse(data);
+    if(mailProvider==="smtpbz"){
+      if(typeof body.to!=="string"||typeof body.html!=="string"||body.from!=="noreply@episyhub.space"||typeof body.text!=="string"){res.statusCode=400;res.end(JSON.stringify({error:"Invalid SMTP.bz fixture payload"}));return;}
+      mailRequests.push({message:{recipients:[{email:body.to}],body:{plaintext:body.text},track_links:0,track_read:0}});
+      res.statusCode=mailFails?403:200;res.end(JSON.stringify(mailFails?{error:"Sensitive provider details fixture"}:{id:"fixture-smtpbz-accepted"}));return;
+    }
+    mailRequests.push(body);res.end(JSON.stringify(mailFails?{status:"error",code:mailFailureCode||undefined,message:"Sensitive provider details fixture"}:{status:"success",job_id:"fixture"}));
+  });});
   await new Promise<void>(resolve=>mailServer.listen(0,"127.0.0.1",resolve));
   const mailPort=(mailServer.address() as {port:number}).port;
   server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', new URL(base).port], {
     detached: true,
-    env: { ...process.env, DATABASE_URL: databaseUrl, AUTH_SECRET: randomBytes(32).toString('hex'), APP_URL:base, UNISENDER_GO_API_KEY:'fixture-email-key', EMAIL_FROM:'noreply@episyhub.space', EMAIL_FROM_NAME:'EpisyHub', UNISENDER_GO_API_URL:`http://127.0.0.1:${mailPort}/send`, TMDB_API_KEY: '', TMDB_READ_ACCESS_TOKEN: '', NEXT_PUBLIC_TMDB_API_KEY: '', NEXT_TELEMETRY_DISABLED: '1' },
+    env: { ...process.env, DATABASE_URL: databaseUrl, AUTH_SECRET: randomBytes(32).toString('hex'), APP_URL:base, EMAIL_PROVIDER:mailProvider, SMTPBZ_API_KEY:"fixture-smtpbz-key", SMTPBZ_API_URL:`http://127.0.0.1:${mailPort}/send`, UNISENDER_GO_API_KEY:'fixture-email-key', EMAIL_FROM:'noreply@episyhub.space', EMAIL_FROM_NAME:'EpisyHub', UNISENDER_GO_API_URL:`http://127.0.0.1:${mailPort}/send`, TMDB_API_KEY: '', TMDB_READ_ACCESS_TOKEN: '', NEXT_PUBLIC_TMDB_API_KEY: '', NEXT_TELEMETRY_DISABLED: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   await new Promise<void>((resolve, reject) => {
@@ -1915,5 +1927,5 @@ test("TMDB actor links resolve the external ID rather than a colliding local Sho
 test("provider quota rejection survives resend handling without exposing provider payload",async()=>{
  const account=await pendingAccount();await prisma.pendingRegistration.update({where:{email:account.email},data:{sentAt:new Date(Date.now()-61000)}});
  mailFails=true;mailFailureCode=903;
- try {const response=await guest.request('/api/email-verification/request','POST',{email:account.email});assert.equal(response.status,503);const data=await response.json();assert.match(data.error,/MAIL-903/);assert.equal(data.error.includes('Sensitive provider'),false);assert.equal(data.error.includes(account.email),false);}finally{mailFails=false;mailFailureCode=0;}
+ try {const response=await guest.request('/api/email-verification/request','POST',{email:account.email});assert.equal(response.status,503);const data=await response.json();assert.match(data.error,mailProvider==="smtpbz"?/MAIL-SMTPBZ-HTTP-403/:/MAIL-903/);assert.equal(data.error.includes('Sensitive provider'),false);assert.equal(data.error.includes(account.email),false);}finally{mailFails=false;mailFailureCode=0;}
 });
