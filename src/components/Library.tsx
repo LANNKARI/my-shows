@@ -244,30 +244,8 @@ export default function Library() {
   const quick = useQuickProgress(userId, applyProgress);
   const undoButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!quick.undo) return;
-    const markButton = document.querySelector<HTMLButtonElement>(
-      `[data-quick-progress="${quick.undo.id}"]`,
-    );
-    if (
-      document.activeElement !== document.body &&
-      document.activeElement !== markButton
-    )
-      return;
-    (quick.undo.focus ? undoButton.current : markButton)?.focus({
-      preventScroll: true,
-    });
-    const card = undoButton.current?.closest("article");
-    if (card) {
-      const rect = card.getBoundingClientRect();
-      const headerBottom =
-        document.querySelector("header")?.getBoundingClientRect().bottom || 0;
-      const bar = document
-        .querySelector('nav[aria-label="Мобильная навигация"]')
-        ?.getBoundingClientRect();
-      const bottom = bar?.height ? bar.top : window.innerHeight;
-      if (rect.top < headerBottom || rect.bottom > bottom)
-        card.scrollIntoView({ block: "start" });
-    }
+    if (quick.undo?.focus && document.activeElement === document.body)
+      undoButton.current?.focus({ preventScroll: true });
   }, [quick.undo]);
 
   useEffect(() => {
@@ -363,8 +341,10 @@ export default function Library() {
       aria-label="Последнее изменение прогресса"
       className={
         inline
-          ? "mt-3 space-y-2 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3"
-          : "fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-40 space-y-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-4 shadow-2xl xl:inset-x-auto xl:bottom-5 xl:right-6 xl:w-96"
+          ? "mt-2"
+          : quick.error
+            ? "fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-40 space-y-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-4 shadow-2xl xl:inset-x-auto xl:bottom-5 xl:right-6 xl:w-96"
+            : "mt-4"
       }
     >
       {quick.error ? (
@@ -384,20 +364,7 @@ export default function Library() {
             Обновить библиотеку
           </button>
         </>
-      ) : (
-        quick.undo && (
-          <>
-            <p role="status" className="text-sm font-semibold text-neutral-100">
-              {quick.undo.message}
-            </p>
-            {!inline && (
-              <p className="line-clamp-2 text-xs text-neutral-400">
-                {quick.undo.title} · Отмена доступна 10 минут
-              </p>
-            )}
-          </>
-        )
-      )}
+      ) : null}
       <div className="flex flex-wrap gap-3">
         {quick.undo && (
           <button
@@ -425,7 +392,7 @@ export default function Library() {
 
   return (
     <section
-      className={`space-y-6 ${(quick.undo || quick.error) && !inlineUndo ? "pb-48" : "pb-4"}`}
+      className={`space-y-6 ${quick.error && !inlineUndo ? "pb-48" : "pb-4"}`}
     >
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>

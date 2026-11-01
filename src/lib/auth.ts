@@ -1,8 +1,12 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+
+class EmailUnverified extends CredentialsSignin {
+  code = "EmailUnverified";
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
@@ -24,7 +28,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const password = String(credentials.password);
 
         const user = await prisma.user.findUnique({ where: { email } });
-        if (!user || !user.passwordHash) return null;
+        if (!user) {
+          const pending = await prisma.pendingRegistration.findUnique({
+            where: { email },
+          });
+          if (
+            pending &&
+            pending.expiresAt.getTime() > Date.now() &&
+            (await bcrypt.compare(password, pending.passwordHash))
+          )
+            throw new EmailUnverified();
+          return null;
+        }
+        if (!user.passwordHash) return null;
 
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;

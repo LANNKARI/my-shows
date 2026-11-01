@@ -28,7 +28,11 @@ function LoginForm() {
         redirect: false,
       });
       if (res?.error || !res?.ok) {
-        setError("Неверный email или пароль");
+        setError(
+          res?.code === "EmailUnverified"
+            ? "Сначала подтвердите почту по ссылке из письма."
+            : "Неверный email или пароль",
+        );
         return;
       }
       router.push(
@@ -82,6 +86,9 @@ function LoginForm() {
         </div>
       )}
 
+      <Link href="/verify-email" className="block text-sm text-rose-400">
+        Не пришло письмо подтверждения?
+      </Link>
       <button
         type="submit"
         disabled={loading}
