@@ -1917,3 +1917,142 @@ test("provider quota rejection survives resend handling without exposing provide
  mailFails=true;mailFailureCode=903;
  try {const response=await guest.request('/api/email-verification/request','POST',{email:account.email});assert.equal(response.status,503);const data=await response.json();assert.match(data.error,/MAIL-903/);assert.equal(data.error.includes('Sensitive provider'),false);assert.equal(data.error.includes(account.email),false);}finally{mailFails=false;mailFailureCode=0;}
 });
+
+test("daily quiz resumes the tenth frame, blocks an eleventh and rejects yesterday", async () => {
+  const { record, client } = await featureAccount();
+  const data = {
+    targetId: 1,
+    correctTitle: "Верный фильм",
+    options: ["Верный фильм", "Другой фильм"],
+    backdropUrl: "/fixture.jpg",
+  };
+  await prisma.popcornQuizRound.createMany({
+    data: Array.from({ length: 9 }, () => ({
+      userId: record.id,
+      data,
+      answered: true,
+      correct: false,
+    })),
+  });
+  const round = await prisma.popcornQuizRound.create({
+    data: { userId: record.id, data },
+  });
+  for (let i = 0; i < 2; i++) {
+    const response = await client.request("/api/popcorn?action=get-quiz");
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.roundId, round.id);
+    assert.equal(body.dailyUsed, 10);
+    assert.equal(body.attemptsLeft, 0);
+  }
+  const answer = await (
+    await client.request("/api/popcorn", "POST", {
+      action: "submit-quiz",
+      roundId: round.id,
+      selectedTitle: "Верный фильм",
+    })
+  ).json();
+  assert.equal(answer.reward, 1);
+  assert.equal(answer.dailyAnswered, 10);
+  const capped = await (
+    await client.request("/api/popcorn?action=get-quiz")
+  ).json();
+  assert.equal(capped.limitReached, true);
+  assert.equal(capped.roundId, undefined);
+  assert.equal(
+    await prisma.popcornQuizRound.count({ where: { userId: record.id } }),
+    10,
+  );
+  const old = await prisma.popcornQuizRound.create({
+    data: {
+      userId: record.id,
+      data,
+      createdAt: new Date(Date.now() - 86400000),
+    },
+  });
+  assert.equal(
+    (
+      await client.request("/api/popcorn", "POST", {
+        action: "submit-quiz",
+        roundId: old.id,
+        selectedTitle: "Верный фильм",
+      })
+    ).status,
+    409,
+  );
+});
+
+test("quiz creation serializes parallel tabs and excludes weekly movies, aliases, frames and anime", async () => {
+  const { getQuiz } = await import("../src/lib/popcorn-quiz");
+  const { record } = await featureAccount();
+  const data = {
+    targetId: 1,
+    correctTitle: "Старый фильм",
+    options: ["Старый фильм"],
+    backdropUrl: "https://image.tmdb.org/t/p/original/old.jpg",
+  };
+  await prisma.popcornQuizRound.create({
+    data: {
+      userId: record.id,
+      data,
+      answered: true,
+      createdAt: new Date(Date.now() - 86400000),
+    },
+  });
+  const results = [
+    { id: 1, title: "Другой перевод", backdrop_path: "/other.jpg" },
+    { id: 2, title: " СТАРЫЙ ФИЛЬМ ", backdrop_path: "/other2.jpg" },
+    { id: 3, title: "Другой фильм", backdrop_path: "/old.jpg" },
+    {
+      id: 4,
+      title: "Аниме",
+      backdrop_path: "/anime.jpg",
+      genre_ids: [16],
+      original_language: "ja",
+    },
+    ...Array.from({ length: 20 }, (_, i) => ({
+      id: i + 10,
+      title: `Фильм ${i}`,
+      backdrop_path: `/new${i}.jpg`,
+    })),
+  ].map((m) => ({
+    genre_ids: [18],
+    original_language: "en",
+    release_date: "2020-01-01",
+    ...m,
+  }));
+  const fetcher = (async () => Response.json({ results })) as typeof fetch;
+  const rounds = await Promise.all(
+    Array.from({ length: 3 }, () =>
+      getQuiz(record.id, { db: prisma, apiKey: "fixture", fetcher }),
+    ),
+  );
+  assert.equal(
+    new Set(rounds.map((r) => ("roundId" in r ? r.roundId : undefined))).size,
+    1,
+  );
+  const current = await prisma.popcornQuizRound.findFirstOrThrow({
+    where: { userId: record.id, answered: false },
+  });
+  assert.ok((current.data as { targetId: number }).targetId >= 10);
+  assert.equal(
+    await prisma.popcornQuizRound.count({ where: { userId: record.id } }),
+    2,
+  );
+  await prisma.popcornQuizRound.update({
+    where: { id: current.id },
+    data: { answered: true },
+  });
+  await assert.rejects(
+    getQuiz(record.id, {
+      db: prisma,
+      apiKey: "fixture",
+      fetcher: (async () =>
+        Response.json({ results: [results[0]] })) as typeof fetch,
+    }),
+  );
+  assert.equal(
+    await prisma.popcornQuizRound.count({ where: { userId: record.id } }),
+    2,
+  );
+});

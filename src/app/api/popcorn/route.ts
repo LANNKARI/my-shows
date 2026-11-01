@@ -12,8 +12,9 @@ import {
   STREAK_REWARDS,
 } from "@/lib/daily-popcorn";
 import { claimTask, economyView } from "@/lib/popcorn-economy";
-import { getQuiz, answerQuiz } from "@/lib/popcorn-quiz";
+import { getQuiz, answerQuiz, quizStatus } from "@/lib/popcorn-quiz";
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 export async function GET(request: NextRequest) {
   try {
     const userId = await calendarUser(request);
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
       dailyStreak: user.dailyStreak,
       nextStreak: nextDailyStreak(user.lastDailyClaim, user.dailyStreak),
       streakRewards: STREAK_REWARDS,
-      quizAttemptsLeft: 10,
+      quizAttemptsLeft: (await quizStatus(userId)).attemptsLeft,
     });
   } catch (e) {
     return calendarFailure(e);

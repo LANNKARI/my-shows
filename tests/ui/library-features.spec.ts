@@ -333,7 +333,7 @@ for (const correct of [true, false]) {
     const fits = await green.evaluate((el) => el.scrollWidth <= el.clientWidth);
     expect(fits).toBe(true);
     await expect(page.getByRole("main")).toContainText(
-      "Дневного лимита наград нет",
+      "10 кадров в сутки",
     );
   });
 }
