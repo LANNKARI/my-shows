@@ -2056,3 +2056,96 @@ test("quiz creation serializes parallel tabs and excludes weekly movies, aliases
     2,
   );
 });
+
+test("reward history groups complete days before pagination without changing wallet or mixing users and debits", async () => {
+  const { record, client } = await featureAccount();
+  const day = new Date("2026-10-25T00:00:00Z"),
+    yesterday = new Date("2026-10-24T00:00:00Z");
+  const seed = (
+    eventKey: string,
+    category: string,
+    amount: number,
+    reason: string,
+    date = day,
+  ) => ({ userId: record.id, eventKey, category, amount, reason, day: date });
+  await prisma.popcornEntry.createMany({
+    data: [
+      ...Array.from({ length: 25 }, (_, i) =>
+        seed(`quiz-${i}`, "game", 1, "Верный ответ в викторине"),
+      ),
+      seed("duel", "game", 5, "Банк игры"),
+      seed("previous", "game", 1, "Верный ответ в викторине", yesterday),
+      seed("rating1", "activity", 2, "Личная оценка"),
+      seed("rating2", "activity", 2, "Личная оценка"),
+      seed("buy", "purchase", -10, "Предмет"),
+      seed("refund", "purchase", 10, "Предмет"),
+      seed("hidden", "game-event", 0, "Внутренняя запись"),
+      seed("legacy", "legacy", 100, "Старый баланс"),
+      ...Array.from({ length: 25 }, (_, i) =>
+        seed(`other-${i}`, "activity", 1, `Причина ${i}`),
+      ),
+      {
+        userId: alice.id,
+        eventKey: "foreign-history-fixture",
+        category: "game",
+        amount: 999,
+        reason: "Чужая игра",
+        day,
+      },
+    ],
+  });
+  const before = await prisma.user.findUniqueOrThrow({
+    where: { id: record.id },
+  });
+  const entries: {
+    id: string;
+    reason: string;
+    amount: number;
+    count: number;
+    createdAt: string;
+  }[] = [];
+  let cursor: string | null = null;
+  do {
+    const response = await client.request(
+      "/api/popcorn-history" +
+        (cursor ? "?cursor=" + encodeURIComponent(cursor) : ""),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    entries.push(...body.items);
+    cursor = body.nextCursor;
+  } while (cursor);
+  assert.equal(entries.length, 30);
+  assert.equal(new Set(entries.map((v) => v.id)).size, 30);
+  const games = entries.filter((v) => v.reason === "За мини-игры");
+  assert.deepEqual(
+    games.map((v) => v.amount),
+    [30, 1],
+  );
+  assert.equal(games[0].count, 26);
+  assert.equal(entries.find((v) => v.reason === "Личная оценка")?.amount, 4);
+  assert.deepEqual(
+    entries
+      .filter((v) => v.reason === "Предмет")
+      .map((v) => v.amount)
+      .sort((a, b) => a - b),
+    [-10, 10],
+  );
+  assert.ok(
+    !entries.some(
+      (v) =>
+        v.reason.includes("Чужая") ||
+        v.reason.includes("Внутренняя") ||
+        v.reason === "Старый баланс",
+    ),
+  );
+  assert.equal(
+    (await prisma.user.findUniqueOrThrow({ where: { id: record.id } })).popcorn,
+    before.popcorn,
+  );
+  assert.equal(
+    (await client.request("/api/popcorn-history?cursor=invalid")).status,
+    400,
+  );
+  assert.equal((await guest.request("/api/popcorn-history")).status, 401);
+});
