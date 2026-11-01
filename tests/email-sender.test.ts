@@ -34,7 +34,12 @@ test("Unisender Go receives only the intended recipient and an untracked verific
         assert.equal(init?.method, "POST");
         assert.ok(init?.signal);
         const body = JSON.parse(String(init?.body));
-        assert.equal(body.api_key, "fixture");
+        assert.equal(new Headers(init?.headers).get("X-API-KEY"), "fixture");
+        assert.equal(
+          new Headers(init?.headers).get("Accept"),
+          "application/json",
+        );
+        assert.equal("api_key" in body, false);
         assert.deepEqual(body.message.recipients, [
           { email: "test@example.test" },
         ]);

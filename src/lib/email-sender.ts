@@ -1,6 +1,6 @@
 export class EmailError extends Error {}
 export function emailConfiguration() {
-  const apiKey = process.env.UNISENDER_GO_API_KEY;
+  const apiKey = process.env.UNISENDER_GO_API_KEY?.trim();
   const from = process.env.EMAIL_FROM;
   const name = process.env.EMAIL_FROM_NAME || "EpisyHub";
   const app = new URL(process.env.APP_URL || "https://episyhub.space");
@@ -54,10 +54,13 @@ export async function sendVerificationEmail(
   try {
     response = await fetcher(config.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "X-API-KEY": config.apiKey,
+      },
       signal: AbortSignal.timeout(10000),
       body: JSON.stringify({
-        api_key: config.apiKey,
         message: {
           recipients: [{ email }],
           from_email: config.from,

@@ -26,7 +26,7 @@ const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
 const base = `http://127.0.0.1:${process.env.SECURITY_TEST_PORT || '3317'}`;
 let server: ChildProcess | undefined;
 let mailServer: Server;
-const mailRequests: {api_key:string; message:{recipients:{email:string}[];body:{plaintext:string};track_links:number;track_read:number}}[]=[];
+const mailRequests: {message:{recipients:{email:string}[];body:{plaintext:string};track_links:number;track_read:number}}[]=[];
 let mailFails=false;
 let serverOutput = '';
 let seeded = false;
@@ -138,7 +138,7 @@ before(async () => {
   foreignProgressId = (await prisma.episodeProgress.create({ data: { userShowId: foreignLibrary.id, episodeId: show.episodes[0].id } })).id;
   const otherShow = await prisma.show.create({ data: { name: 'Another test', kind: 'series', countries: [], studios: [], genres: [], creators: [], episodes: { create: { season: 1, episode: 1 } } }, include: { episodes: true } });
   otherEpisodeId = otherShow.episodes[0].id;
-  mailServer=createServer((req,res)=>{let data="";req.on("data",chunk=>data+=chunk);req.on("end",()=>{mailRequests.push(JSON.parse(data));res.setHeader("Content-Type","application/json");res.end(JSON.stringify(mailFails?{status:"error"}:{status:"success",job_id:"fixture"}));});});
+  mailServer=createServer((req,res)=>{let data="";req.on("data",chunk=>data+=chunk);req.on("end",()=>{res.setHeader("Content-Type","application/json");if(req.headers["x-api-key"]!=="fixture-email-key"){res.statusCode=401;res.end(JSON.stringify({status:"error"}));return;}mailRequests.push(JSON.parse(data));res.end(JSON.stringify(mailFails?{status:"error"}:{status:"success",job_id:"fixture"}));});});
   await new Promise<void>(resolve=>mailServer.listen(0,"127.0.0.1",resolve));
   const mailPort=(mailServer.address() as {port:number}).port;
   server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', new URL(base).port], {
