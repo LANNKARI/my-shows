@@ -212,13 +212,13 @@ test.describe("desktop card interaction", () => {
     await card.scrollIntoViewIfNeeded();
     const frames = card.locator('[aria-hidden="true"]').first();
     await page.mouse.move(0, 0);
-    await expect(frames).toHaveCSS("filter", "brightness(0.76)");
+    await expect(frames).toHaveCSS("filter", "brightness(0.52)");
     const bounds = await card.boundingBox();
-    expect(bounds!.height).toBeLessThan(380);
+    expect(bounds!.height).toBeLessThan(280);
     await card.hover();
     await expect(frames).toHaveCSS("filter", "brightness(1)");
     await page.mouse.move(0, 0);
-    await expect(frames).toHaveCSS("filter", "brightness(0.76)");
+    await expect(frames).toHaveCSS("filter", "brightness(0.52)");
     await card.getByRole("link").focus();
     await expect(frames).toHaveCSS("filter", "brightness(1)");
   });
