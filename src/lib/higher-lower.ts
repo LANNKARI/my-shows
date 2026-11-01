@@ -1,3 +1,4 @@
+import { isAnimeMovie } from "./game-movies";
 import { randomUUID } from "crypto";
 
 export const MAX_DUEL_ATTEMPTS = 5;
@@ -26,6 +27,9 @@ type TmdbMovie = {
   poster_path: string;
   vote_average: number;
   release_date: string;
+  genre_ids?: number[];
+  original_language?: string;
+  origin_country?: string[];
 };
 
 export function publicDuel(state: DuelState, attempts: number) {
@@ -114,6 +118,7 @@ export async function createDuel(
         .flat()
         .filter(
           (m) =>
+            !isAnimeMovie(m) &&
             m.poster_path &&
             /[а-яА-ЯёЁ]/.test(m.title) &&
             Number.isFinite(m.vote_average) &&

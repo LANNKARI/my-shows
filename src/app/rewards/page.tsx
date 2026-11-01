@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import GameBanners from "@/components/GameBanners";
 import DailyBonus from "@/components/DailyBonus";
 import { privateFetch } from "@/lib/private-fetch";
 type Quest = {
@@ -233,21 +234,7 @@ function Rewards() {
             : "Все 3 задания: ещё +10 🍿"}
         </button>
       </section>
-      <section className="grid sm:grid-cols-2 gap-5">
-        <Link href="/rewards/quiz" className="card p-6">
-          <h2 className="font-bold text-lg">🎬 Угадай фильм по кадру</h2>
-          <p className="text-sm text-neutral-400 mt-2">
-            +1 🍿 за верный ответ. Без дневного лимита наград.
-          </p>
-        </Link>
-        <Link href="/rewards/higher-lower" className="card p-6">
-          <h2 className="font-bold text-lg">⚖️ Больше или меньше</h2>
-          <p className="text-sm text-neutral-400 mt-2">
-            +1 🍿 в банк за верный ответ. Заберите банк или пройдите 5 раундов.
-            Играть и получать награды можно без дневного лимита.
-          </p>
-        </Link>
-      </section>
+      <GameBanners />
       <section className="card p-6 space-y-3">
         <h2 className="text-xl font-bold">История операций</h2>
         {historyError && (
