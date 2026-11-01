@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { formatPosterUrl, safeJson } from '@/lib/current-user';
+import { airingWindow, isCurrentlyAiring } from '@/lib/home-airing';
 import { UNIVERSES_CONFIG, DIRECTORS_CONFIG } from '@/lib/collections-config';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/original';
 
@@ -41,6 +43,7 @@ export async function GET(request: NextRequest) {
         const res = await fetch(makeTmdbUrl(endpoint, params), {
           headers,
           next: { revalidate: 1800 },
+          signal: AbortSignal.timeout(6000),
         });
         if (!res.ok) return null;
         return await res.json();
@@ -242,6 +245,7 @@ export async function GET(request: NextRequest) {
     // 3. Данные для главной страницы
     const now = new Date();
     const today = now.toISOString().split('T')[0];
+    const activeWindow = airingWindow(now);
     const fourMonthsAgo = new Date(new Date().setMonth(now.getMonth() - 4)).toISOString().split('T')[0];
     const nextMonth = new Date(new Date().setMonth(now.getMonth() + 1)).toISOString().split('T')[0];
 
@@ -255,6 +259,9 @@ export async function GET(request: NextRequest) {
       fetchTmdbList('trending/all/week'),
       fetchTmdbList('discover/tv', {
         sort_by: 'popularity.desc',
+        'air_date.gte': activeWindow.from,
+        'air_date.lte': activeWindow.to,
+        with_status: '0',
         'vote_average.gte': 8.0,
         'vote_count.gte': 300,
         without_genres: '16',
@@ -292,17 +299,30 @@ export async function GET(request: NextRequest) {
       ...topRecentMoviesRaw.map((m: any) => ({ ...m, media_type: 'movie' })),
     ];
 
-    const bannerMap = new Map<number, any>();
+    // Trending is not evidence of an active season. Verify every TV candidate,
+    // including those from trending, against its episode schedule before selection.
+    const seriesIds = [...new Set<number>(bannerCandidates
+      .filter((item: any) => item.media_type === 'tv' && item.vote_average >= 8 && item.backdrop_path && item.overview && isAllowedWesternOrGlobal(item))
+      .map((item: any) => item.id))].slice(0, 30);
+    const schedules = await Promise.allSettled(seriesIds.map(async (id) => {
+      const details = await fetchTmdbJson(`tv/${id}`);
+      return isCurrentlyAiring(details, now) ? id : null;
+    }));
+    const currentlyAiring = new Set(schedules.flatMap(result =>
+      result.status === 'fulfilled' && result.value !== null ? [result.value] : []));
+
+    const bannerMap = new Map<string, any>();
     for (const item of bannerCandidates) {
       const score = item.vote_average ? Number(item.vote_average.toFixed(1)) : 0;
       if (
+        (item.media_type !== 'tv' || currentlyAiring.has(item.id)) &&
         score >= 8.0 &&
         item.backdrop_path &&
         item.overview &&
         isAllowedWesternOrGlobal(item) &&
-        !bannerMap.has(item.id)
+        !bannerMap.has(`${item.media_type}-${item.id}`)
       ) {
-        bannerMap.set(item.id, formatMedia(item));
+        bannerMap.set(`${item.media_type}-${item.id}`, formatMedia(item));
       }
       if (bannerMap.size >= 8) break;
     }
