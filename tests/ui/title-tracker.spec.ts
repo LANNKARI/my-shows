@@ -414,7 +414,7 @@ test("tracker quick mark uses library ID, advances progress and undo restores ti
   expect(calls[1].body).toEqual({ action: "undo", token: "fixture-token" });
 });
 
-test("tracker confirms whole seasons and cancellation never changes progress", async ({
+test("tracker marks and unmarks whole seasons without a confirmation dialog", async ({
   page,
 }) => {
   const calls = await setup(page);
@@ -426,22 +426,21 @@ test("tracker confirms whole seasons and cancellation never changes progress", a
   await season
     .getByRole("button", { name: "Отметить сезон", exact: true })
     .click();
-  expect(calls).toHaveLength(0);
-  await season.getByRole("button", { name: "Отмена", exact: true }).click();
-  expect(calls).toHaveLength(0);
-  await season
-    .getByRole("button", { name: "Отметить сезон", exact: true })
-    .click();
-  await season.getByRole("button", { name: "Подтвердить" }).click();
   await expect(
     season.getByRole("button", { name: "Снять отметки сезона" }),
   ).toBeVisible();
-  expect(calls).toEqual([
-    {
-      path: "/api/user-shows/10",
-      body: { seasonNumber: 1, markSeasonWatched: true },
-    },
-  ]);
+  expect(calls[0]).toEqual({
+    path: "/api/user-shows/10",
+    body: { seasonNumber: 1, markSeasonWatched: true },
+  });
+  await expect(
+    page.getByRole("group", { name: "Подтверждение изменения сезона" }),
+  ).toHaveCount(0);
+  await season.getByRole("button", { name: "Снять отметки сезона" }).click();
+  await expect(
+    season.getByRole("button", { name: "Отметить сезон", exact: true }),
+  ).toBeVisible();
+  expect(calls).toHaveLength(2);
 });
 
 test("tracker validates time and preserves the open season after saving", async ({

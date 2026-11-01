@@ -3,6 +3,7 @@ import { calendarRange, addDays, todayInZone, dayDate, validDay } from '../src/l
 import { syncShowSchedule, scheduleDue } from '../src/lib/release-schedule';
 import { materializeReleases } from '../src/lib/release-notifications';
 import { after, before, test } from 'node:test';
+import { createServer, type Server } from 'node:http';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -24,6 +25,9 @@ const databaseUrl = database.toString();
 const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
 const base = `http://127.0.0.1:${process.env.SECURITY_TEST_PORT || '3317'}`;
 let server: ChildProcess | undefined;
+let mailServer: Server;
+const mailRequests: {api_key:string; message:{recipients:{email:string}[];body:{plaintext:string};track_links:number;track_read:number}}[]=[];
+let mailFails=false;
 let serverOutput = '';
 let seeded = false;
 let nextEnv: string | undefined;
@@ -112,6 +116,13 @@ before(async () => {
     await prisma.$transaction(async tx=>{for(const statement of migration.replace(/^--.*$/gm,'').split(';').map(v=>v.trim()).filter(v=>v&&!['BEGIN','COMMIT'].includes(v)))await tx.$executeRawUnsafe(statement);});
     const flags=await prisma.$queryRawUnsafe<{relrowsecurity:boolean}[]>('SELECT relrowsecurity FROM pg_class WHERE oid=$1::regclass',`"${table}"`);assert.equal(flags[0].relrowsecurity,true);
   }
+  await prisma.$executeRawUnsafe('DROP TABLE "PendingRegistration"');
+  await prisma.$executeRawUnsafe('DROP TABLE "AuthRateLimit"');
+  const emailMigration=await readFile('prisma/migrations/20261101000000_email_verification/migration.sql','utf8');
+  await prisma.$transaction(async tx=>{for(const statement of emailMigration.split(';').map(v=>v.trim()).filter(v=>v&&!['BEGIN','COMMIT'].includes(v)))await tx.$executeRawUnsafe(statement);});
+  for(const table of ['PendingRegistration','AuthRateLimit']) {
+    const flags=await prisma.$queryRawUnsafe<{relrowsecurity:boolean}[]>('SELECT relrowsecurity FROM pg_class WHERE oid=$1::regclass',`"${table}"`);assert.equal(flags[0].relrowsecurity,true);
+  }
   assert.equal((await prisma.user.findUniqueOrThrow({where:{id:legacyUser.id}})).popcorn,321);
   assert.equal((await prisma.popcornEntry.findUniqueOrThrow({where:{userId_eventKey:{userId:legacyUser.id,eventKey:'opening'}}})).amount,321);
   await prisma.user.delete({ where: { id: legacyUser.id } }); await prisma.show.delete({ where: { id: legacyShow.id } });
@@ -127,9 +138,12 @@ before(async () => {
   foreignProgressId = (await prisma.episodeProgress.create({ data: { userShowId: foreignLibrary.id, episodeId: show.episodes[0].id } })).id;
   const otherShow = await prisma.show.create({ data: { name: 'Another test', kind: 'series', countries: [], studios: [], genres: [], creators: [], episodes: { create: { season: 1, episode: 1 } } }, include: { episodes: true } });
   otherEpisodeId = otherShow.episodes[0].id;
+  mailServer=createServer((req,res)=>{let data="";req.on("data",chunk=>data+=chunk);req.on("end",()=>{mailRequests.push(JSON.parse(data));res.setHeader("Content-Type","application/json");res.end(JSON.stringify(mailFails?{status:"error"}:{status:"success",job_id:"fixture"}));});});
+  await new Promise<void>(resolve=>mailServer.listen(0,"127.0.0.1",resolve));
+  const mailPort=(mailServer.address() as {port:number}).port;
   server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', new URL(base).port], {
     detached: true,
-    env: { ...process.env, DATABASE_URL: databaseUrl, AUTH_SECRET: randomBytes(32).toString('hex'), TMDB_API_KEY: '', TMDB_READ_ACCESS_TOKEN: '', NEXT_PUBLIC_TMDB_API_KEY: '', NEXT_TELEMETRY_DISABLED: '1' },
+    env: { ...process.env, DATABASE_URL: databaseUrl, AUTH_SECRET: randomBytes(32).toString('hex'), APP_URL:base, UNISENDER_GO_API_KEY:'fixture-email-key', EMAIL_FROM:'noreply@episyhub.space', EMAIL_FROM_NAME:'EpisyHub', UNISENDER_GO_API_URL:`http://127.0.0.1:${mailPort}/send`, TMDB_API_KEY: '', TMDB_READ_ACCESS_TOKEN: '', NEXT_PUBLIC_TMDB_API_KEY: '', NEXT_TELEMETRY_DISABLED: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   await new Promise<void>((resolve, reject) => {
@@ -154,6 +168,7 @@ after(async () => {
     process.kill(-server.pid, 'SIGTERM');
     await exit;
   }
+  if(mailServer)await new Promise<void>(resolve=>mailServer.close(()=>resolve()));
   for (const file of uploads) await unlink(file).catch(() => undefined);
   if (nextEnv !== undefined) await writeFile('next-env.d.ts', nextEnv);
   if (seeded) await prisma.$executeRawUnsafe(`DROP SCHEMA "${schema}" CASCADE`);
@@ -1590,26 +1605,43 @@ test("different games pay full rewards concurrently beyond fifty popcorn", async
   );
 });
 
-test("new registrations receive a single welcome award and do not import another accounts balance", async () => {
-  const username = "welcome_" + randomBytes(4).toString("hex");
-  const body = { username, email: username + "@example.test", password };
-  const response = await guest.request("/api/register", "POST", body);
-  assert.equal(response.status, 201);
-  const user = await response.json();
-  assert.equal(
-    (await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).popcorn,
-    100,
-  );
-  assert.equal(
-    await prisma.popcornEntry.count({
-      where: { userId: user.id, eventKey: "welcome" },
-    }),
-    1,
-  );
-  assert.equal(
-    (await guest.request("/api/register", "POST", body)).status,
-    409,
-  );
+function receivedToken(email:string){const mail=mailRequests.findLast(m=>m.message.recipients[0].email===email);assert.ok(mail);const link=mail.message.body.plaintext.match(/https?:\/\/\S+/)?.[0];assert.ok(link);return new URLSearchParams(new URL(link).hash.slice(1)).get("token")!;}
+async function pendingAccount(){await prisma.authRateLimit.deleteMany({});const username="pending_"+randomBytes(4).toString("hex"),email=username+"@example.test";const body={username,email,password};const response=await guest.request("/api/register","POST",body);assert.equal(response.status,202);return {body,email,username,token:receivedToken(email)};}
+test("new accounts require mailbox confirmation and receive the welcome award only once", async()=>{
+ const account=await pendingAccount();
+ assert.equal(await prisma.user.count({where:{email:account.email}}),0);
+ const pending=await prisma.pendingRegistration.findUniqueOrThrow({where:{email:account.email}});assert.notEqual(pending.tokenHash,account.token);assert.equal(pending.tokenHash.length,64);
+ const client=new Client();const csrf=await (await client.request('/api/auth/csrf')).json();await client.request('/api/auth/callback/credentials','POST',new URLSearchParams({csrfToken:csrf.csrfToken,email:account.email,password,callbackUrl:base}));assert.equal((await (await client.request('/api/auth/session')).json())?.user,undefined);
+ const results=await Promise.all([guest.request('/api/email-verification/confirm','POST',{token:account.token}),guest.request('/api/email-verification/confirm','POST',{token:account.token})]);assert.equal(results.filter(r=>r.status===200).length,1);
+ const user=await prisma.user.findUniqueOrThrow({where:{email:account.email}});assert.ok(user.emailVerified);assert.equal(user.popcorn,100);assert.equal(await prisma.popcornEntry.count({where:{userId:user.id,eventKey:'welcome'}}),1);assert.equal(await prisma.pendingRegistration.count({where:{email:account.email}}),0);
+ await client.login(user);assert.equal((await guest.request('/api/register','POST',account.body)).status,409);
+});
+test("verification rejects expired and malformed tokens and cross-origin writes",async()=>{
+ const account=await pendingAccount();await prisma.pendingRegistration.update({where:{email:account.email},data:{expiresAt:new Date(Date.now()-1000)}});
+ assert.equal((await guest.request('/api/email-verification/confirm','POST',{token:account.token})).status,400);
+ assert.equal((await guest.request('/api/email-verification/confirm','POST',{token:'invalid'})).status,400);
+ const cross=await fetch(base+'/api/email-verification/confirm',{method:'POST',headers:{Origin:'https://other.example','Content-Type':'application/json'},body:JSON.stringify({token:account.token})});assert.equal(cross.status,403);assert.equal(await prisma.user.count({where:{email:account.email}}),0);
+});
+test("resending rotates the token, enforces a cooldown and never replaces the password",async()=>{
+ const account=await pendingAccount();const before=await prisma.pendingRegistration.findUniqueOrThrow({where:{email:account.email}});const initial=mailRequests.length;
+ await guest.request('/api/email-verification/request','POST',{email:account.email});assert.equal(mailRequests.length,initial);
+ await prisma.pendingRegistration.update({where:{email:account.email},data:{sentAt:new Date(Date.now()-61000)}});
+ const responses=await Promise.all([guest.request('/api/email-verification/request','POST',{email:account.email}),guest.request('/api/email-verification/request','POST',{email:account.email})]);assert.ok(responses.every(r=>r.status===200));assert.equal(mailRequests.length,initial+1);
+ const after=await prisma.pendingRegistration.findUniqueOrThrow({where:{email:account.email}});assert.equal(after.passwordHash,before.passwordHash);assert.notEqual(after.tokenHash,before.tokenHash);
+ assert.equal((await guest.request('/api/email-verification/confirm','POST',{token:account.token})).status,400);assert.equal((await guest.request('/api/email-verification/confirm','POST',{token:receivedToken(account.email)})).status,200);
+ const unknown=await guest.request('/api/email-verification/request','POST',{email:'absent@example.test'});assert.equal(unknown.status,200);
+});
+test("mail failures are recoverable and failed resends preserve the previous valid link",async()=>{
+ await prisma.authRateLimit.deleteMany({});const username='mailfail_'+randomBytes(3).toString('hex'),email=username+'@example.test';
+ mailFails=true;let failed;try{failed=await guest.request('/api/register','POST',{username,email,password});}finally{mailFails=false;}
+ assert.equal(failed.status,503);assert.equal((await failed.json()).verificationRequired,true);assert.equal(await prisma.user.count({where:{email}}),0);
+ assert.equal((await guest.request('/api/email-verification/request','POST',{email})).status,200);const token=receivedToken(email);
+ await prisma.pendingRegistration.update({where:{email},data:{sentAt:new Date(Date.now()-61000)}});
+ mailFails=true;try{assert.equal((await guest.request('/api/email-verification/request','POST',{email})).status,503);}finally{mailFails=false;}
+ assert.equal((await guest.request('/api/email-verification/confirm','POST',{token})).status,200);
+});
+test("email resend rate limits persist in the database",async()=>{
+ await prisma.authRateLimit.deleteMany({});for(let i=0;i<5;i++)assert.equal((await guest.request('/api/email-verification/request','POST',{email:'rate-fixture@example.test'})).status,200);assert.equal((await guest.request('/api/email-verification/request','POST',{email:'rate-fixture@example.test'})).status,429);
 });
 
 test("practice games cannot create a payout even from a forged winning bank", async () => {

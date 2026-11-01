@@ -151,7 +151,6 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
   const [expandedSeasons, setExpandedSeasons] = useState<
     Record<number, boolean>
   >({});
-  const [confirmSeason, setConfirmSeason] = useState<number | null>(null);
   const [editingTime, setEditingTime] = useState<Episode | null>(null);
   const [timeInput, setTimeInput] = useState("");
   const [reload, setReload] = useState(0);
@@ -163,9 +162,9 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
       ),
     true,
   );
-
   useEffect(() => {
-    if (quick.undo?.focus) undoButton.current?.focus({ preventScroll: true });
+    if (quick.undo?.focus && document.activeElement === document.body)
+      undoButton.current?.focus({ preventScroll: true });
   }, [quick.undo]);
 
   useEffect(() => {
@@ -182,7 +181,6 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
       })
       .then((json: TrackerData) => {
         setData(json);
-        setConfirmSeason(null);
         setEditingTime(null);
         setSaveError("");
         const current =
@@ -208,7 +206,9 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
     setBusy(true);
     setSaveError("");
     const before = data;
-    if (method === "POST" && typeof body.watched === "boolean") {
+    const watched =
+      typeof body.watched === "boolean" ? body.watched : body.markSeasonWatched;
+    if (method === "POST" && typeof watched === "boolean") {
       const progress = data.seasons
         .flatMap((season) => season.episodes)
         .map((episode) => ({
@@ -216,7 +216,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
           watched:
             episode.id === body.episodeId ||
             episode.season === body.seasonNumber
-              ? (body.watched as boolean)
+              ? watched
               : episode.watched,
           stoppedAt: episode.stoppedAt,
         }));
@@ -498,33 +498,20 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
               </p>
             )}
           </section>
-          {(quick.undo || quick.error) && (
-            <aside
-              className="td-notice"
-              aria-label="Последнее изменение прогресса"
+          {quick.undo && (
+            <button
+              className="td-text-button"
+              disabled={disabled}
+              ref={undoButton}
+              onClick={() => void quick.undoLast()}
             >
-              {quick.undo && (
-                <>
-                  <p role="status">{quick.undo.message}</p>
-                  <button
-                    className="td-text-button"
-                    disabled={disabled}
-                    ref={undoButton}
-                    onClick={() => void quick.undoLast()}
-                  >
-                    Отменить отметку
-                  </button>
-                </>
-              )}
-              {quick.error && <p role="alert">{quick.error}</p>}
-              <button
-                className="td-text-button"
-                disabled={disabled}
-                onClick={refresh}
-              >
-                Обновить трекер
-              </button>
-            </aside>
+              Отменить отметку
+            </button>
+          )}
+          {quick.error && (
+            <p role="alert" className="td-alert">
+              {quick.error}
+            </p>
           )}
           {saveError && (
             <div className="td-alert" role="alert">
@@ -671,11 +658,10 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
                       className="td-text-button"
                       disabled={disabled}
                       onClick={() =>
-                        setConfirmSeason(
-                          confirmSeason === season.seasonNumber
-                            ? null
-                            : season.seasonNumber,
-                        )
+                        void mutate("POST", {
+                          seasonNumber: season.seasonNumber,
+                          markSeasonWatched: !season.isCompleted,
+                        })
                       }
                     >
                       {season.isCompleted
@@ -683,45 +669,6 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
                         : "Отметить сезон"}
                     </button>
                   </div>
-                  {confirmSeason === season.seasonNumber && (
-                    <div
-                      className="td-confirm"
-                      role="group"
-                      aria-label="Подтверждение изменения сезона"
-                    >
-                      <p>
-                        {season.isCompleted
-                          ? "Снять отметки со всех серий"
-                          : "Отметить просмотренными все серии"}{" "}
-                        сезона {season.seasonNumber}?
-                      </p>
-                      <div className="td-inline">
-                        <button
-                          className="td-button td-primary"
-                          autoFocus
-                          disabled={disabled}
-                          onClick={async () => {
-                            if (
-                              await mutate("POST", {
-                                seasonNumber: season.seasonNumber,
-                                markSeasonWatched: !season.isCompleted,
-                              })
-                            )
-                              setConfirmSeason(null);
-                          }}
-                        >
-                          Подтвердить
-                        </button>
-                        <button
-                          className="td-button"
-                          disabled={disabled}
-                          onClick={() => setConfirmSeason(null)}
-                        >
-                          Отмена
-                        </button>
-                      </div>
-                    </div>
-                  )}
                   <div id={`season-${season.seasonNumber}`} hidden={!open}>
                     {visibleEpisodes.map((episode) => (
                       <div

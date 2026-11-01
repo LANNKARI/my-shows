@@ -48,7 +48,7 @@ test('a quick mark advances one episode, clears its timecode and undo restores b
   await expect(main(page).getByText('Следующая: сезон 1, серия 2')).toBeVisible();
   await expect(main(page).getByText('Отмечено: 1 из 2 серий')).toBeVisible();
   await expect(main(page).getByText(/Остановились на/)).toHaveCount(0);
-  await expect(notice(page).getByRole('status')).toHaveText('Серия отмечена');
+  await expect(main(page).getByText('Серия отмечена', {exact:true})).toHaveCount(0);
   await expect(main(page).getByRole('article', { name: api.title }).getByRole('complementary', { name: 'Последнее изменение прогресса' })).toBeVisible();
   expect(await notice(page).evaluate(element => getComputedStyle(element).position)).not.toBe('fixed');
   await notice(page).scrollIntoViewIfNeeded();
@@ -64,7 +64,7 @@ test('double clicks and busy controls do not send a second mark', async ({ page 
   const button = main(page).getByRole('button', { name: `Отметить следующую серию: ${api.title}` });
   await button.dblclick(); await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute('aria-busy', 'true');
-  await expect(notice(page).getByText('Серия отмечена', { exact: true })).toBeVisible();
+  await expect(notice(page).getByRole('button', {name: `Отменить отметку: ${api.title}`})).toBeVisible();
   expect(api.calls).toHaveLength(1); await expect(button).toBeEnabled();
 });
 
@@ -92,7 +92,7 @@ test('movie completion and undo work in poster mode', async ({ page }) => {
   const api = await setup(page, { movie: true }); await page.goto('/watching?view=posters');
   await main(page).getByRole('button', { name: `Отметить фильм просмотренным: ${api.title}` }).click();
   await expect(main(page).getByRole('article')).toHaveCount(0);
-  await expect(notice(page).getByRole('status')).toHaveText('Фильм отмечен просмотренным');
+  await expect(notice(page).getByRole('button', {name: `Отменить отметку: ${api.title}`})).toBeVisible();
   await notice(page).getByRole('button', { name: `Отменить отметку: ${api.title}` }).click();
   await expect(main(page).getByRole('article', { name: api.title })).toBeVisible();
   await expect(main(page).getByText(/Остановились на 18:42/)).toBeVisible();

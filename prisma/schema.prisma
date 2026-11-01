@@ -401,3 +401,22 @@ model PopcornQuizRound {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, createdAt])
 }
+
+model PendingRegistration {
+  email String @id
+  username String @unique
+  passwordHash String
+  name String?
+  tokenHash String @unique
+  expiresAt DateTime
+  sentAt DateTime
+  createdAt DateTime @default(now())
+  @@index([expiresAt])
+}
+
+model AuthRateLimit {
+  key String @id
+  count Int
+  expiresAt DateTime
+  @@index([expiresAt])
+}
