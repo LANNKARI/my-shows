@@ -126,3 +126,100 @@ test("quiz shows the exhausted daily budget and reset time", async ({
     page.getByRole("button", { name: "Загрузить кадр" }),
   ).toHaveCount(0);
 });
+
+for (const width of [320, 1440])
+  test(`history initially shows five grouped rows and expands without changing rewards at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await shell(page, false);
+    const items = Array.from({ length: 8 }, (_, i) => ({
+      id: `group-${i}`,
+      amount: i === 0 ? 10 : 2,
+      reason: i === 0 ? "За мини-игры" : `Начисление ${i}`,
+      createdAt: "2026-10-25T00:00:00.000Z",
+    }));
+    let pages = 0;
+    await page.route("**/api/popcorn-history*", (route) => {
+      pages++;
+      return route.fulfill({
+        json: {
+          items: route.request().url().includes("cursor=")
+            ? [
+                {
+                  id: "older",
+                  amount: 3,
+                  reason: "Прошлый день",
+                  createdAt: "2026-10-24T00:00:00.000Z",
+                },
+              ]
+            : items,
+          nextCursor: route.request().url().includes("cursor=")
+            ? null
+            : "fixture-cursor",
+        },
+      });
+    });
+    await page.goto("/rewards");
+    const history = page.getByRole("region", { name: "История операций" });
+    await expect(
+      history.getByText("За мини-игры", { exact: true }),
+    ).toHaveCount(1);
+    await expect(history.locator("time")).toHaveCount(5);
+    await expect(history.getByText("+10 🍿")).toBeVisible();
+    await expect(
+      history.getByRole("button", { name: "Показать ещё" }),
+    ).toHaveCount(0);
+    await history
+      .getByRole("button", { name: "Развернуть", exact: true })
+      .click();
+    await expect(history.locator("time")).toHaveCount(8);
+    await expect(
+      history.getByRole("button", { name: "Свернуть", exact: true }),
+    ).toHaveAttribute("aria-expanded", "true");
+    await history.getByRole("button", { name: "Показать ещё" }).click();
+    await expect(history.locator("time")).toHaveCount(9);
+    expect(pages).toBe(2);
+    await history
+      .getByRole("button", { name: "Свернуть", exact: true })
+      .click();
+    await expect(history.locator("time")).toHaveCount(5);
+    await history
+      .getByRole("button", { name: "Развернуть", exact: true })
+      .click();
+    await expect(history.locator("time")).toHaveCount(9);
+    expect(pages).toBe(2);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+
+test.describe("desktop card interaction", () => {
+  test.use({ isMobile: false, hasTouch: false });
+  test("compact game cards brighten on hover and keyboard focus", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await shell(page);
+    await page.goto("/rewards");
+    const card = page
+      .getByRole("region", { name: "Мини-игры" })
+      .locator("article")
+      .first();
+    await card.scrollIntoViewIfNeeded();
+    const frames = card.locator('[aria-hidden="true"]').first();
+    await page.mouse.move(0, 0);
+    await expect(frames).toHaveCSS("filter", "brightness(0.76)");
+    const bounds = await card.boundingBox();
+    expect(bounds!.height).toBeLessThan(380);
+    await card.hover();
+    await expect(frames).toHaveCSS("filter", "brightness(1)");
+    await page.mouse.move(0, 0);
+    await expect(frames).toHaveCSS("filter", "brightness(0.76)");
+    await card.getByRole("link").focus();
+    await expect(frames).toHaveCSS("filter", "brightness(1)");
+  });
+});

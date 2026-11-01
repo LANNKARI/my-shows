@@ -56,6 +56,7 @@ function Rewards() {
     [cursor, setCursor] = useState<string | null>(null),
     [historyError, setHistoryError] = useState(""),
     [historyBusy, setHistoryBusy] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const lock = useRef(false),
     historyLock = useRef(false);
   async function load() {
@@ -235,7 +236,7 @@ function Rewards() {
         </button>
       </section>
       <GameBanners />
-      <section className="card p-6 space-y-3">
+      <section className="card p-6 space-y-3" aria-label="История операций">
         <h2 className="text-xl font-bold">История операций</h2>
         {historyError && (
           <p className="text-sm text-neutral-400">
@@ -245,31 +246,53 @@ function Rewards() {
             </button>
           </p>
         )}
-        {history.map((entry) => (
-          <div
-            key={entry.id}
-            className="flex justify-between gap-4 border-b border-neutral-800 pb-3"
-          >
-            <div>
-              <p className="text-sm">{entry.reason}</p>
-              <time className="text-xs text-neutral-500">
-                {new Date(entry.createdAt).toLocaleString()}
-              </time>
-            </div>
-            <strong
-              className={
-                entry.amount > 0 ? "text-emerald-400" : "text-neutral-300"
-              }
+        <div id="reward-history-items" className="space-y-3">
+          {(historyExpanded ? history : history.slice(0, 5)).map((entry) => (
+            <div
+              key={entry.id}
+              className="flex justify-between gap-4 border-b border-neutral-800 pb-3"
             >
-              {entry.amount > 0 ? "+" : ""}
-              {entry.amount} 🍿
-            </strong>
-          </div>
-        ))}
-        {!history.length && !historyError && (
+              <div className="min-w-0">
+                <p className="text-sm break-words">{entry.reason}</p>
+                <time className="text-xs text-neutral-500">
+                  {new Date(entry.createdAt).toLocaleDateString("ru-RU", {
+                    timeZone: "UTC",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </time>
+              </div>
+              <strong
+                className={
+                  "shrink-0 whitespace-nowrap " +
+                  (entry.amount > 0 ? "text-emerald-400" : "text-neutral-300")
+                }
+              >
+                {entry.amount > 0 ? "+" : ""}
+                {entry.amount} 🍿
+              </strong>
+            </div>
+          ))}
+        </div>
+        {historyBusy && !history.length && (
+          <p role="status">Загрузка истории…</p>
+        )}
+        {!history.length && !historyError && !historyBusy && (
           <p className="text-neutral-400 text-sm">Пока нет операций.</p>
         )}
-        {cursor && (
+        {(history.length > 5 || cursor) && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            aria-expanded={historyExpanded}
+            aria-controls="reward-history-items"
+            onClick={() => setHistoryExpanded((v) => !v)}
+          >
+            {historyExpanded ? "Свернуть" : "Развернуть"}
+          </button>
+        )}
+        {historyExpanded && cursor && (
           <button
             className="btn btn-secondary"
             disabled={historyBusy}
