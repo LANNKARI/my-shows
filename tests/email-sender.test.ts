@@ -4,6 +4,7 @@ import {
   sendVerificationEmail,
   emailConfiguration,
   EmailError,
+  emailRejection,
 } from "../src/lib/email-sender";
 test("Unisender Go receives only the intended recipient and an untracked verification link", async () => {
   const keys = [
@@ -75,5 +76,30 @@ test("Unisender Go receives only the intended recipient and an untracked verific
       if (before[key] === undefined) delete process.env[key];
       else process.env[key] = before[key];
     }
+  }
+});
+
+test("provider diagnostics expose only numeric codes and never raw messages or addresses", () => {
+  const original = console.error;
+  const entries: unknown[][] = [];
+  console.error = (...args: unknown[]) => {
+    entries.push(args);
+  };
+  try {
+    const error = emailRejection(403, {
+      status: "error",
+      code: 903,
+      message: "PRIVATE KEY secret-token recipient@example.test",
+    });
+    assert.match(error.message, /MAIL-903/);
+    assert.equal(JSON.stringify(entries).includes("secret-token"), false);
+    assert.equal(JSON.stringify(entries).includes("recipient@"), false);
+    assert.match(emailRejection(401, { code: "102" }).message, /MAIL-102/);
+    assert.match(
+      emailRejection(403, { code: "secret-token" }).message,
+      /MAIL-HTTP-403/,
+    );
+  } finally {
+    console.error = original;
   }
 });
