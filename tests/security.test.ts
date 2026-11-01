@@ -28,6 +28,7 @@ let server: ChildProcess | undefined;
 let mailServer: Server;
 const mailRequests: {message:{recipients:{email:string}[];body:{plaintext:string};track_links:number;track_read:number}}[]=[];
 let mailFails=false;
+let mailFailureCode=0;
 let serverOutput = '';
 let seeded = false;
 let nextEnv: string | undefined;
@@ -138,7 +139,7 @@ before(async () => {
   foreignProgressId = (await prisma.episodeProgress.create({ data: { userShowId: foreignLibrary.id, episodeId: show.episodes[0].id } })).id;
   const otherShow = await prisma.show.create({ data: { name: 'Another test', kind: 'series', countries: [], studios: [], genres: [], creators: [], episodes: { create: { season: 1, episode: 1 } } }, include: { episodes: true } });
   otherEpisodeId = otherShow.episodes[0].id;
-  mailServer=createServer((req,res)=>{let data="";req.on("data",chunk=>data+=chunk);req.on("end",()=>{res.setHeader("Content-Type","application/json");if(req.headers["x-api-key"]!=="fixture-email-key"){res.statusCode=401;res.end(JSON.stringify({status:"error"}));return;}mailRequests.push(JSON.parse(data));res.end(JSON.stringify(mailFails?{status:"error"}:{status:"success",job_id:"fixture"}));});});
+  mailServer=createServer((req,res)=>{let data="";req.on("data",chunk=>data+=chunk);req.on("end",()=>{res.setHeader("Content-Type","application/json");if(req.headers["x-api-key"]!=="fixture-email-key"){res.statusCode=401;res.end(JSON.stringify({status:"error"}));return;}mailRequests.push(JSON.parse(data));res.end(JSON.stringify(mailFails?{status:"error",code:mailFailureCode||undefined,message:"Sensitive provider details fixture"}:{status:"success",job_id:"fixture"}));});});
   await new Promise<void>(resolve=>mailServer.listen(0,"127.0.0.1",resolve));
   const mailPort=(mailServer.address() as {port:number}).port;
   server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', new URL(base).port], {
@@ -1909,4 +1910,10 @@ test("TMDB actor links resolve the external ID rather than a colliding local Sho
   assert.equal(response.status,200);
   assert.equal((await response.json()).show.id,real.id);
   assert.equal((await owner.request(`/api/shows/${local.id}?source=tmdb&type=wrong`)).status,400);
+});
+
+test("provider quota rejection survives resend handling without exposing provider payload",async()=>{
+ const account=await pendingAccount();await prisma.pendingRegistration.update({where:{email:account.email},data:{sentAt:new Date(Date.now()-61000)}});
+ mailFails=true;mailFailureCode=903;
+ try {const response=await guest.request('/api/email-verification/request','POST',{email:account.email});assert.equal(response.status,503);const data=await response.json();assert.match(data.error,/MAIL-903/);assert.equal(data.error.includes('Sensitive provider'),false);assert.equal(data.error.includes(account.email),false);}finally{mailFails=false;mailFailureCode=0;}
 });

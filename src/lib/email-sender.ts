@@ -1,4 +1,54 @@
 export class EmailError extends Error {}
+const providerReasons: Record<number, string> = {
+  101: "API key missing",
+  102: "Invalid API key or wrong data center",
+  105: "API access disabled",
+  106: "Account inactive",
+  114: "Account not found",
+  118: "Domain TXT missing",
+  122: "DKIM missing",
+  123: "Invalid DKIM",
+  124: "DKIM mismatch",
+  201: "Message body missing",
+  202: "Sender missing",
+  203: "Subject missing",
+  204: "Invalid recipients",
+  205: "Invalid sender",
+  206: "Unverified sender domain",
+  215: "Account cannot send",
+  901: "Daily sending limit",
+  902: "Free plan daily limit",
+  903: "Free plan allows only owned domains or confirmed recipients",
+  904: "Payment failed",
+  905: "Plan quota exceeded",
+  1003: "Sender not confirmed",
+  1007: "Sender domain not confirmed",
+};
+export function emailRejection(httpStatus: number, result: unknown) {
+  const raw =
+    result && typeof result === "object" && "code" in result
+      ? result.code
+      : undefined;
+  const code =
+    (typeof raw === "number" ||
+      (typeof raw === "string" && /^\d{3,4}$/.test(raw))) &&
+    Number.isInteger(Number(raw)) &&
+    Number(raw) >= 100 &&
+    Number(raw) <= 9999
+      ? Number(raw)
+      : null;
+  const reference = code ? `MAIL-${code}` : `MAIL-HTTP-${httpStatus}`;
+  console.error("Unisender Go rejected email", {
+    httpStatus,
+    code,
+    reason: code
+      ? providerReasons[code] || "Unknown API code"
+      : "Unexpected response",
+  });
+  return new EmailError(
+    `Не удалось отправить письмо. Код поддержки: ${reference}.`,
+  );
+}
 export function emailConfiguration() {
   const apiKey = process.env.UNISENDER_GO_API_KEY?.trim();
   const from = process.env.EMAIL_FROM;
@@ -76,7 +126,7 @@ export async function sendVerificationEmail(
     });
   } catch {
     throw new EmailError(
-      "Не удалось подтвердить отправку письма. Попробуйте повторную отправку позже.",
+      "Не удалось связаться с почтовым сервисом. Код поддержки: MAIL-NETWORK. Попробуйте позже.",
     );
   }
   const result: unknown = await response.json().catch(() => null);
@@ -87,7 +137,5 @@ export async function sendVerificationEmail(
     !("status" in result) ||
     result.status !== "success"
   )
-    throw new EmailError(
-      "Почтовый сервис временно не принял письмо. Попробуйте позже.",
-    );
+    throw emailRejection(response.status, result);
 }

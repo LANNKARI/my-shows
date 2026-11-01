@@ -3,7 +3,11 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { credit } from "./popcorn-economy";
-import { emailConfiguration, sendVerificationEmail } from "./email-sender";
+import {
+  EmailError,
+  emailConfiguration,
+  sendVerificationEmail,
+} from "./email-sender";
 export class VerificationError extends Error {
   constructor(
     public status: number,
@@ -134,14 +138,14 @@ export async function startRegistration(body: unknown) {
   }
   try {
     await sendVerificationEmail(email, token);
-  } catch {
+  } catch (error) {
     await prisma.pendingRegistration.updateMany({
       where: { email, tokenHash: tokenHash(token) },
       data: { sentAt: new Date(0) },
     });
     throw new VerificationError(
       503,
-      "Письмо не удалось отправить. Данные сохранены, попробуйте повторную отправку.",
+      `${error instanceof EmailError ? error.message : "Не удалось отправить письмо."} Данные сохранены, попробуйте повторную отправку.`,
       true,
     );
   }
@@ -169,7 +173,7 @@ export async function resendVerification(email: string) {
   if (!updated.count) return;
   try {
     await sendVerificationEmail(email, token);
-  } catch {
+  } catch (error) {
     await prisma.pendingRegistration.updateMany({
       where: { email, tokenHash: hash },
       data: {
@@ -180,7 +184,9 @@ export async function resendVerification(email: string) {
     });
     throw new VerificationError(
       503,
-      "Не удалось отправить письмо. Попробуйте позже.",
+      error instanceof EmailError
+        ? error.message
+        : "Не удалось отправить письмо. Попробуйте позже.",
     );
   }
 }

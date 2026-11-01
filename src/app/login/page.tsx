@@ -15,11 +15,13 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setNeedsVerification(false);
 
     try {
       const res = await signIn("credentials", {
@@ -28,6 +30,7 @@ function LoginForm() {
         redirect: false,
       });
       if (res?.error || !res?.ok) {
+        setNeedsVerification(res?.code === "EmailUnverified");
         setError(
           res?.code === "EmailUnverified"
             ? "Сначала подтвердите почту по ссылке из письма."
@@ -86,9 +89,11 @@ function LoginForm() {
         </div>
       )}
 
-      <Link href="/verify-email" className="block text-sm text-rose-400">
-        Не пришло письмо подтверждения?
-      </Link>
+      {needsVerification && (
+        <Link href="/verify-email" className="block text-sm text-rose-400">
+          Отправить письмо подтверждения повторно
+        </Link>
+      )}
       <button
         type="submit"
         disabled={loading}

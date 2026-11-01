@@ -109,8 +109,59 @@ test("a mail delivery error retains a recovery screen instead of creating a sign
   await expect(
     page.getByRole("heading", { name: "Подтвердите почту" }),
   ).toBeVisible();
-  await expect(page.getByRole("main").getByRole("alert")).toContainText("Данные сохранены");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Данные сохранены",
+  );
   await expect(
     page.getByRole("button", { name: "Отправить письмо повторно" }),
+  ).toBeVisible();
+});
+
+test("login shows resend only after a valid pending-account response", async ({
+  page,
+}) => {
+  await shell(page);
+  await page.route("**/api/auth/providers", (route) =>
+    route.fulfill({
+      json: {
+        credentials: {
+          id: "credentials",
+          name: "credentials",
+          type: "credentials",
+          signinUrl: "",
+          callbackUrl: "",
+        },
+      },
+    }),
+  );
+  await page.route("**/api/auth/csrf", (route) =>
+    route.fulfill({ json: { csrfToken: "fixture" } }),
+  );
+  let pending = false;
+  await page.route("**/api/auth/callback/credentials*", (route) =>
+    route.fulfill({
+      json: {
+        url:
+          "http://127.0.0.1:3320/login?error=CredentialsSignin&code=" +
+          (pending ? "EmailUnverified" : "credentials"),
+      },
+    }),
+  );
+  await page.goto("/login");
+  const main = page.getByRole("main");
+  await expect(
+    main.getByRole("link", { name: /письмо подтверждения/ }),
+  ).toHaveCount(0);
+  await page.getByLabel("Email", { exact: true }).fill("pending@example.test");
+  await page.getByLabel("Пароль", { exact: true }).fill("fixture-password");
+  await main.getByRole("button", { name: "Войти", exact: true }).click();
+  await expect(main).toContainText("Неверный email или пароль");
+  await expect(
+    main.getByRole("link", { name: /письмо подтверждения/ }),
+  ).toHaveCount(0);
+  pending = true;
+  await main.getByRole("button", { name: "Войти", exact: true }).click();
+  await expect(
+    main.getByRole("link", { name: "Отправить письмо подтверждения повторно" }),
   ).toBeVisible();
 });
