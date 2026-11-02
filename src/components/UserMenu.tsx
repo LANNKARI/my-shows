@@ -1,13 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useId } from "react";
 import Link from "next/link";
 import CosmeticAvatar from "./CosmeticAvatar";
+import ThemeToggle from "./ThemeToggle";
 import { useSession, signOut } from "next-auth/react";
 
 export default function UserMenu() {
   const { data: session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
+  const panelId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const username =
@@ -22,28 +25,35 @@ export default function UserMenu() {
         setIsOpen(false);
       }
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && menuRef.current?.contains(document.activeElement)) {
+        setIsOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
-  if (!session?.user) {
-    return (
-      <Link
-        href="/login"
-        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-sm"
-      >
-        Войти
-      </Link>
-    );
-  }
-
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative flex items-center gap-2" ref={menuRef}>
+      {!session?.user && (
+        <Link href="/login" className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-sm">Войти</Link>
+      )}
       <button
+        ref={triggerRef}
+        aria-label={session?.user ? "Меню профиля" : "Настройки оформления"}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 p-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 transition-colors"
       >
+        {session?.user ? <>
         <CosmeticAvatar
           name={username}
           src={session.user.image}
@@ -54,18 +64,24 @@ export default function UserMenu() {
           {username}
         </span>
         <span className="text-[10px] text-neutral-500 hidden sm:inline">▾</span>
+        </> : <span className="flex h-7 w-7 items-center justify-center text-lg" aria-hidden="true">☾</span>}
       </button>
 
       {/* Выпадающий список */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-52 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl py-2 z-50 text-xs">
-          <div className="px-3 py-2 border-b border-neutral-800/80 mb-1">
+        <div id={panelId} className="profile-menu-panel absolute right-0 top-full mt-2 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl py-2 z-50 text-xs">
+          {session?.user && <div className="px-3 py-2 border-b border-neutral-800/80 mb-1">
             <p className="font-semibold text-white truncate">
               {session.user.name || username}
             </p>
             <p className="text-[11px] text-neutral-400 truncate">@{username}</p>
+          </div>}
+          <div className="profile-menu-appearance">
+            <p className="mb-3 text-neutral-400">Тема оформления</p>
+            <ThemeToggle />
+            <p className="mt-3 text-[11px] text-neutral-400">Космос — тема по умолчанию</p>
           </div>
-
+          {session?.user && <>
           <Link
             href={`/u/${username}`}
             onClick={() => setIsOpen(false)}
@@ -133,6 +149,7 @@ export default function UserMenu() {
             <span>🚪</span>
             <span>Выйти</span>
           </button>
+          </>}
         </div>
       )}
     </div>

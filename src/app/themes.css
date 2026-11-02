@@ -1,5 +1,5 @@
 /* Semantic colors also power existing Tailwind utilities throughout the tracker. */
-:root {
+:root[data-theme="light"] {
   color-scheme: light;
   --bg: #eff7ee;
   --bg-2: #ffffff;
@@ -32,6 +32,7 @@
   --info: #285c91;
   --violet: #6d4496;
 }
+:root,
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #0b0c23;
@@ -176,7 +177,6 @@ body {
   .bg-blue-500.text-white, .bg-blue-600.text-white, .bg-indigo-600.text-white, .bg-emerald-500.text-white, .bg-emerald-600.text-white, .bg-green-600.text-white, .bg-red-600.text-white { color: #fff; }
   .bg-black\/75, .bg-black\/60, .bg-black\/80, .bg-black\/50 { --text: #fff; --tone-200: #e3dff4; --tone-300: #cdc8e1; --tone-400: #aaa7c6; }
 }
-@media (max-width: 1535px) { .theme-toggle-label { display: none; } }
 @media (max-width: 640px) {
   .site-header-inner { gap: 8px; padding-left: 12px; padding-right: 12px; height: 72px; }
   .header-actions { gap: 6px; }
@@ -206,9 +206,17 @@ body {
 @layer utilities {
   .bg-black\/75, .bg-black\/60, .bg-black\/80, .bg-black\/50, .bg-black\/40 { --text: #fff; --gold: #f3ce79; }
 }
-@media (max-width: 380px) {
-  .site-header-inner { height: auto; min-height: 72px; padding-block: 12px; align-items: flex-start; }
-  .site-header-inner > a:first-child { margin-top: 6px; }
-  .header-actions { flex: 1; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
-  .header-actions .theme-toggle { order: 1; }
+/* Appearance lives in the profile disclosure, leaving room for search. */
+.profile-menu-panel { width: 280px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 160px); overflow-y: auto; }
+.profile-menu-appearance { padding: 16px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+.profile-menu-appearance .theme-toggle { display: flex; width: 100%; }
+.profile-menu-appearance .theme-toggle button { flex: 1; min-height: 44px; }
+.profile-menu-appearance .theme-toggle-label { display: inline; }
+@media (min-width: 1280px) {
+  .site-header-inner { gap: 12px; }
+  .header-search { min-width: 280px; }
+}
+@media (min-width: 1440px) {
+  .site-header-inner { gap: 24px; }
+  .header-search { min-width: 320px; }
 }

@@ -3,7 +3,6 @@ import { Inter } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import Providers from "./providers";
-import ThemeToggle from "@/components/ThemeToggle";
 import { themeInitScript } from "@/lib/theme";
 import ReleaseBell from "@/components/ReleaseBell";
 import UserMenu from "@/components/UserMenu";
@@ -38,14 +37,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru" className={inter.variable} data-theme="light" suppressHydrationWarning>
+    <html lang="ru" className={inter.variable} data-theme="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="mobile-navigation-layout text-neutral-100 antialiased selection:bg-rose-500 selection:text-white">
         <Providers>
           <header className="site-header sticky top-0 z-40 bg-neutral-950/80 backdrop-blur-md border-b border-neutral-850">
-            <div className="site-header-inner max-w-7xl mx-auto px-4 md:px-6 h-20 flex items-center justify-between gap-4">
+            <div className="site-header-inner max-w-[1536px] mx-auto px-4 md:px-6 h-20 flex items-center justify-between gap-4">
               {/* Логотип */}
               <Link
                 href="/"
@@ -64,7 +63,7 @@ export default function RootLayout({
               <NavLinks />
 
               {/* Поиск */}
-              <div className="hidden xl:flex flex-1 max-w-md mx-2">
+              <div className="header-search hidden xl:flex flex-1 max-w-md mx-2">
                 <SearchBar />
               </div>
 
@@ -77,7 +76,6 @@ export default function RootLayout({
                 >
                   <NavigationIcon name="search" className="h-5 w-5" />
                 </Link>
-                <ThemeToggle />
                 <ReleaseBell />
                 <PopcornBadge />
                 <UserMenu />
