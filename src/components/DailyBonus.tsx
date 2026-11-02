@@ -59,12 +59,12 @@ export default function DailyBonus({
           const content = (
             <>
               <span className={styles.dayLabel}>День {day}</span>
-              <span className={styles.icon} aria-hidden="true">
-                🍿
+              {received && <span className={styles.tick} aria-hidden="true">✓</span>}
+              {day === 7 && !received && <span className={styles.star} aria-hidden="true">✦</span>}
+              <span className={styles.reward}>
+                <strong className={styles.amount}>+{rewards[day] ?? rewardsDefault[day]}</strong>
+                <span className={styles.icon} aria-hidden="true">🍿</span>
               </span>
-              <strong className={styles.amount}>
-                +{rewards[day] ?? rewardsDefault[day]}
-              </strong>
               <span className={styles.state}>{label}</span>
             </>
           );
@@ -75,6 +75,17 @@ export default function DailyBonus({
               data-state={today ? "today" : received ? "received" : "future"}
               aria-current={today ? "step" : undefined}
             >
+              {/* Decorative stills are bundled locally and never gate claiming. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                className={styles.still}
+                src={`/daily-bonus/day-${day}.webp`}
+                alt=""
+                aria-hidden="true"
+                loading="lazy"
+                decoding="async"
+                onError={(event) => { event.currentTarget.style.display = "none"; }}
+              />
               {available ? (
                 <button
                   className={styles.dayContent}

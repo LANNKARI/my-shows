@@ -108,3 +108,15 @@ test("seventh received day shows the first reward of the next cycle", async ({
   await expect(panel.locator('[data-state="received"]')).toHaveCount(6);
   await expect(panel).toContainText("Следующая награда: +10");
 });
+
+test("unavailable decorative stills do not prevent claiming with the keyboard", async ({ page }) => {
+  await page.route("**/daily-bonus/**", route => route.abort());
+  const calls = await setup(page, { streak: 2, next: 3, available: true });
+  await page.goto("/rewards");
+  const panel = page.getByRole("region", { name: "🍿 Ежедневный бонус" });
+  const today = panel.getByRole("button", { name: "Получить бонус за день 3" });
+  await today.focus();
+  await page.keyboard.press("Enter");
+  await expect(panel).toContainText("Сегодня бонус уже получен");
+  expect(calls()).toBe(1);
+});

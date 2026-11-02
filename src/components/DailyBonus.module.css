@@ -1,5 +1,5 @@
 .panel {
-  padding: clamp(20px, 3vw, 32px);
+  padding: clamp(20px, 2.5vw, 28px);
   border: 1px solid var(--border);
   border-radius: 26px;
   background: linear-gradient(120deg, var(--hero), var(--bg-2) 65%);
@@ -9,24 +9,20 @@
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 16px;
 }
 .header h2 {
   font-size: clamp(20px, 2vw, 25px);
   font-weight: 750;
   margin-bottom: 8px;
 }
-.header p,
-.next {
-  color: var(--text-dim);
-  font-size: 13px;
-}
+.header p, .next { color: var(--text-dim); font-size: 13px; }
 .streak {
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--bg-3);
-  padding: 14px 18px;
-  font-size: 18px;
+  padding: 11px 15px;
+  font-size: 14px;
   color: var(--accent);
 }
 .days {
@@ -34,124 +30,146 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 12px;
   list-style: none;
-  margin: 26px 0;
+  margin: 22px 0;
   padding: 0;
 }
 .day {
+  position: relative;
+  isolation: isolate;
   min-width: 0;
-  overflow-wrap: anywhere;
+  height: 180px;
+  overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--bg-2);
-  text-align: center;
+  border-radius: 16px;
+  background: #121224;
+  color: #f5f2ff;
 }
-.dayContent {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+.still {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
   width: 100%;
   height: 100%;
-  gap: 12px;
-  padding: 18px 6px;
-  border-radius: 17px;
+  object-fit: cover;
+  object-position: center top;
+  pointer-events: none;
 }
-button.dayContent {
-  cursor: pointer;
-  transition: background 0.15s ease;
+.day::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(180deg, #09091b45 0%, #11112533 30%, #111125ed 67%, #111125 100%);
+  pointer-events: none;
 }
-button.dayContent:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+.day::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 5px;
+  width: 3px;
+  background: repeating-linear-gradient(to bottom, #fff3 0 5px, transparent 5px 11px);
+  opacity: .6;
+  pointer-events: none;
 }
+.dayContent {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  text-align: left;
+  color: inherit;
+}
+button.dayContent { cursor: pointer; transition: background .15s ease; }
+button.dayContent:hover:not(:disabled) { background: #bca4ff12; }
 .dayLabel {
-  font-size: 13px;
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  border: 1px solid #ffffff20;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: #0c0c20c9;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .6px;
   text-transform: uppercase;
 }
-.icon {
-  font-size: 28px;
+.tick {
+  position: absolute;
+  top: 13px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  line-height: 20px;
+  text-align: center;
+  background: #193a33;
+  color: #a0e5c0;
+  font-size: 11px;
 }
-.amount {
-  font-size: 23px;
-}
-.state {
-  font-size: 12px;
-  margin-top: auto;
-}
-.day[data-state="received"] {
-  background: var(--success-soft);
-  border-color: var(--success);
-}
-.day[data-state="received"] .state {
-  color: var(--success);
-}
-.day[data-state="today"] {
-  background: linear-gradient(150deg, var(--bg-3), var(--hero));
-  border: 2px solid var(--accent);
-  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 10%, transparent);
-}
-.day[data-state="today"] .state {
-  color: var(--accent);
-}
-.day[data-state="future"] {
-  color: var(--text-dim);
-}
-.day[data-state="future"] .amount {
-  color: var(--text-dim);
-}
-.footer {
+.star { position: absolute; right: 11px; top: 13px; color: #f3ce79; font-size: 15px; }
+.reward {
+  position: absolute;
+  left: 14px;
+  right: 8px;
+  bottom: 44px;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: 5px;
 }
-.claim,
-.claimed {
-  padding: 14px 20px;
-  border-radius: 13px;
-  font-weight: 650;
-  font-size: 14px;
+.amount { font-size: 27px; letter-spacing: -.8px; line-height: 1.2; }
+.icon { font-size: 22px; }
+.state {
+  position: absolute;
+  left: 14px;
+  right: 8px;
+  bottom: 15px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #b4b0cd;
 }
-.claim {
-  cursor: pointer;
-  background: var(--accent);
-  border: 1px solid var(--accent-2);
-  color: var(--on-accent);
-  transition: background 0.15s ease;
+.day[data-state="future"] .still { filter: saturate(.6); opacity: .8; }
+.day[data-state="received"] { border-color: var(--success); }
+.day[data-state="received"] .state { color: #9ddbbb; }
+.day[data-state="today"] {
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 8%, transparent);
 }
-.claim:hover:not(:disabled) {
-  background: var(--accent-2);
-}
-.claimed {
-  background: var(--success-soft);
-  border: 1px solid var(--success);
-  color: var(--success);
-}
-.panel button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
-}
-.panel button:disabled {
-  cursor: wait;
-  opacity: 0.75;
-}
+.day[data-state="today"] .state { color: #cfbbff; }
+:global([data-theme="light"]) .day[data-state="today"] .state { color: #b9edc9; }
+.day:last-child:not([data-state="today"]):not([data-state="received"]) { border-color: #736248; }
+.day:last-child .amount { color: #f3ce79; }
+.footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.claim, .claimed { padding: 12px 16px; border-radius: 12px; font-weight: 650; font-size: 12px; }
+.claim { cursor: pointer; background: var(--accent); border: 1px solid var(--accent-2); color: var(--on-accent); transition: background .15s ease; }
+.claim:hover:not(:disabled) { background: var(--accent-2); }
+.claimed { background: var(--success-soft); border: 1px solid var(--success); color: var(--success); }
+.panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+button.dayContent:focus-visible { outline-color: #d6c7ff; outline-offset: -4px; }
+.panel button:disabled { cursor: wait; opacity: .75; }
 @media (max-width: 800px) {
-  .days {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-  }
-  .dayContent {
-    padding: 14px 4px;
-    gap: 10px;
-  }
-  .amount {
-    font-size: 20px;
-  }
-  .dayLabel {
-    font-size: 11px;
-  }
+  .panel { padding: 20px 15px; border-radius: 22px; }
+  .header { gap: 12px; }
+  .header p { font-size: 12px; }
+  .streak { padding: 9px 12px; font-size: 12px; }
+  .days { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 18px 0; }
+  .day { height: 142px; border-radius: 12px; }
+  .day:last-child { grid-column: span 2; }
+  .dayLabel { top: 9px; left: 8px; padding: 3px 4px; font-size: 9px; letter-spacing: .2px; }
+  .tick { top: 34px; right: 8px; width: 15px; height: 15px; line-height: 15px; font-size: 9px; }
+  .reward { left: 8px; right: 4px; bottom: 46px; gap: 2px; }
+  .amount { font-size: 23px; }
+  .icon { font-size: 16px; }
+  .state { left: 8px; right: 5px; bottom: 10px; font-size: 10px; min-height: 26px; }
+  .day::after { left: 3px; width: 2px; opacity: .4; }
+  .footer { align-items: flex-start; gap: 11px; }
+  .next { font-size: 11px; }
 }
 @media (max-width: 360px) {
-  .days {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+  .days { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .day:last-child { grid-column: 1 / -1; height: 122px; }
+  .day:last-child .still { object-position: center 30%; }
 }
