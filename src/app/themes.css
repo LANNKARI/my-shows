@@ -110,7 +110,7 @@ body {
   isolation: isolate;
 }
 [data-theme="dark"] body {
-  background-image: radial-gradient(ellipse at 95% 10%, #542d873f, transparent 45%), radial-gradient(ellipse at 0 90%, #164f763f, transparent 45%);
+  background-image: none;
   background-color: var(--bg);
 }
 [data-theme="dark"] body::before {
@@ -119,9 +119,10 @@ body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: .3;
-  background-image: radial-gradient(circle at 12px 21px, #dfd7ff 1px, transparent 1.3px), radial-gradient(circle at 63px 81px, #a5bce0 .7px, transparent 1px);
-  background-size: 173px 197px, 251px 239px;
+  background: var(--bg) url("/backgrounds/cosmos-nebula.webp") center / cover no-repeat;
+}
+@media (max-width: 640px) {
+  [data-theme="dark"] body::before { background-position: 20% center; }
 }
 ::selection { background: var(--accent); color: var(--on-accent); }
 :where(a, button, input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
