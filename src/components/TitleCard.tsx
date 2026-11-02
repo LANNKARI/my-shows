@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import Link from "next/link";
 
 export type TitleCardData = {
@@ -33,7 +34,7 @@ export default function TitleCard({ t }: { t: TitleCardData }) {
         {t.posterUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={t.posterUrl}
+            loading="lazy" src={tmdbImageUrl(t.posterUrl)}
             alt={t.name}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
           />

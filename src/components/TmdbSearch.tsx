@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useState } from "react";
 
 export type TmdbResult = {
@@ -220,7 +221,7 @@ export default function TmdbSearch({
                     {r.posterPath ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={r.posterPath}
+                        loading="lazy" src={tmdbImageUrl(r.posterPath)}
                         alt=""
                         className="rounded object-cover shrink-0"
                         style={{ width: "40px", height: "60px" }}

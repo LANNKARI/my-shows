@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import ContinueWatching from "@/components/ContinueWatching";
@@ -129,14 +130,14 @@ export default function HomePage() {
               {slide.backdropUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={slide.backdropUrl}
+                  src={tmdbImageUrl(slide.backdropUrl)}
                   alt={slide.title}
                   className="w-full h-full object-cover object-top opacity-45 scale-105"
                 />
               ) : slide.posterUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={slide.posterUrl}
+                  src={tmdbImageUrl(slide.posterUrl)}
                   alt={slide.title}
                   className="w-full h-full object-cover opacity-25 blur-sm"
                 />
@@ -387,7 +388,7 @@ function MediaCard({
         {item.posterUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={item.posterUrl}
+            src={tmdbImageUrl(item.posterUrl)}
             alt={item.title}
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             loading="lazy"

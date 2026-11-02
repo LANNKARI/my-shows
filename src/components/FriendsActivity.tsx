@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -88,7 +89,7 @@ export default function FriendsActivity() {
               {a.title.posterUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={a.title.posterUrl}
+                  src={tmdbImageUrl(a.title.posterUrl)}
                   alt={a.title.name}
                   loading="lazy"
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
@@ -109,7 +110,7 @@ export default function FriendsActivity() {
                   {a.user.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={a.user.avatarUrl}
+                      src={tmdbImageUrl(a.user.avatarUrl)}
                       alt=""
                       className="w-7 h-7 rounded-full object-cover border-2 border-black/60"
                     />

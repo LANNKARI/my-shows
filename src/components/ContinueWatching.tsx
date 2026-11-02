@@ -1,4 +1,5 @@
 "use client";
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -79,7 +80,7 @@ function Shelf() {
               {item.posterUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={item.posterUrl}
+                  src={tmdbImageUrl(item.posterUrl)}
                   alt=""
                   className="w-16 h-24 rounded-lg object-cover"
                   loading="lazy"

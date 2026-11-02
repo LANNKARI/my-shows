@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element -- Existing catalogue posters use remote URLs and a plain image fallback. */
 "use client";
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import Link from "next/link";
 import { formatDay } from "@/lib/calendar-dates";
 import type { ReleaseNotice } from "@/lib/release-types";
@@ -27,7 +28,7 @@ export default function ReleaseNoticeList({
           {item.posterUrl ? (
             <img
               className="rc-poster"
-              src={item.posterUrl}
+              src={tmdbImageUrl(item.posterUrl)}
               alt=""
             />
           ) : (

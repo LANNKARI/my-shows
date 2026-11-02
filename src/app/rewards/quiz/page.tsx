@@ -1,4 +1,5 @@
 "use client";
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { privateFetch } from "@/lib/private-fetch";
@@ -145,7 +146,7 @@ export default function QuizPage() {
         <section className="card overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={question.backdropUrl}
+            src={tmdbImageUrl(question.backdropUrl)}
             alt="Кадр из фильма"
             className="w-full aspect-video object-cover"
           />

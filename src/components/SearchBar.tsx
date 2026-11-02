@@ -1,5 +1,6 @@
 'use client';
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import NavigationIcon from './NavigationIcon';
@@ -120,7 +121,7 @@ export default function SearchBar({ layout = 'dropdown', autoFocus = false }: { 
                     <div className="h-16 w-11 shrink-0 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
                       {item.posterUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                        <img src={tmdbImageUrl(item.posterUrl)} alt="" loading="lazy" className="h-full w-full object-cover" />
                       ) : <span className="flex h-full items-center justify-center text-neutral-500">🎞</span>}
                     </div>
                     <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-semibold text-neutral-100 group-hover:text-rose-400">{title}</p><p className="mt-1 text-xs text-neutral-400">{isSeries ? 'Сериал' : 'Фильм'}{item.year ? ` · ${item.year}` : ''}{item.rating && item.rating > 0 ? ` · ★ ${item.rating.toFixed(1)}` : ''}</p></div>

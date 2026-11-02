@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -20,7 +21,7 @@ function Artwork({
   return src && !failed ? (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />
+      <img src={tmdbImageUrl(src)} alt={alt} loading="lazy" onError={() => setFailed(true)} />
     </>
   ) : (
     <span className={styles.placeholder}>{label}</span>

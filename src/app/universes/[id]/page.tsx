@@ -1,5 +1,6 @@
 'use client';
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 
@@ -98,7 +99,7 @@ export default function UniversePage({
           <div className="absolute inset-0 pointer-events-none z-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={coverBackdrop}
+              src={tmdbImageUrl(coverBackdrop)}
               alt={universe.name}
               className="w-full h-full object-cover opacity-25 scale-105 blur-[1px]"
             />
@@ -180,7 +181,7 @@ export default function UniversePage({
               {item.posterUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={item.posterUrl}
+                  src={tmdbImageUrl(item.posterUrl)}
                   alt={item.title}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"

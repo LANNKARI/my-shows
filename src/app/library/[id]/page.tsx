@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { use, useEffect, useRef, useState } from "react";
 import PersonalNoteEditor from "@/components/PersonalNoteEditor";
 import ReleaseFollowButton from "@/components/ReleaseFollowButton";
@@ -357,7 +358,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
     show.posterUrl /* eslint-disable-next-line @next/next/no-img-element */ ? (
       <img
         className="td-poster"
-        src={show.posterUrl}
+        src={tmdbImageUrl(show.posterUrl)}
         alt={`Постер: ${show.title}`}
       />
     ) : (

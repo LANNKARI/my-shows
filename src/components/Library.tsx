@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import Link from "next/link";
 import { privateFetch } from "@/lib/private-fetch";
 import {
@@ -41,7 +42,7 @@ function Poster({ item, large }: { item: LibraryItem; large: boolean }) {
       {item.posterUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={item.posterUrl}
+          src={tmdbImageUrl(item.posterUrl)}
           alt=""
           loading="lazy"
           className="h-full w-full object-cover"

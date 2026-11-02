@@ -1,5 +1,6 @@
 'use client';
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useState } from 'react';
 import Link from 'next/link';
 
@@ -190,7 +191,7 @@ export default function DiscoverPage() {
             <div className="w-48 sm:w-64 flex-shrink-0 mx-auto md:mx-0">
               <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800 shadow-xl relative">
                 {result.posterUrl && (
-                  <img src={result.posterUrl} alt={result.title} className="w-full h-full object-cover" />
+                  <img loading="lazy" src={tmdbImageUrl(result.posterUrl)} alt={result.title} className="w-full h-full object-cover" />
                 )}
                 <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-bold uppercase text-white border border-white/10">
                   {result.kind === 'movie' ? 'Фильм' : 'Сериал'}

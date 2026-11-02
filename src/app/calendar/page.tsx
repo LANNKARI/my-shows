@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element -- Existing catalogue posters use remote URLs and a plain image fallback. */
 "use client";
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -437,7 +438,7 @@ function EventRow({ event, today }: { event: ReleaseEvent; today: string }) {
       aria-label={`${event.title}: сезон ${event.season}, серия ${event.episode}`}
     >
       {event.posterUrl ? (
-        <img className="rc-poster" src={event.posterUrl} alt="" />
+        <img className="rc-poster" src={tmdbImageUrl(event.posterUrl)} alt="" />
       ) : (
         <div className="rc-poster rc-no-poster" aria-hidden="true">
           TV

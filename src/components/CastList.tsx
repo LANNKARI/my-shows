@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import Link from "next/link";
 import React, { useRef } from "react";
 
@@ -87,7 +88,7 @@ export default function CastList({ cast }: CastListProps) {
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={photo}
+                    src={tmdbImageUrl(photo)}
                     alt={actor.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     loading="lazy"

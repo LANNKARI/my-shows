@@ -1,5 +1,6 @@
 'use client';
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { UNIFIED_GENRES } from '@/lib/genres';
@@ -495,7 +496,7 @@ export default function WhatToWatchPage() {
               {randomItem.backdropUrl && (
                 <div
                   className="absolute inset-0 bg-cover bg-center opacity-15 blur-xl pointer-events-none"
-                  style={{ backgroundImage: `url(${randomItem.backdropUrl})` }}
+                  style={{ backgroundImage: `url(${tmdbImageUrl(randomItem.backdropUrl)})` }}
                 />
               )}
 
@@ -510,7 +511,7 @@ export default function WhatToWatchPage() {
                     {randomItem.posterUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={randomItem.posterUrl}
+                        src={tmdbImageUrl(randomItem.posterUrl)}
                         alt={randomItem.title}
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                       />
@@ -655,7 +656,7 @@ export default function WhatToWatchPage() {
                     {item.posterUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.posterUrl}
+                        src={tmdbImageUrl(item.posterUrl)}
                         alt={item.title}
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"

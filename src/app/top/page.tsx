@@ -1,5 +1,6 @@
 'use client';
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
@@ -198,7 +199,7 @@ export default function TopPage() {
                       {user.avatarUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={user.avatarUrl}
+                          src={tmdbImageUrl(user.avatarUrl)}
                           alt={user.name || user.username}
                           className="w-full h-full object-cover"
                         />
@@ -239,7 +240,7 @@ export default function TopPage() {
                                   {isImg ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
-                                      src={badge.icon}
+                                      src={tmdbImageUrl(badge.icon)}
                                       alt={bTitle}
                                       className="w-full h-full object-cover"
                                     />

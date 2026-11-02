@@ -1,5 +1,6 @@
 'use client';
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 
@@ -98,7 +99,7 @@ export default function DirectorPage({
           <div className="absolute inset-0 pointer-events-none z-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={coverBackdrop}
+              src={tmdbImageUrl(coverBackdrop)}
               alt={director.name}
               className="w-full h-full object-cover opacity-25 scale-105 blur-[1px]"
             />
@@ -119,7 +120,7 @@ export default function DirectorPage({
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-2 border-amber-500/40 flex-shrink-0 shadow-xl bg-neutral-950">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={director.profileUrl}
+                  src={tmdbImageUrl(director.profileUrl)}
                   alt={director.name}
                   className="w-full h-full object-cover"
                 />
@@ -198,7 +199,7 @@ export default function DirectorPage({
               {item.posterUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={item.posterUrl}
+                  src={tmdbImageUrl(item.posterUrl)}
                   alt={item.title}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"

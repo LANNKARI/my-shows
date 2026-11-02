@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import TmdbSearch, { TmdbResult } from "@/components/TmdbSearch";
@@ -309,7 +310,7 @@ export default function NewTitle() {
         {posterUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={posterUrl}
+            src={tmdbImageUrl(posterUrl)}
             alt=""
             className="mt-2 h-48 rounded-lg object-cover"
           />

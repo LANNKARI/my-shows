@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { privateFetch } from "@/lib/private-fetch";
@@ -495,7 +496,7 @@ export default function UserProfilePage({
                     {item.posterUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.posterUrl}
+                        src={tmdbImageUrl(item.posterUrl)}
                         alt={item.name}
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"
@@ -617,7 +618,7 @@ export default function UserProfilePage({
                     <div className="w-16 h-16 mb-3 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800/80 shadow-inner flex items-center justify-center">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={ach.icon}
+                        src={tmdbImageUrl(ach.icon)}
                         alt={ach.title}
                         className={`w-full h-full object-cover transition-all duration-300 ${
                           ach.unlocked
@@ -729,7 +730,7 @@ export default function UserProfilePage({
                     {item.posterUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.posterUrl}
+                        src={tmdbImageUrl(item.posterUrl)}
                         alt={item.name}
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"

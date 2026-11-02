@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -217,14 +218,14 @@ function ShowContent({
           <div
             className="td-backdrop"
             style={{
-              backgroundImage: `url(${JSON.stringify(show.backdropUrl)})`,
+              backgroundImage: `url(${JSON.stringify(tmdbImageUrl(show.backdropUrl))})`,
             }}
           />
         )}
         {show.posterUrl /* eslint-disable-next-line @next/next/no-img-element */ ? (
           <img
             className="td-poster"
-            src={show.posterUrl}
+            src={tmdbImageUrl(show.posterUrl)}
             alt={`Постер: ${title}`}
           />
         ) : (

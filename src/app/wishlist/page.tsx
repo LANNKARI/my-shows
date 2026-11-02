@@ -1,5 +1,6 @@
 'use client';
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 
@@ -169,7 +170,7 @@ export default function WishlistPage() {
                   {show.posterUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={show.posterUrl}
+                      src={tmdbImageUrl(show.posterUrl)}
                       alt={show.title}
                       className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       loading="lazy"
@@ -296,7 +297,7 @@ export default function WishlistPage() {
                     {rec.posterUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={rec.posterUrl}
+                        src={tmdbImageUrl(rec.posterUrl)}
                         alt={rec.title}
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"

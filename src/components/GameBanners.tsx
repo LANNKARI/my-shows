@@ -1,4 +1,5 @@
 "use client";
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import styles from "./GameBanners.module.css";
@@ -105,7 +106,7 @@ function GameBanner({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={frame}
+              src={tmdbImageUrl(frame)}
               alt=""
               loading="lazy"
               onError={(e) => {

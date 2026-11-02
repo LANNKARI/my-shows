@@ -1,5 +1,6 @@
 'use client';
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 
@@ -157,7 +158,7 @@ export default function PlannedPage() {
               <div key={item.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-neutral-700 transition-all flex flex-col group shadow-lg">
                 <Link href={linkHref} className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block">
                   {show.posterUrl ? (
-                    <img src={show.posterUrl} alt={show.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+                    <img src={tmdbImageUrl(show.posterUrl)} alt={show.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">Нет постера</div>
                   )}
@@ -233,7 +234,7 @@ export default function PlannedPage() {
                 <div key={`${rec.kind}-${rec.id}`} className="w-36 sm:w-44 flex-shrink-0 bg-neutral-900/90 border border-neutral-800 hover:border-neutral-700 rounded-2xl overflow-hidden transition-all flex flex-col group shadow-lg">
                   <Link href={linkHref} className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block">
                     {rec.posterUrl ? (
-                      <img src={rec.posterUrl} alt={rec.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+                      <img src={tmdbImageUrl(rec.posterUrl)} alt={rec.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">Нет постера</div>
                     )}

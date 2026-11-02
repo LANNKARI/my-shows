@@ -1,5 +1,6 @@
 "use client";
 
+import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 
@@ -261,7 +262,7 @@ export default function HigherLowerPage() {
           <div className="aspect-[2/3] w-52 rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 mb-4 bg-neutral-950">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={leftMovie.posterUrl}
+              src={tmdbImageUrl(leftMovie.posterUrl)}
               alt={leftMovie.title}
               className="w-full h-full object-cover"
             />
@@ -290,7 +291,7 @@ export default function HigherLowerPage() {
           <div className="aspect-[2/3] w-52 rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 mb-4 bg-neutral-950 relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={rightMovie.posterUrl}
+              src={tmdbImageUrl(rightMovie.posterUrl)}
               alt={rightMovie.title}
               className="w-full h-full object-cover"
             />
