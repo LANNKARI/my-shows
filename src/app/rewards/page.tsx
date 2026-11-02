@@ -156,7 +156,7 @@ function Rewards() {
           <button onClick={() => void load()}>Повторить загрузку</button>
         </p>
       )}
-      <section className="rounded-3xl border border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-neutral-900 p-6 sm:p-8">
+      <section className="theme-reward-balance rounded-3xl border p-6 sm:p-8">
         <div className="flex flex-wrap justify-between items-center gap-5">
           <div>
             <p className="text-neutral-400 text-sm">Ваш баланс</p>

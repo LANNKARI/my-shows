@@ -1,5 +1,7 @@
 @import "tailwindcss";
+@import "./themes.css";
 
+@layer base {
 /* У поля уже есть доступная кнопка очистки; нативный крестик не дублируем. */
 .site-search-input::-webkit-search-cancel-button {
   -webkit-appearance: none;
@@ -19,20 +21,6 @@
   }
 }
 
-/* ---------- Базовая палитра ---------- */
-:root {
-  color-scheme: dark;
-  --bg: #0a0a0b;
-  --bg-2: #111113;
-  --bg-3: #17171a;
-  --border: #232327;
-  --text: #f5f5f7;
-  --text-dim: #a1a1aa;
-  --accent: #e50914;        /* Netflix-красный */
-  --accent-2: #ff1f2e;
-  --gold: #f5c518;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -45,10 +33,7 @@ body {
 
 body {
   font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background:
-    radial-gradient(1200px 600px at 20% -10%, rgba(229, 9, 20, 0.08), transparent 60%),
-    radial-gradient(1000px 500px at 100% 0%, rgba(99, 102, 241, 0.06), transparent 60%),
-    var(--bg);
+
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -247,3 +232,5 @@ body {
 .quiz-option[data-answer="correct"] { background: #064e3b; border-color: #34d399; color: #d1fae5; }
 .quiz-option[data-answer="wrong"] { background: #881337; border-color: #fb7185; color: #ffe4e6; }
 .quiz-option[data-answer="neutral"] { color: #a3a3a3; }
+
+}

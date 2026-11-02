@@ -1,8 +1,8 @@
 .panel {
   padding: clamp(20px, 3vw, 32px);
-  border: 1px solid #4b3918;
+  border: 1px solid var(--border);
   border-radius: 26px;
-  background: linear-gradient(120deg, #17130c, #111113 65%);
+  background: linear-gradient(120deg, var(--hero), var(--bg-2) 65%);
 }
 .header {
   display: flex;
@@ -18,16 +18,16 @@
 }
 .header p,
 .next {
-  color: #a1a1aa;
+  color: var(--text-dim);
   font-size: 13px;
 }
 .streak {
-  border: 1px solid #80601e;
+  border: 1px solid var(--border);
   border-radius: 16px;
-  background: #332710;
+  background: var(--bg-3);
   padding: 14px 18px;
   font-size: 18px;
-  color: #ffcc57;
+  color: var(--accent);
 }
 .days {
   display: grid;
@@ -40,9 +40,9 @@
 .day {
   min-width: 0;
   overflow-wrap: anywhere;
-  border: 1px solid #303034;
+  border: 1px solid var(--border);
   border-radius: 18px;
-  background: #101012;
+  background: var(--bg-2);
   text-align: center;
 }
 .dayContent {
@@ -60,7 +60,7 @@ button.dayContent {
   transition: background 0.15s ease;
 }
 button.dayContent:hover:not(:disabled) {
-  background: #fbbf2418;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .dayLabel {
   font-size: 13px;
@@ -77,25 +77,25 @@ button.dayContent:hover:not(:disabled) {
   margin-top: auto;
 }
 .day[data-state="received"] {
-  background: #17251d;
-  border-color: #335842;
+  background: var(--success-soft);
+  border-color: var(--success);
 }
 .day[data-state="received"] .state {
-  color: #8ccea2;
+  color: var(--success);
 }
 .day[data-state="today"] {
-  background: linear-gradient(150deg, #624016, #2c200d);
-  border: 2px solid #ffc24b;
-  box-shadow: 0 0 24px #e9a22b22;
+  background: linear-gradient(150deg, var(--bg-3), var(--hero));
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .day[data-state="today"] .state {
-  color: #ffda81;
+  color: var(--accent);
 }
 .day[data-state="future"] {
-  color: #a1a1aa;
+  color: var(--text-dim);
 }
 .day[data-state="future"] .amount {
-  color: #c4c4cc;
+  color: var(--text-dim);
 }
 .footer {
   display: flex;
@@ -113,21 +113,21 @@ button.dayContent:hover:not(:disabled) {
 }
 .claim {
   cursor: pointer;
-  background: #fbbf24;
-  border: 1px solid #fcd34d;
-  color: #1c1405;
+  background: var(--accent);
+  border: 1px solid var(--accent-2);
+  color: var(--on-accent);
   transition: background 0.15s ease;
 }
 .claim:hover:not(:disabled) {
-  background: #fcd34d;
+  background: var(--accent-2);
 }
 .claimed {
-  background: #18281e;
-  border: 1px solid #355c42;
-  color: #b3e5c1;
+  background: var(--success-soft);
+  border: 1px solid var(--success);
+  color: var(--success);
 }
 .panel button:focus-visible {
-  outline: 2px solid #fde68a;
+  outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
 .panel button:disabled {

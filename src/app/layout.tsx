@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import Providers from "./providers";
+import ThemeToggle from "@/components/ThemeToggle";
+import { themeInitScript } from "@/lib/theme";
 import ReleaseBell from "@/components/ReleaseBell";
 import UserMenu from "@/components/UserMenu";
 import SearchBar from "@/components/SearchBar";
@@ -20,7 +22,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "My Shows — трекер сериалов",
+  title: "EpisyHub — фильмы и сериалы",
   description: "Личный трекер сериалов и фильмов",
 };
 
@@ -36,21 +38,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru" className={inter.variable}>
-      <body className="mobile-navigation-layout bg-neutral-950 text-neutral-100 antialiased selection:bg-rose-500 selection:text-white">
+    <html lang="ru" className={inter.variable} data-theme="light" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
+      <body className="mobile-navigation-layout text-neutral-100 antialiased selection:bg-rose-500 selection:text-white">
         <Providers>
-          <header className="sticky top-0 z-40 bg-neutral-950/80 backdrop-blur-md border-b border-neutral-850">
-            <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-4">
+          <header className="site-header sticky top-0 z-40 bg-neutral-950/80 backdrop-blur-md border-b border-neutral-850">
+            <div className="site-header-inner max-w-7xl mx-auto px-4 md:px-6 h-20 flex items-center justify-between gap-4">
               {/* Логотип */}
               <Link
                 href="/"
+                aria-label="EpisyHub — главная"
                 className="flex items-center gap-2.5 group flex-shrink-0"
               >
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center shadow-lg shadow-rose-900/30 group-hover:scale-105 transition-transform">
-                  <span className="text-white text-sm font-black">M</span>
+                <div className="brand-mark w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-rose-900/30 group-hover:scale-105 transition-transform">
+                  <span className="text-white text-sm font-black">✳</span>
                 </div>
                 <span className="text-lg font-extrabold tracking-tight hidden sm:inline">
-                  My<span className="text-rose-500">Shows</span>
+                  Episy<span className="text-rose-500">Hub</span>
                 </span>
               </Link>
 
@@ -63,7 +69,7 @@ export default function RootLayout({
               </div>
 
               {/* Валюта сайта (Попкорн) и Меню профиля */}
-              <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="header-actions flex items-center gap-3 flex-shrink-0">
                 <Link
                   href="/search"
                   aria-label="Открыть поиск"
@@ -71,6 +77,7 @@ export default function RootLayout({
                 >
                   <NavigationIcon name="search" className="h-5 w-5" />
                 </Link>
+                <ThemeToggle />
                 <ReleaseBell />
                 <PopcornBadge />
                 <UserMenu />
@@ -84,7 +91,7 @@ export default function RootLayout({
           </main>
 
           <footer className="max-w-7xl mx-auto px-4 md:px-6 py-10 text-center text-xs text-neutral-600 border-t border-neutral-900">
-            My Shows — личный трекер сериалов
+            EpisyHub — место для твоих киноисторий
           </footer>
           <MobileNavigation />
         </Providers>

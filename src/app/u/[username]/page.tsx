@@ -306,10 +306,11 @@ export default function UserProfilePage({
   });
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-24">
+    <div className="min-h-screen text-neutral-100 pb-24">
       {/* Скругленная шапка профиля */}
       <div className="max-w-6xl mx-auto px-4 pt-6">
-        <div className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-900/80 shadow-2xl">
+        <div data-custom-cover={Boolean(user.bannerUrl) || profileStyleId(user.profileStyle) !== STANDARD_PROFILE}
+          className="profile-theme-header relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-900/80 shadow-2xl">
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
             <CosmeticCover
               styleId={user.profileStyle}

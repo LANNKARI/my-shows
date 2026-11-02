@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import ContinueWatching from "@/components/ContinueWatching";
+import ThemeWelcome from "@/components/ThemeWelcome";
 
 interface MediaItem {
   id: number;
@@ -93,6 +94,7 @@ export default function HomePage() {
   if (loading) {
     return (
       <div className="space-y-10 animate-pulse pb-16">
+        <ThemeWelcome />
         <ContinueWatching />
         <div className="w-full h-80 sm:h-[440px] bg-neutral-900/60 rounded-3xl border border-neutral-800" />
         <div className="h-64 bg-neutral-900/40 rounded-3xl" />
@@ -108,13 +110,14 @@ export default function HomePage() {
 
   return (
     <div className="space-y-14 pb-16">
+      <ThemeWelcome />
       <ContinueWatching />
       {/* 1. HERO-БАННЕР (8.0+, БЕЗ АНИМЕ И КОРЕИ) */}
       {currentHero && (
         <div
           onMouseEnter={() => setIsPaused(true)}
           onMouseLeave={() => setIsPaused(false)}
-          className="relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-2xl min-h-[380px] sm:min-h-[450px] flex items-end group"
+          className="theme-cinematic relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-2xl min-h-[380px] sm:min-h-[450px] flex items-end group"
         >
           {slides.map((slide, idx) => (
             <div

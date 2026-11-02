@@ -205,3 +205,9 @@
     transition: none;
   }
 }
+
+/* Keep actual movie stills; theme the controls independently of the artwork. */
+.card { border-color: var(--border); background: var(--hero); }
+.play, .duel .play { background: var(--accent); color: var(--on-accent); box-shadow: none; border-radius: 999px; }
+.dots i.currentDot, .duel .dots i.currentDot { background: var(--accent); }
+.content:focus-visible, .pause:focus-visible { outline-color: var(--accent); }
