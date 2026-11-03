@@ -105,24 +105,25 @@
   --color-green-400: var(--success);
 }
 body {
-  background: radial-gradient(ellipse at 95% 10%, #abdbaa66, transparent 45%), radial-gradient(ellipse at 0 90%, #d1e7a966, transparent 45%), var(--bg);
-  background-attachment: fixed;
+  background: var(--bg);
   isolation: isolate;
 }
-[data-theme="dark"] body {
-  background-image: none;
-  background-color: var(--bg);
-}
-[data-theme="dark"] body::before {
+body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: var(--bg) url("/backgrounds/cosmos-nebula.webp") center / cover no-repeat;
+  background: var(--bg) center / cover no-repeat;
+}
+[data-theme="dark"] body::before {
+  background-image: url("/backgrounds/cosmos-nebula.webp");
+}
+[data-theme="light"] body::before {
+  background-image: url("/backgrounds/mint-nebula.webp");
 }
 @media (max-width: 640px) {
-  [data-theme="dark"] body::before { background-position: 20% center; }
+  body::before { background-position: 20% center; }
 }
 ::selection { background: var(--accent); color: var(--on-accent); }
 :where(a, button, input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
