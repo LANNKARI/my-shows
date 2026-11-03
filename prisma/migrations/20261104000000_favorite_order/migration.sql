@@ -1,0 +1,1 @@
+ALTER TABLE "UserShow" ADD COLUMN IF NOT EXISTS "favoriteOrder" INTEGER;

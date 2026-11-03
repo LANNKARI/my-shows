@@ -1,5 +1,6 @@
 "use client";
 
+import FavoriteGrid from "@/components/FavoriteGrid";
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
@@ -456,16 +457,17 @@ export default function UserProfilePage({
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-12">
         {/* 1. БЛОК: ЛЮБИМЫЕ СЕРИАЛЫ И ФИЛЬМЫ */}
         <section>
-          <div className="mb-4">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+          <div className="favorite-section-heading">
+            <div><h2 className="text-lg font-bold text-white flex items-center gap-2">
               <span>⭐ Любимые сериалы и фильмы</span>
               <span className="text-xs font-normal text-neutral-500">
                 ({favorites.length})
               </span>
             </h2>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Тайтлы, отмеченные кнопкой «Любимый сериал» в библиотеке
-            </p>
+              Первые пять в выбранном порядке
+            </p></div>
+            <Link className="favorite-button" href={`/u/${encodeURIComponent(user.username)}/favorites`}>Все любимые фильмы и сериалы →</Link>
           </div>
 
           {favorites.length === 0 ? (
@@ -483,58 +485,7 @@ export default function UserProfilePage({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-              {favorites.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden hover:border-amber-400/50 transition-all flex flex-col group shadow-lg relative"
-                >
-                  <Link
-                    href={`/show/${item.showId}`}
-                    className="aspect-[2/3] w-full bg-neutral-950 relative overflow-hidden block"
-                  >
-                    {item.posterUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={tmdbImageUrl(item.posterUrl)}
-                        alt={item.name}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs text-neutral-600">
-                        🎬 Нет постера
-                      </div>
-                    )}
-
-                    <div className="absolute top-2 left-2 bg-gradient-to-r from-amber-400 to-yellow-500 text-black px-2 py-0.5 rounded text-[11px] font-black shadow-md">
-                      #{item.rank}
-                    </div>
-
-                    {item.rating && item.rating > 0 && (
-                      <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-amber-400 flex items-center gap-0.5">
-                        <span>★</span>
-                        <span>{item.rating}</span>
-                      </div>
-                    )}
-                  </Link>
-
-                  <div className="p-3">
-                    {item.year && (
-                      <div className="text-[10px] text-neutral-500 mb-0.5">
-                        {item.year}
-                      </div>
-                    )}
-                    <Link
-                      href={`/show/${item.showId}`}
-                      className="font-semibold text-xs text-white line-clamp-1 group-hover:text-amber-400 transition-colors block"
-                    >
-                      {item.name}
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <FavoriteGrid items={favorites.slice(0, 5)} />
           )}
         </section>
 

@@ -99,6 +99,8 @@ before(async () => {
   await prisma.$executeRawUnsafe('ALTER TABLE "User" DROP COLUMN "siteTheme"');
   await prisma.$executeRawUnsafe(await readFile('prisma/migrations/20261103010000_site_themes/migration.sql', 'utf8'));
   assert.equal((await prisma.user.findUniqueOrThrow({where:{id:legacyUser.id}})).siteTheme, null);
+  await prisma.$executeRawUnsafe('ALTER TABLE "UserShow" DROP COLUMN "favoriteOrder"');
+  await prisma.$executeRawUnsafe(await readFile('prisma/migrations/20261104000000_favorite_order/migration.sql', 'utf8'));
   // Cosmetic migration is additive and preserves existing balances and uploaded covers.
   await prisma.user.update({ where: { id: legacyUser.id }, data: { popcorn: 321, bannerUrl: 'https://example.test/cover.png' } });
   const cosmeticMigration = await readFile('prisma/migrations/20261027000000_popcorn_cosmetics/migration.sql', 'utf8');
@@ -2216,4 +2218,26 @@ test('site themes cost 500, require ownership, preserve other slots and charge o
   await resetCosmetics(499);
   assert.equal((await buy('theme-autumn-2026',500)).status,409);
   assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,499);
+});
+
+test('favorite order is owner-only, validates membership and preserves library timestamps and progress',async()=>{
+  const shows=await Promise.all([1,2,3].map(i=>prisma.show.create({data:{name:`Favorite order ${i}`,kind:i===1?'movie':'series',countries:[],studios:[],genres:[],creators:[]}})));
+  await prisma.userShow.updateMany({where:{userId:alice.id},data:{isFavorite:false,favoriteOrder:null}});
+  const entries=await Promise.all(shows.map((show,i)=>prisma.userShow.create({data:{userId:alice.id,showId:show.id,isFavorite:true,status:'planned',updatedAt:new Date(2026,0,i+1)}})));
+  const foreign=await prisma.userShow.create({data:{userId:bob.id,showId:shows[0].id,isFavorite:true}});
+  const original=entries.toReversed().map(e=>e.id),reversed=[...original].reverse();
+  const path='/api/favorites/order';
+  assert.equal((await guest.request(path,'PATCH',{ids:reversed,previousIds:original})).status,401);
+  assert.equal((await owner.request(path,'PATCH',{ids:[...original,foreign.id],previousIds:original})).status,409);
+  for(const body of [{ids:[original[0],original[0]],previousIds:original},{ids:original,previousIds:original,userId:bob.id},{ids:['1'],previousIds:original}])assert.equal((await owner.request(path,'PATCH',body)).status,400);
+  assert.equal((await owner.request(path,'PATCH',{ids:reversed,previousIds:original})).status,200);
+  const list=await guest.request(`/api/users/${alice.username}/favorites`);assert.equal(list.status,200);assert.match(list.headers.get('cache-control')!,/no-store/);
+  const result=await list.json();assert.deepEqual(result.items.map((i:{id:number})=>i.id),reversed);assert.equal(result.isOwnProfile,false);
+  const profile=await(await guest.request(`/api/users/${alice.username}`)).json();assert.deepEqual(profile.favorites.map((i:{id:number})=>i.id),reversed);
+  for(const entry of entries){const actual=await prisma.userShow.findUniqueOrThrow({where:{id:entry.id}});assert.equal(actual.updatedAt.getTime(),entry.updatedAt.getTime());assert.equal(actual.status,'planned');}
+  assert.equal((await owner.request(path,'PATCH',{ids:original,previousIds:original})).status,409);
+  const rejected=await fetch(base+path,{method:'PATCH',headers:{'Content-Type':'application/json',Origin:'https://untrusted.example',Cookie:[...owner.cookies].map(([k,v])=>`${k}=${v}`).join('; ')},body:JSON.stringify({ids:original,previousIds:reversed})});assert.equal(rejected.status,403);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({where:{id:foreign.id}})).favoriteOrder,null);
+  assert.equal((await owner.request(`/api/user-shows/${entries[0].showId}`,'PATCH',{isFavorite:false})).status,200);
+  assert.equal((await prisma.userShow.findUniqueOrThrow({where:{id:entries[0].id}})).favoriteOrder,null);
 });

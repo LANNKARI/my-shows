@@ -180,7 +180,7 @@ export async function saveLibrary(
         ...(typeof body.status === "string" ? { status: body.status } : {}),
         isCompleted: (body.status ?? entry.status) === "completed",
         ...(body.isFavorite !== undefined
-          ? { isFavorite: body.isFavorite as boolean }
+          ? { isFavorite: body.isFavorite as boolean, ...(body.isFavorite === false ? { favoriteOrder: null } : {}) }
           : {}),
         ...(body.isBookmarked !== undefined
           ? { isBookmarked: body.isBookmarked as boolean }

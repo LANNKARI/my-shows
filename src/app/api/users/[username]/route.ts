@@ -1,3 +1,4 @@
+import { sortFavorites } from "@/lib/favorites";
 import { summarizeLibrary } from "@/lib/progress";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -122,8 +123,7 @@ export async function GET(
     } = summarizeLibrary(userShows);
 
     // 3. Любимые сериалы и фильмы
-    const favoriteShows = userShows
-      .filter((us) => us.isFavorite)
+    const favoriteShows = sortFavorites(userShows.filter((us) => us.isFavorite))
       .map((us, index) => ({
         id: us.id,
         showId: us.showId,
