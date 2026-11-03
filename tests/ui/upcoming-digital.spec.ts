@@ -25,7 +25,9 @@ for(const width of [320,390,1440])test(`digital rail fits ${width}px with 4:3 ca
 test('dragging scrolls without opening a title, while clicking and keyboard navigation still work',async({page})=>{
  await page.setViewportSize({width:1440,height:1000});await setup(page);await page.goto('/');const rail=page.locator('.digital-track');await rail.waitFor();await rail.scrollIntoViewIfNeeded();const box=await rail.boundingBox();
  await page.mouse.move(box!.x+600,box!.y+110);await page.mouse.down();await page.mouse.move(box!.x+100,box!.y+110,{steps:20});await page.mouse.up();
- await expect.poll(()=>rail.evaluate(el=>el.scrollLeft)).toBeGreaterThan(100);await expect(page).toHaveURL('/');
+ // Release between card boundaries: it must stay at the exact dragged position.
+ await expect.poll(()=>rail.evaluate(el=>el.scrollLeft)).toBeCloseTo(500,0);
+ await page.waitForTimeout(700);expect(await rail.evaluate(el=>el.scrollLeft)).toBeCloseTo(500,0);await expect(page).toHaveURL('/');
  await rail.focus();await rail.press('End');await expect.poll(()=>rail.evaluate(el=>el.scrollLeft)).toBeGreaterThan(500);
  const link=page.getByRole('link',{name:/^Тайтл 10,/});await link.focus();await link.press('Enter');await expect(page).toHaveURL(/\/show\/10\?source=tmdb&type=tv/);
 });
