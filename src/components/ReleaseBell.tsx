@@ -89,8 +89,22 @@ function Bell() {
           aria-label="Уведомления"
           tabIndex={-1}
         >
-          <div className="rc-heading">
+          <div className="rc-heading inbox-compact-heading">
             <h2>Уведомления</h2>
+            <div className="rc-tabs compact-tabs" aria-label="Фильтр уведомлений">
+              <button
+                aria-pressed={mode === "unread"}
+                onClick={() => setMode("unread")}
+              >
+                Новые {inbox.data?.unreadCount || ""}
+              </button>
+              <button
+                aria-pressed={mode === "all"}
+                onClick={() => setMode("all")}
+              >
+                Все
+              </button>
+            </div>
             <button
               className="rc-text"
               disabled={inbox.saving || !inbox.data?.unreadCount}
@@ -99,20 +113,7 @@ function Bell() {
               Прочитать все
             </button>
           </div>
-          <div className="rc-tabs compact-tabs mb-4" aria-label="Фильтр уведомлений">
-            <button
-              aria-pressed={mode === "unread"}
-              onClick={() => setMode("unread")}
-            >
-              Новые {inbox.data?.unreadCount || ""}
-            </button>
-            <button
-              aria-pressed={mode === "all"}
-              onClick={() => setMode("all")}
-            >
-              Все
-            </button>
-          </div>
+
           {inbox.error && (
             <p role="alert" className="rc-error">
               {inbox.error}
@@ -138,9 +139,6 @@ function Bell() {
               Повторить загрузку
             </button>
           )}
-          <p className="rc-muted mt-4">
-            Уведомления о датах оригинального выхода внутри сайта.
-          </p>
           <Link
             className="rc-link"
             href="/notifications"

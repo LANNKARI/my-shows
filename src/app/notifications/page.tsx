@@ -27,37 +27,20 @@ function Notifications() {
   const [mode, setMode] = useState<"all" | "unread">("unread");
   return (
     <div className="release-ui rc-notifications-page">
-      <div className="rc-heading">
-        <h1>Уведомления</h1>
-        <Link href="/calendar" className="rc-link">
-          Календарь →
-        </Link>
-      </div>
-      <div className="rc-tabs" aria-label="Фильтр уведомлений">
-        <button
-          aria-pressed={mode === "unread"}
-          onClick={() => setMode("unread")}
-        >
-          Новые
-        </button>
-        <button aria-pressed={mode === "all"} onClick={() => setMode("all")}>
-          Все
-        </button>
-      </div>
-      <Inbox key={mode} mode={mode} />
+      <Inbox mode={mode} setMode={setMode} />
     </div>
   );
 }
-function Inbox({ mode }: { mode: "all" | "unread" }) {
+function Inbox({ mode, setMode }: { mode: "all" | "unread"; setMode: (mode: "all" | "unread") => void }) {
   const inbox = useReleaseInbox(mode);
   return (
     <>
-      <div className="rc-heading">
-        <p className="rc-muted">
-          {inbox.data
-            ? `Непрочитанных: ${inbox.data.unreadCount}`
-            : "Проверяем уведомления…"}
-        </p>
+      <div className="rc-heading inbox-compact-heading">
+        <h1>Уведомления</h1>
+        <div className="rc-tabs compact-tabs" aria-label="Фильтр уведомлений">
+          <button aria-pressed={mode === "unread"} onClick={() => setMode("unread")}>Новые</button>
+          <button aria-pressed={mode === "all"} onClick={() => setMode("all")}>Все</button>
+        </div>
         <button
           className="rc-text"
           disabled={inbox.saving || !inbox.data?.unreadCount}
@@ -65,6 +48,10 @@ function Inbox({ mode }: { mode: "all" | "unread" }) {
         >
           Прочитать все
         </button>
+      </div>
+      <div className="rc-heading">
+        <p className="rc-muted">{inbox.data ? `Непрочитанных: ${inbox.data.unreadCount}` : "Проверяем уведомления…"}</p>
+        <Link href="/calendar" className="rc-link">Календарь →</Link>
       </div>
       {inbox.error && (
         <div className="rc-error" role="alert">

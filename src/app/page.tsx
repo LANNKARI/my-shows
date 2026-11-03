@@ -123,8 +123,8 @@ export default function HomePage() {
           {slides.map((slide, idx) => (
             <div
               key={`${slide.kind}-${slide.id}`}
-              className={`absolute inset-0 pointer-events-none transition-opacity duration-700 ease-in-out ${
-                idx === currentSlide ? "opacity-100 z-0" : "opacity-0 z-[-1]"
+              className={`home-hero-slide absolute inset-0 pointer-events-none transition-opacity duration-700 ease-in-out ${
+                idx === currentSlide ? "is-active opacity-100 z-0" : "opacity-0 z-[-1]"
               }`}
             >
               {slide.backdropUrl ? (
@@ -132,18 +132,18 @@ export default function HomePage() {
                 <img
                   src={tmdbImageUrl(slide.backdropUrl)}
                   alt={slide.title}
-                  className="home-hero-image w-full h-full object-cover object-top opacity-45 scale-105"
+                  className="home-hero-image w-full h-full object-cover"
                 />
               ) : slide.posterUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={tmdbImageUrl(slide.posterUrl)}
                   alt={slide.title}
-                  className="home-hero-image w-full h-full object-cover opacity-25 blur-sm"
+                  className="home-hero-image w-full h-full object-cover"
                 />
               ) : null}
-              <div className="home-hero-shade-bottom absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/75 to-transparent" />
-              <div className="home-hero-shade-side absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/60 to-transparent" />
+              <div className="home-hero-shade-bottom absolute inset-0" />
+              <div className="home-hero-shade-side absolute inset-0" />
             </div>
           ))}
 
@@ -168,7 +168,7 @@ export default function HomePage() {
             </>
           )}
 
-          <div className="relative z-10 p-6 sm:p-10 max-w-2xl space-y-4">
+          <div className="hero-readable-copy relative z-10 p-6 sm:p-10 space-y-4">
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-md shadow-rose-600/30">
                 🔥 Выбор зрителей 8.0+

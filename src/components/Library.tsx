@@ -94,9 +94,9 @@ function LibraryCard({
       aria-label={item.title}
       className={`scroll-mt-20 rounded-2xl border border-neutral-800 bg-neutral-900/60 ${posters ? "flex flex-col overflow-hidden" : "grid grid-cols-[4rem_minmax(0,1fr)] gap-4 p-4 sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:items-center sm:gap-5 sm:p-5"}`}
     >
-      <div className={posters ? "p-3 pb-0" : ""}>
+      <Link href={`/library/${item.showId}`} aria-label={`Открыть трекер: ${item.title}`} className={`library-poster-link ${posters ? "p-3 pb-0" : ""}`}>
         <Poster item={item} large={posters} />
-      </div>
+      </Link>
       <div
         ref={detailsRef}
         style={minimumDetailsHeight ? { minHeight: minimumDetailsHeight } : undefined}
@@ -116,7 +116,7 @@ function LibraryCard({
           )}
         </div>
         <Link
-          href={cardHref}
+          href={`/library/${item.showId}`}
           className="block text-base font-bold leading-snug text-neutral-100 hover:text-rose-400 focus-visible:outline-2 focus-visible:outline-rose-400 sm:text-lg"
         >
           {item.title}
@@ -188,21 +188,12 @@ function LibraryCard({
           </button>
         )}
         <Link
-          href={`/library/${item.showId}`}
-          aria-label={`Открыть трекер: ${item.title}`}
+          href={cardHref}
+          aria-label={`Открыть карточку ${progress.movie ? "фильма" : "сериала"}: ${item.title}`}
           className={`${primaryLink} ${posters ? "w-full" : "flex-1 sm:flex-none"}`}
         >
-          Открыть трекер
+          Открыть карточку {progress.movie ? "фильма" : "сериала"}
         </Link>
-        {!posters && (
-          <Link
-            href={cardHref}
-            aria-label={`О карточке: ${item.title}`}
-            className="inline-flex min-h-11 items-center justify-center px-2 text-xs text-neutral-400 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-rose-400"
-          >
-            О карточке
-          </Link>
-        )}
       </div>
     </article>
   );

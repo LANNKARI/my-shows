@@ -253,12 +253,17 @@ test('progress, next episode, timestamp and local links are preserved without ma
   ).toHaveAttribute('href', '/library/10');
   await expect(
     item.getByRole('link', { name: 'Разделение', exact: true }),
-  ).toHaveAttribute('href', '/show/10?type=tv');
+  ).toHaveAttribute('href', '/library/10');
   await expect(
     page
       .getByRole('article', { name: 'Андор', exact: true })
       .getByText('Отмечено: 0 из — серий'),
   ).toBeVisible();
+  await expect(item.getByRole('link', { name: 'Открыть карточку сериала: Разделение' })).toHaveAttribute('href', '/show/10?type=tv');
+  const movie = page.getByRole('article', { name: 'Дюна', exact: true });
+  await expect(movie.getByRole('link', { name: 'Дюна', exact: true })).toHaveAttribute('href', '/library/20');
+  await expect(movie.getByRole('link', { name: 'Открыть трекер: Дюна' })).toHaveAttribute('href', '/library/20');
+  await expect(movie.getByRole('link', { name: 'Открыть карточку фильма: Дюна' })).toHaveAttribute('href', '/show/20?type=movie');
   expect(api.writes).toEqual([]);
 });
 
@@ -383,7 +388,7 @@ test('list and poster views fit small screens and keep the last action above the
     if (width < 1280) {
       const lastAction = titles(page)
         .last()
-        .getByRole('link', { name: /Открыть трекер/ });
+        .getByRole('link', { name: /Открыть карточку/ });
       await lastAction.scrollIntoViewIfNeeded();
       await page.evaluate(() =>
         window.scrollTo(0, document.documentElement.scrollHeight),
