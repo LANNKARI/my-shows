@@ -324,11 +324,11 @@ for (const correct of [true, false]) {
     await chosen.click();
     const green = page.locator('[data-answer="correct"]');
     await expect(green).toContainText(longTitle);
-    await expect(green).toHaveCSS("background-color", "rgb(6, 78, 59)");
+    await expect(green).toHaveCSS("background-color", "rgb(25, 58, 51)");
     if (!correct)
       await expect(page.locator('[data-answer="wrong"]')).toHaveCSS(
         "background-color",
-        "rgb(136, 19, 55)",
+        "rgb(66, 30, 49)",
       );
     const fits = await green.evaluate((el) => el.scrollWidth <= el.clientWidth);
     expect(fits).toBe(true);

@@ -148,7 +148,7 @@ function Rewards() {
       </div>
     );
   return (
-    <div className="max-w-5xl mx-auto py-6 space-y-6 pb-20">
+    <div className="rewards-page max-w-5xl mx-auto">
       <h1 className="text-3xl font-bold">Центр наград</h1>
       {error && (
         <p role="alert">
@@ -156,7 +156,7 @@ function Rewards() {
           <button onClick={() => void load()}>Повторить загрузку</button>
         </p>
       )}
-      <section className="theme-reward-balance rounded-3xl border p-6 sm:p-8">
+      <section className="theme-reward-balance rounded-3xl border">
         <div className="flex flex-wrap justify-between items-center gap-5">
           <div>
             <p className="text-neutral-400 text-sm">Ваш баланс</p>
@@ -168,7 +168,7 @@ function Rewards() {
             Магазин оформления →
           </Link>
         </div>
-        <div className="grid sm:grid-cols-2 gap-5 mt-6">
+        <div className="reward-activity grid sm:grid-cols-2">
           <div>
             Активность сегодня:{" "}
             <strong>
@@ -180,7 +180,7 @@ function Rewards() {
             <strong>{data.gameEarned ?? 0} 🍿 · без дневного лимита</strong>
           </div>
         </div>
-        <p className="text-xs text-neutral-400 mt-4">
+        <p className="reward-reset text-neutral-400">
           Лимиты обновляются в 00:00 UTC
           {data.nextResetAt
             ? ` · ${new Date(data.nextResetAt).toLocaleString()} по вашему времени`
@@ -198,12 +198,12 @@ function Rewards() {
           {message}
         </p>
       )}
-      <section className="card p-6 space-y-4">
+      <section className="card reward-tasks">
         <h2 className="text-xl font-bold">Задания на сегодня</h2>
         {(data.tasks || []).map((task) => (
           <div
             key={task.id}
-            className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 pb-4"
+            className="reward-task flex flex-wrap items-center justify-between border-b border-neutral-800"
           >
             <div>
               <h3>{task.name}</h3>
@@ -236,7 +236,7 @@ function Rewards() {
         </button>
       </section>
       <GameBanners />
-      <section className="card p-6 space-y-3" aria-label="История операций">
+      <section className="card reward-history space-y-3" aria-label="История операций">
         <h2 className="text-xl font-bold">История операций</h2>
         {historyError && (
           <p className="text-sm text-neutral-400">

@@ -69,23 +69,22 @@ export default function UserMenu() {
 
       {/* Выпадающий список */}
       {isOpen && (
-        <div id={panelId} className="profile-menu-panel absolute right-0 top-full mt-2 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl py-2 z-50 text-xs">
-          {session?.user && <div className="px-3 py-2 border-b border-neutral-800/80 mb-1">
-            <p className="font-semibold text-white truncate">
+        <div id={panelId} className="profile-menu-panel absolute right-0 top-full mt-2 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl z-50 text-xs">
+          {session?.user && <div className="profile-menu-identity">
+            <p className="profile-menu-name font-semibold text-white truncate">
               {session.user.name || username}
             </p>
             <p className="text-[11px] text-neutral-400 truncate">@{username}</p>
           </div>}
           <div className="profile-menu-appearance">
-            <p className="mb-3 text-neutral-400">Тема оформления</p>
+            <p className="text-neutral-400">Тема оформления</p>
             <ThemeToggle />
-            <p className="mt-3 text-[11px] text-neutral-400">Космос — тема по умолчанию</p>
           </div>
           {session?.user && <>
           <Link
             href={`/u/${username}`}
             onClick={() => setIsOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-2 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="profile-menu-link"
           >
             <span>👤</span>
             <span>Мой профиль</span>
@@ -94,7 +93,7 @@ export default function UserMenu() {
           <Link
             href="/cosmetics"
             onClick={() => setIsOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-3 text-neutral-300 hover:text-white hover:bg-neutral-800"
+            className="profile-menu-link"
           >
             <span aria-hidden="true">🍿</span>
             <span>Оформление</span>
@@ -103,7 +102,7 @@ export default function UserMenu() {
           <Link
             href="/friends"
             onClick={() => setIsOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-2 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="profile-menu-link"
           >
             <span>👥</span>
             <span>Друзья</span>
@@ -112,7 +111,7 @@ export default function UserMenu() {
           <Link
             href={`/u/${username}/achievements`}
             onClick={() => setIsOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-2 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="profile-menu-link"
           >
             <span>🎖️</span>
             <span>Достижения</span>
@@ -121,7 +120,7 @@ export default function UserMenu() {
           <Link
             href="/top"
             onClick={() => setIsOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-2 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="profile-menu-link"
           >
             <span>🏆</span>
             <span>Топ</span>
@@ -130,13 +129,11 @@ export default function UserMenu() {
           <Link
             href="/settings"
             onClick={() => setIsOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-2 text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="profile-menu-link"
           >
             <span>⚙️</span>
             <span>Настройки</span>
           </Link>
-
-          <div className="my-1 border-t border-neutral-800/80" />
 
           <button
             type="button"
@@ -144,7 +141,7 @@ export default function UserMenu() {
               setIsOpen(false);
               signOut({ callbackUrl: "/" });
             }}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-rose-400 hover:bg-neutral-800 transition-colors text-left"
+            className="profile-menu-link profile-menu-logout"
           >
             <span>🚪</span>
             <span>Выйти</span>

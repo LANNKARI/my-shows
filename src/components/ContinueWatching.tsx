@@ -48,12 +48,12 @@ function Shelf() {
   }, []);
   if (items?.length === 0 && !error) return null;
   return (
-    <section aria-labelledby="continue-heading" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section aria-labelledby="continue-heading" className="continue-shelf space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="continue-heading" className="text-xl sm:text-2xl font-bold">
           Продолжить просмотр
         </h2>
-        <Link href="/watching" className="text-sm text-rose-400">
+        <Link href="/watching" className="continue-library-link">
           Вся библиотека →
         </Link>
       </div>
@@ -71,40 +71,36 @@ function Shelf() {
         <p className="text-neutral-400">Загрузка вашего прогресса…</p>
       ) : null}
       {items && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => (
             <article
               key={item.showId}
-              className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-5 flex gap-4"
+              className="continue-card rounded-2xl border border-neutral-800 flex"
             >
               {item.posterUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={tmdbImageUrl(item.posterUrl)}
                   alt=""
-                  className="w-16 h-24 rounded-lg object-cover"
+                  width={84}
+                  height={126}
+                  className="continue-poster object-cover"
                   loading="lazy"
                 />
               )}
               <div className="min-w-0 flex-1">
-                <h3 className="font-bold break-words">{item.title}</h3>
-                <p className="text-xs text-neutral-400 mt-2">
+                <h3 className="font-bold break-words text-sm leading-snug">{item.title}</h3>
+                <p className="continue-meta text-neutral-400">
                   {item.kind === "series" && item.next
                     ? `${item.next.season} сезон · ${item.next.episode} серия`
-                    : item.kind === "movie"
-                      ? "Фильм"
-                      : "Ждём новые серии"}
+                    : item.kind === "movie" ? "Фильм" : "Ждём новые серии"}
                 </p>
                 {item.stoppedAt && (
-                  <p className="text-xs text-neutral-400 mt-1">
-                    Остановились на {item.stoppedAt}
-                  </p>
+                  <p className="continue-meta text-neutral-400">Остановились на {item.stoppedAt}</p>
                 )}
-                <p className="text-xs text-neutral-400 mt-1">
-                  {item.kind === "series"
-                    ? `${item.watched} из ${item.total} серий`
-                    : ""}
-                </p>
+                {item.kind === "series" && (
+                  <p className="continue-meta text-neutral-400">{item.watched} из {item.total} серий</p>
+                )}
                 {item.kind === "series" && item.percent !== null && (
                   <div
                     role="progressbar"
@@ -112,7 +108,7 @@ function Shelf() {
                     aria-valuemin={0}
                     aria-valuemax={100}
                     aria-valuenow={item.percent}
-                    className="h-1 rounded-full bg-neutral-800 mt-3"
+                    className="h-1 rounded-full bg-neutral-800 mt-2"
                   >
                     <div
                       className="h-full rounded-full bg-rose-500"
@@ -122,7 +118,7 @@ function Shelf() {
                 )}
                 <Link
                   href={`/library/${item.showId}`}
-                  className="inline-flex mt-4 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold"
+                  className="continue-tracker-link"
                 >
                   Открыть трекер →
                 </Link>

@@ -23,10 +23,10 @@ export default function ThemeToggle() {
   }
   return (
     <div className="theme-toggle" role="group" aria-label="Тема оформления">
-      <button type="button" aria-label="Тёмная тема — Космос" aria-pressed={current === "dark"} onClick={() => select("dark")}>
+      <button type="button" title="Космос — тема по умолчанию" aria-label="Тёмная тема — Космос" aria-pressed={current === "dark"} onClick={() => select("dark")}>
         <span aria-hidden="true">☾</span><span className="theme-toggle-label">Космос</span>
       </button>
-      <button type="button" aria-label="Светлая тема — Мята" aria-pressed={current === "light"} onClick={() => select("light")}>
+      <button type="button" title="Мята — светлая тема" aria-label="Светлая тема — Мята" aria-pressed={current === "light"} onClick={() => select("light")}>
         <span aria-hidden="true">☀</span><span className="theme-toggle-label">Мята</span>
       </button>
     </div>
