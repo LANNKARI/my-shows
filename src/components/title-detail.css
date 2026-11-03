@@ -668,3 +668,27 @@
 .td-library-links { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 16px; }
 .td-library-links a { display:inline-flex; align-items:center; padding:7px 11px; min-height:34px; border:1px solid var(--border); border-radius:9px; background:var(--bg-2); color:var(--text-dim); font-size:12px; }
 .td-library-links a:hover { color:var(--accent); border-color:var(--accent); }
+
+/* Consistent secondary actions and editing without a form-size jump. */
+.td-actions { align-items:center; margin-bottom:12px; }
+.td-actions > .td-loved,.td-actions > div > .td-button { display:inline-flex; align-items:center; justify-content:center; min-width:112px; height:36px; min-height:36px; padding:7px 12px; font-size:12px; line-height:20px; box-sizing:border-box; }
+.td-note-field-inline .td-note-value { align-items:center; height:36px; gap:8px; }
+.td-note-display { min-width:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.td-note-site { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
+.td-inline-input { min-width:0; flex:1; width:0; height:32px; padding:0 2px; background:color-mix(in srgb,var(--accent) 5%,transparent); color:var(--text); border:0; border-bottom:1px solid var(--accent); border-radius:0; font:inherit; font-size:inherit; box-shadow:none; }
+.title-detail .td-inline-input:focus-visible { outline:none; border-bottom-width:2px; }
+.td-note-inline-controls { display:flex; align-items:center; justify-content:flex-end; gap:4px; width:78px; flex:0 0 78px; }
+.td-note-inline-controls button { display:grid; place-items:center; min-width:32px; height:32px; min-height:32px; padding:0 8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-3); color:var(--text); font-size:14px; font-weight:600; }
+.td-note-inline-controls .td-inline-edit { width:78px; font-size:11px; }
+.td-note-inline-controls .td-inline-save { background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
+.td-current { display:flex; flex-direction:column; }
+.td-current-content { min-height:160px; }
+.td-progress-feedback { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:42px; margin-top:10px; padding-top:9px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); }
+.td-progress-feedback[data-state="idle"] { border-color:transparent; }
+.td-progress-feedback[data-state="saved"] > span { color:var(--success); }
+.td-progress-feedback[data-state="error"] > span { color:var(--danger); }
+.td-progress-feedback button { flex-shrink:0; min-height:28px; padding:2px 0; background:transparent; border:0; color:var(--accent); font-size:12px; }
+.td-progress-feedback[data-state="pending"] > span:before { content:""; display:inline-block; width:10px; height:10px; margin-right:7px; border:1px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:td-saving-spin .8s linear infinite; }
+@keyframes td-saving-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .td-progress-feedback[data-state="pending"] > span:before { animation:none; } }
+@media(max-width:767px) { .td-actions > .td-loved,.td-actions > div > .td-button { min-width:106px; } .td-note-field-inline .td-note-value { height:40px; } .td-note-inline-controls button,.td-inline-input { height:36px; } .td-current-content { min-height:196px; } }

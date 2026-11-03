@@ -731,3 +731,43 @@ test("saved heart and profile favorite toggle independently and persist across r
   await expect(main(page).getByRole('button', { name: 'Убрать из любимых' })).toHaveAttribute('aria-pressed', 'true');
   expect(calls.map(c => c.body)).toEqual([{isBookmarked:true},{isFavorite:true},{isBookmarked:false}]);
 });
+
+test('voice editing keeps its row size and supports cancel, save and keyboard focus', async ({ page }) => {
+  await setup(page);
+  await page.goto('/show/10');
+  const settings = main(page).getByRole('region', {name:'Мои настройки'});
+  const edit = settings.getByRole('button', {name:'Изменить: Озвучка',exact:true});
+  const before = (await settings.boundingBox())!.height;
+  await edit.click();
+  const input = settings.getByRole('textbox',{name:'Озвучка',exact:true});
+  await expect(input).toBeFocused();
+  expect(Math.abs((await settings.boundingBox())!.height-before)).toBeLessThan(2);
+  await input.fill('Черновик');
+  await input.press('Escape');
+  await expect(edit).toBeFocused();
+  await expect(settings.getByText('Черновик',{exact:true})).toHaveCount(0);
+  await edit.click();
+  await settings.getByRole('textbox',{name:'Озвучка',exact:true}).fill('Новая озвучка');
+  await settings.getByRole('textbox',{name:'Озвучка',exact:true}).press('Enter');
+  await expect(settings.getByText('Новая озвучка',{exact:true})).toBeVisible();
+  expect(Math.abs((await settings.boundingBox())!.height-before)).toBeLessThan(2);
+  await expect(edit).toBeFocused();
+  await page.reload();
+  await expect(settings.getByText('Новая озвучка',{exact:true})).toBeVisible();
+});
+
+test('a last-episode quick mark renders immediately and keeps inline undo in a stable panel', async ({page}) => {
+  await setup(page,{last:true,delay:true});
+  await page.goto('/library/10');
+  const panel=current(page);
+  const before=(await panel.boundingBox())!.height;
+  await panel.getByRole('button',{name:'Отметить серию',exact:true}).click();
+  await expect(main(page).getByRole('progressbar')).toHaveAttribute('aria-valuenow','100',{timeout:250});
+  await expect(panel.getByText('Сохраняем отметку…',{exact:true})).toBeVisible();
+  expect(Math.abs((await panel.boundingBox())!.height-before)).toBeLessThan(2);
+  const undo=panel.getByRole('button',{name:'Отменить отметку',exact:true});
+  await expect(undo).toBeEnabled();
+  expect(Math.abs((await panel.boundingBox())!.height-before)).toBeLessThan(2);
+  await undo.click();
+  await expect(main(page).getByRole('progressbar')).toHaveAttribute('aria-valuenow','75');
+});

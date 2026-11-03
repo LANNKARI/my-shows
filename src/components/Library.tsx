@@ -73,6 +73,8 @@ function LibraryCard({
   saving: boolean;
   notice?: ReactNode;
 }) {
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const [minimumDetailsHeight, setMinimumDetailsHeight] = useState(0);
   const progress = libraryProgress(item);
   const rating = personalRating(item);
   const cardHref = `/show/${item.showId}?type=${progress.movie ? "movie" : "tv"}`;
@@ -96,6 +98,8 @@ function LibraryCard({
         <Poster item={item} large={posters} />
       </div>
       <div
+        ref={detailsRef}
+        style={minimumDetailsHeight ? { minHeight: minimumDetailsHeight } : undefined}
         className={`min-w-0 ${posters ? "flex-1 space-y-3 p-3 sm:p-4" : "space-y-2"}`}
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-400">
@@ -170,7 +174,10 @@ function LibraryCard({
             data-quick-progress={item.userShowId}
             aria-busy={saving}
             aria-label={`${progress.movie ? "Отметить фильм просмотренным" : "Отметить следующую серию"}: ${item.title}`}
-            onClick={() => mark(item)}
+            onClick={() => {
+              if (detailsRef.current) setMinimumDetailsHeight(detailsRef.current.getBoundingClientRect().height);
+              mark(item);
+            }}
             className={`min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-wait disabled:opacity-60 ${posters ? "mb-2 w-full" : "flex-1 sm:flex-none"}`}
           >
             {saving
@@ -244,7 +251,7 @@ export default function Library() {
     },
     [userId],
   );
-  const quick = useQuickProgress(userId, applyProgress);
+  const quick = useQuickProgress(userId, applyProgress, true);
   const undoButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (quick.undo?.focus && document.activeElement === document.body)

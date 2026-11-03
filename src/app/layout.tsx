@@ -52,7 +52,8 @@ export default function RootLayout({
                 className="flex items-center gap-2.5 group flex-shrink-0"
               >
                 <div className="brand-mark w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-rose-900/30 group-hover:scale-105 transition-transform">
-                  <span className="text-white text-sm font-black">✳</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- Small transparent local brand artwork. */}
+                  <img src="/branding/episyhub-icon.webp" alt="" width={40} height={40} />
                 </div>
                 <span className="text-lg font-extrabold tracking-tight hidden sm:inline">
                   Episy<span className="text-rose-500">Hub</span>

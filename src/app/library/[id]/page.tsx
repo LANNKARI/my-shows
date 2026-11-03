@@ -463,6 +463,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
             </div>
           </section>
           <section className="td-panel td-current" aria-label="Текущая серия">
+            <div className="td-current-content">
             <h2>
               {next?.stoppedAt
                 ? "Вы остановились здесь"
@@ -492,11 +493,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
                       aria-busy={!!quick.pending}
                       onClick={() => void markNext()}
                     >
-                      {quick.pending
-                        ? "Сохранение…"
-                        : show.kind === "movie"
-                          ? "Отметить фильм"
-                          : "Отметить серию"}
+                      {show.kind === "movie" ? "Отметить фильм" : "Отметить серию"}
                     </button>
                   ) : (
                     <button
@@ -523,22 +520,14 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
                   : "Прогресс сохранён. Отметки можно изменить в списке ниже."}
               </p>
             )}
+            </div>
+            <div className="td-progress-feedback" aria-live="polite" data-state={quick.pending ? "pending" : quick.error ? "error" : quick.undo ? "saved" : "idle"}>
+              <span role={quick.error ? "alert" : undefined}>
+                {quick.pending ? (quick.pending.action === "undo" ? "Отменяем отметку…" : "Сохраняем отметку…") : quick.error || (quick.undo ? `✓ ${quick.undo.message}` : "")}
+              </span>
+              {quick.undo && <button type="button" aria-label="Отменить отметку" disabled={disabled} ref={undoButton} onClick={() => void quick.undoLast()}>Отменить</button>}
+            </div>
           </section>
-          {quick.undo && (
-            <button
-              className="td-text-button"
-              disabled={disabled}
-              ref={undoButton}
-              onClick={() => void quick.undoLast()}
-            >
-              Отменить отметку
-            </button>
-          )}
-          {quick.error && (
-            <p role="alert" className="td-alert">
-              {quick.error}
-            </p>
-          )}
           {saveError && (
             <div className="td-alert" role="alert">
               {saveError}

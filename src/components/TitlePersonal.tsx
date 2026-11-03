@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import Link from "next/link";
 import { libraryStatuses } from "@/lib/library";
 
@@ -21,8 +21,7 @@ type PersonalControlProps = { value: PersonalValues | null; busy: boolean; save:
 export function TitleLibraryLinks() {
   return <nav className="td-library-links" aria-label="Личные списки">
     <Link href="/watching">Библиотека</Link>
-    <Link href="/watching?status=bookmarked">♡ Избранное</Link>
-    <Link href="/watching?status=favorites">★ Любимые</Link>
+    <Link href="/watching?status=bookmarked">Избранное</Link>
   </nav>;
 }
 
@@ -137,73 +136,44 @@ function NoteField({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const id = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
   const href = field === "watchSite" ? watchSiteHref(value) : null;
+  function close() {
+    setEditing(false);
+    requestAnimationFrame(() => trigger.current?.focus({ preventScroll: true }));
+  }
+  function edit() {
+    setDraft(value || "");
+    setEditing(true);
+  }
   return (
-    <div className="td-note-field">
-      {editing ? (
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (await save({ [field]: draft.trim() })) setEditing(false);
-          }}
-        >
-          <label htmlFor={id}>{label}</label>
-          <input
-            id={id}
-            className="td-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={placeholder}
-            maxLength={500}
-            disabled={busy}
-            autoFocus
-          />
-          <div className="td-inline">
-            <button className="td-button td-primary" disabled={busy}>
-              Сохранить
-            </button>
-            <button
-              type="button"
-              className="td-button"
-              disabled={busy}
-              onClick={() => setEditing(false)}
-            >
-              Отмена
-            </button>
-          </div>
-        </form>
-      ) : (
-        <>
-          <span className="td-muted">{label}</span>
-          <div className="td-note-value">
-            <span>
-              {href ? (
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="action-button"
-                >
-                  {value} ↗
-                </a>
-              ) : (
-                value || "Не указано"
-              )}
-            </span>
-            <button
-              className="td-edit-button"
-              aria-label={`Изменить: ${label}`}
-              disabled={busy}
-              onClick={() => {
-                setDraft(value || "");
-                setEditing(true);
+    <div className="td-note-field td-note-field-inline">
+      <span id={`${id}-label`} className="td-muted">{label}</span>
+      <form aria-labelledby={`${id}-label`} onSubmit={async (event) => {
+        event.preventDefault();
+        if (editing && !busy && await save({ [field]: draft.trim() })) close();
+      }}>
+        <div className="td-note-value">
+          {editing ? (
+            <input id={id} className="td-inline-input" aria-label={label}
+              value={draft} onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !busy) { event.preventDefault(); close(); }
               }}
-            >
-              Изменить
-            </button>
+              placeholder={placeholder} maxLength={500} disabled={busy} autoFocus />
+          ) : (
+            <span className="td-note-display" onDoubleClick={edit}>
+              {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="td-note-site">{value} ↗</a> : value || "Не указано"}
+            </span>
+          )}
+          <div className="td-note-inline-controls">
+            {editing ? <>
+              <button className="td-inline-save" type="submit" aria-label="Сохранить" title={`Сохранить: ${label}`} disabled={busy}>✓</button>
+              <button type="button" aria-label="Отмена" title={`Отмена: ${label}`} disabled={busy} onClick={close}>×</button>
+            </> : <button key="edit" ref={trigger} type="button" className="td-inline-edit" aria-label={`Изменить: ${label}`} disabled={busy} onClick={(event) => { event.preventDefault(); edit(); }}>Изменить</button>}
           </div>
-        </>
-      )}
+        </div>
+      </form>
     </div>
   );
 }

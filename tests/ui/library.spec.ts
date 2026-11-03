@@ -411,17 +411,16 @@ test('a temporary library failure recovers automatically without reloading or sh
   expect(loads).toBe(2);
 });
 
-test('saved and loved library views are separate and preserve viewing statuses', async ({page}) => {
+test('saved titles keep their view while profile favorites stay out of library navigation', async ({page}) => {
   await setup(page);
   await page.route('**/api/user-shows?*', route => route.fulfill({json:records.map((r,i)=>({...r,isBookmarked:i===0 || i===5,isFavorite:i===1}))}));
   await page.goto('/watching?status=bookmarked');
   await expect(titles(page)).toHaveCount(2);
-  await expect(tabs(page).getByRole('link',{name:'♡ Избранное 2',exact:true})).toHaveAttribute('aria-current','page');
-  await tabs(page).getByRole('link',{name:'★ Любимые 1',exact:true}).click();
-  await expect(titles(page)).toHaveCount(1);
-  await expect(titles(page)).toHaveAttribute('aria-label',records[1].title);
+  await expect(tabs(page).getByRole('link',{name:'Избранное 2',exact:true})).toHaveAttribute('aria-current','page');
+  await expect(tabs(page).getByRole('link',{name:/Любимые/})).toHaveCount(0);
   await page.reload();
-  await expect(titles(page)).toHaveCount(1);
+  await expect(titles(page)).toHaveCount(2);
   await tabs(page).getByRole('link',{name:'Брошено 1',exact:true}).click();
+  await expect(titles(page)).toHaveCount(1);
   await expect(titles(page)).toHaveAttribute('aria-label','Брошенный сериал');
 });

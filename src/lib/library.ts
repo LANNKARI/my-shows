@@ -11,8 +11,7 @@ export const libraryStatuses = [
 ] as const;
 export const libraryViews = [
   ...libraryStatuses,
-  { value: "bookmarked", label: "♡ Избранное", empty: "В избранном пока нет тайтлов" },
-  { value: "favorites", label: "★ Любимые", empty: "Вы пока не отметили любимые тайтлы" },
+  { value: "bookmarked", label: "Избранное", empty: "В избранном пока нет тайтлов" },
 ] as const;
 export function inLibraryView(item: {status: string; isBookmarked?: boolean; isFavorite?: boolean}, view: string) {
   return view === "bookmarked" ? !!item.isBookmarked : view === "favorites" ? !!item.isFavorite : item.status === view;
