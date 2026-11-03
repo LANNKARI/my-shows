@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import ThemeSwatch from "@/components/ThemeSwatch";
+import { applyTheme, currentTheme, themeForItem, type Theme } from "@/lib/theme";
 import CosmeticAvatar from "@/components/CosmeticAvatar";
 import CosmeticCover from "@/components/CosmeticCover";
 import CosmeticConfirmation from "@/components/CosmeticConfirmation";
@@ -43,6 +45,17 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
     [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"shop" | "collection">("shop"),
     [category, setCategory] = useState<CosmeticKind>("frame");
+  const [themeTone, setThemeTone] = useState<"light" | "dark">("light");
+  const previewThemeRestore = useRef<Theme | null>(null);
+  useEffect(() => () => {
+    if (previewThemeRestore.current !== null && document.documentElement.dataset.themePreview) applyTheme(previewThemeRestore.current);
+  }, []);
+  function restoreTheme() {
+    if (previewThemeRestore.current !== null) {
+      if (document.documentElement.dataset.themePreview) applyTheme(previewThemeRestore.current);
+      previewThemeRestore.current = null;
+    }
+  }
   const [preview, setPreview] = useState<string | null>(null),
     [tryFrame, setTryFrame] = useState<string | null>(null),
     [tryProfile, setTryProfile] = useState<string | null>(null),
@@ -83,6 +96,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
   }
   function stopPreview() {
     if (lock.current) return;
+    restoreTheme();
     setPreview(null);
     setTryFrame(null);
     setTryProfile(null);
@@ -94,8 +108,17 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
     setError("");
     setNotice("");
     setPreview(item.id);
-    if (item.kind === "frame") setTryFrame(item.id);
-    else setTryProfile(item.id);
+    if (item.kind === "theme") {
+      const theme = themeForItem(item.id);
+      if (theme) {
+        if (previewThemeRestore.current === null) previewThemeRestore.current = currentTheme();
+        applyTheme(theme, false);
+      }
+    } else {
+      restoreTheme();
+      if (item.kind === "frame") setTryFrame(item.id);
+      else setTryProfile(item.id);
+    }
     window.scrollTo({ top: 0, behavior: "instant" });
   }
   async function mutate(action: "purchase" | "equip", item: CosmeticItem) {
@@ -142,9 +165,9 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
         );
         window.dispatchEvent(new Event("popcorn-updated"));
       } else {
-        setNotice(
-          "Оформление применено. Его видно в профиле; рамку — также в комментариях.",
-        );
+        const theme = item.kind === "theme" ? themeForItem(item.id) : null;
+        if (theme) { previewThemeRestore.current = null; applyTheme(theme); }
+        setNotice(theme ? "Тема применена и сохранена в аккаунте." : "Оформление применено. Его видно в профиле; рамку — также в комментариях.");
         setPreview(null);
         setTryFrame(null);
         setTryProfile(null);
@@ -179,11 +202,11 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
   const active = catalog.find((item) => item.id === preview),
     owned = new Set(purchases.map((item) => item.itemId));
   const selectedId = (kind: CosmeticKind) =>
-    kind === "frame" ? user.avatarFrame : user.profileStyle;
+    kind === "frame" ? user.avatarFrame : kind === "profile" ? user.profileStyle : user.siteTheme;
   const isOwned = (item: CosmeticItem) =>
     item.price === 0 || owned.has(item.id);
   const shown = catalog.filter(
-    (item) => item.kind === category && (tab === "shop" || isOwned(item)),
+    (item) => item.kind === category && (item.kind !== "theme" || item.tone === themeTone) && (tab === "shop" || isOwned(item)),
   );
   const avatar = tryFrame || user.avatarFrame,
     style = tryProfile || user.profileStyle;
@@ -231,7 +254,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
           Обновление магазина…
         </p>
       )}
-      {active ? (
+      {active && active.kind !== "theme" ? (
         <>
           <section className="cx-preview-banner">
             <div>
@@ -402,6 +425,16 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
         </>
       ) : (
         <>
+          {active?.kind === "theme" && (
+            <section className="cx-preview-banner cx-theme-preview" aria-label="Примерка темы">
+              <div><h2>🍂 Примерка: {active.name}</h2><p className="cx-muted">Тема видна только вам. {isOwned(active) ? "Уже в вашей коллекции." : `Стоимость: ${active.price} 🍿. Покупка навсегда.`}</p></div>
+              <div className="cx-theme-preview-actions">
+                <button className="cx-button" disabled={busy} onClick={stopPreview}>Отменить примерку</button>
+                {isOwned(active) ? <button className="cx-button cx-primary" disabled={busy} onClick={() => void mutate("equip", active)}>Применить тему</button> : <button className="cx-button cx-primary" disabled={busy || user.popcorn < active.price} onClick={() => { setError(""); setQuote(active); }}>Купить за {active.price} 🍿</button>}
+              </div>
+              {!isOwned(active) && user.popcorn < active.price && <p className="cx-muted">Не хватает {active.price - user.popcorn} попкорна. Примерка бесплатна.</p>}
+            </section>
+          )}
           <div className="cx-toolbar">
             <div className="cx-tabs compact-tabs" aria-label="Раздел оформления">
               <button
@@ -432,20 +465,21 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
             >
               Профиль
             </button>
-            <button disabled>Темы · Позже</button>
+            <button aria-pressed={category === "theme"} disabled={busy} onClick={() => { stopPreview(); setCategory("theme"); }}>Темы</button>
           </div>
-          <div className="cx-grid">
+          {category === "theme" && <div className="cx-toolbar cx-theme-toolbar"><h2>Темы оформления</h2><div className="cx-tabs compact-tabs" aria-label="Светлые и тёмные темы"><button aria-pressed={themeTone === "light"} onClick={() => setThemeTone("light")}>Светлые</button><button aria-pressed={themeTone === "dark"} onClick={() => setThemeTone("dark")}>Тёмные</button></div></div>}
+          <div className={`cx-grid ${category === "theme" ? "cx-theme-grid" : ""}`}>
             {shown.map((item) => {
               const selected = selectedId(item.kind) === item.id;
               return (
                 <article
-                  className="cx-card"
+                  className={`cx-card ${item.kind === "theme" ? "cx-theme-card" : ""}`}
                   key={item.id}
                   aria-label={item.name}
                 >
                   <h2>{item.name}</h2>
                   <div className="cx-card-preview">
-                    {item.kind === "frame" ? (
+                    {item.kind === "theme" ? <ThemeSwatch item={item} /> : item.kind === "frame" ? (
                       <CosmeticAvatar
                         name={user.name || user.username}
                         src={user.avatarUrl}
@@ -467,6 +501,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
                       </div>
                     )}
                   </div>
+                  {item.kind === "theme" && <p className="cx-muted cx-theme-description">{item.description}</p>}
                   <p
                     className={
                       selected ? "cx-selected" : isOwned(item) ? "cx-owned" : ""

@@ -184,3 +184,7 @@ button.dayContent:focus-visible { outline-color: #d6c7ff; outline-offset: -4px; 
 :global([data-theme="light"]) .amount {color:var(--text)}
 :global([data-theme="light"]) .day:last-child .amount {color:var(--gold)}
 :global([data-theme="light"]) .day:after {background:repeating-linear-gradient(to bottom,#4f765a40 0 5px,transparent 5px 11px)}
+
+:global([data-site-theme="autumn-2026"]) .day {background:var(--bg-2)}
+:global([data-site-theme="autumn-2026"]) .day:before {background:linear-gradient(180deg,#ffffff0d 0%,#fbf1e440 30%,#fffaf2ed 66%,#fffaf2 100%)}
+:global([data-site-theme="autumn-2026"]) .day:after {background:repeating-linear-gradient(to bottom,#80634e40 0 5px,transparent 5px 11px)}

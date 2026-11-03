@@ -2,6 +2,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { CosmeticItem, CosmeticUser } from "@/lib/cosmetics";
+import ThemeSwatch from "./ThemeSwatch";
 import CosmeticAvatar from "./CosmeticAvatar";
 import CosmeticCover from "./CosmeticCover";
 export default function CosmeticConfirmation({
@@ -89,10 +90,10 @@ export default function CosmeticConfirmation({
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="cosmetic-confirm-title">
-          Купить {item.kind === "frame" ? "рамку" : "оформление"} «{item.name}»?
+          Купить {item.kind === "theme" ? "тему" : item.kind === "frame" ? "рамку" : "оформление"} «{item.name}»?
         </h2>
         <div className="cx-confirm-preview">
-          {item.kind === "frame" ? (
+          {item.kind === "theme" ? <ThemeSwatch item={item} /> : item.kind === "frame" ? (
             <CosmeticAvatar
               name={user.name || user.username}
               src={user.avatarUrl}

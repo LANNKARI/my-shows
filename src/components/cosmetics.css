@@ -549,3 +549,19 @@
 @media(max-width:767px){.cx-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cx-card{padding:12px 10px}.cx-heading h1{font-size:26px}.cx-toolbar{gap:6px}.cx-toolbar .cx-muted{display:none}.cx-card h2{font-size:12px}.cx-card-preview{min-height:96px}.cx-card-preview .cosmetic-avatar{width:64px!important;height:64px!important}.cx-card-actions{flex-wrap:wrap;min-height:70px;align-content:flex-end}.cx-card-actions>button{flex:1 0 100%}.cx-card-actions .cx-link{flex:1 0 100%}.cx-tabs>button{padding-inline:10px}}
 
 @media(max-width:767px){.cx-card-actions{display:grid;grid-template-columns:1fr;grid-template-rows:32px 32px;gap:6px;min-height:70px;align-content:initial}.cx-card-actions>button{min-width:0;width:100%;grid-column:1}}
+
+.cx-theme-card { display:flex; flex-direction:column; }
+.cx-theme-card .cx-card-preview {order:-1;width:calc(100% + 32px);margin:-16px -16px 14px;min-height:0;overflow:hidden;border-radius:14px 14px 0 0;}
+.cx-theme-art {display:block;width:100%;height:160px;object-fit:cover;}
+.cx-theme-mint {display:grid;place-items:center;background:linear-gradient(135deg,#e9f4df,#c3dec0);font-size:48px;color:#287a46;}
+.cx-theme-cosmos {display:grid;place-items:center;background:linear-gradient(135deg,#19162f,#503c72);font-size:48px;color:#cbb8ff;}
+.cx-theme-description {font-size:12px;line-height:1.6;margin:6px 0 12px;}
+.cx-theme-card .cx-card-actions {margin-top:auto;padding-top:12px;}
+.cx-theme-preview {flex-wrap:wrap;}
+.cx-theme-preview h2,.cx-theme-toolbar h2 {font-size:17px;font-weight:700;}
+.cx-theme-preview-actions {display:flex;gap:8px;flex-wrap:wrap;}
+.cx-theme-preview > p {width:100%;}
+@media(max-width:767px){.cx-theme-preview-actions {width:100%;}.cx-theme-preview-actions button{flex:1;}.cx-theme-art{height:145px;}}
+
+.cx-theme-card .cx-card-preview {padding:0;}
+@media(max-width:767px){.cx-theme-grid {grid-template-columns:1fr;}.cx-theme-card {padding:16px;}.cx-theme-card h2{font-size:17px;}.cx-theme-card .cx-card-actions {min-height:34px;}.cx-theme-card .cx-card-actions>button{flex:1 0 auto;}}

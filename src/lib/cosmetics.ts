@@ -1,14 +1,18 @@
-export type CosmeticKind = "frame" | "profile";
+export type CosmeticKind = "frame" | "profile" | "theme";
 export type CosmeticItem = {
   id: string;
   kind: CosmeticKind;
   name: string;
   price: number;
   description: string;
+  tone?: "light" | "dark";
 };
 export const STANDARD_FRAME = "frame-standard",
   STANDARD_PROFILE = "profile-standard";
 export const COSMETICS: readonly CosmeticItem[] = [
+  { id: "theme-cosmos", kind: "theme", name: "Космос", price: 0, tone: "dark", description: "Знакомая тёмная тема с космическим фоном." },
+  { id: "theme-mint", kind: "theme", name: "Мята", price: 0, tone: "light", description: "Свежая светлая тема в зелёных оттенках." },
+  { id: "theme-autumn-2026", kind: "theme", name: "Осень 2026", price: 500, tone: "light", description: "Тёплый свет, уютный камин и золотая осень за окном." },
   {
     id: STANDARD_FRAME,
     kind: "frame",
@@ -89,6 +93,7 @@ export type CosmeticUser = {
   popcorn: number;
   avatarFrame: string;
   profileStyle: string;
+  siteTheme?: string | null;
 };
 export type CosmeticsData = {
   user: CosmeticUser;

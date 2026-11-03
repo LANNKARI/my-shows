@@ -1,17 +1,40 @@
 "use client";
-
-import { useEffect } from "react";
-import { THEME_CHANGE_EVENT, THEME_STORAGE_KEY } from "@/lib/theme";
+import { useEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
+import { applyTheme, currentTheme, themeForItem, validTheme, THEME_STORAGE_KEY } from "@/lib/theme";
 
 export default function ThemeSync() {
+  const { data: session, status } = useSession();
+  const userId = session?.user?.id;
+  const previousUser = useRef<string | undefined>(undefined);
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== THEME_STORAGE_KEY && event.key !== null) return;
-      document.documentElement.dataset.theme = event.newValue === "light" ? "light" : "dark";
-      window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
+      applyTheme(validTheme(event.newValue) ? event.newValue : "dark", false);
+      delete document.documentElement.dataset.themePreview;
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
+  useEffect(() => {
+    if (status === "loading") return;
+    if (!userId) {
+      if (previousUser.current && currentTheme() === "autumn-2026") applyTheme("dark");
+      previousUser.current = undefined;
+      return;
+    }
+    previousUser.current = userId;
+    const abort = new AbortController();
+    const initial = currentTheme();
+    fetch("/api/site-theme", { cache: "no-store", signal: abort.signal })
+      .then(async response => response.ok ? response.json() : null)
+      .then(result => {
+        if (!result || abort.signal.aborted || document.documentElement.dataset.themePreview || currentTheme() !== initial) return;
+        const theme = themeForItem(result.theme);
+        if (theme) applyTheme(theme);
+        else if (result.ownsAutumn === false && currentTheme() === "autumn-2026") applyTheme("dark");
+      }).catch(() => { /* Keep the locally selected theme when offline. */ });
+    return () => abort.abort();
+  }, [userId, status]);
   return null;
 }

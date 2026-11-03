@@ -221,3 +221,7 @@
 :global([data-theme="light"]) .dots i {background:#a3bba6}
 :global([data-theme="light"]) .dots i.currentDot {background:var(--accent)}
 :global([data-theme="light"]) .shade {background:linear-gradient(90deg,#f4f9eecf 0%,#f4f9ee70 50%,#f4f9ee00 100%),linear-gradient(180deg,#f2f8ed10,#f0f8ee70 22%,#f4f9eef5 65%,#f4f9ee)}
+
+:global([data-site-theme="autumn-2026"]) .shade {background:linear-gradient(90deg,#fff5e8cf 0%,#fff5e870 50%,#fff5e800 100%),linear-gradient(180deg,#fbf1e410,#fbf1e470 22%,#fffaf2f5 65%,#fffaf2)}
+:global([data-site-theme="autumn-2026"]) .dots i {background:var(--border)}
+:global([data-site-theme="autumn-2026"]) .dots i.currentDot {background:var(--accent)}

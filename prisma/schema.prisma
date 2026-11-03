@@ -28,6 +28,7 @@ model User {
   bannerUrl     String?
   avatarFrame String @default("frame-standard")
   profileStyle String @default("profile-standard")
+  siteTheme String?
   cosmeticPurchases CosmeticPurchase[]
   releaseNotificationsEnabled Boolean @default(true)
   notifyNewShows Boolean @default(false)

@@ -18,6 +18,7 @@ const userSelect = {
   popcorn: true,
   avatarFrame: true,
   profileStyle: true,
+  siteTheme: true,
 };
 export class CosmeticError extends Error {
   constructor(
@@ -159,7 +160,9 @@ export async function mutateCosmetics(userId: string, input: unknown) {
         data:
           item.kind === "frame"
             ? { avatarFrame: item.id }
-            : { profileStyle: item.id },
+            : item.kind === "profile"
+              ? { profileStyle: item.id }
+              : { siteTheme: item.id },
         select: userSelect,
       });
       return { success: true, itemId: item.id, user: selected };

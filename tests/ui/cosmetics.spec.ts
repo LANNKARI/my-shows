@@ -24,6 +24,7 @@ async function setup(
       popcorn: options.balance ?? 240,
       avatarFrame: "frame-standard",
       profileStyle: "profile-standard",
+      siteTheme: null as string | null,
     },
     catalog: COSMETICS,
     purchases: [
@@ -82,6 +83,7 @@ async function setup(
           },
         },
       });
+    if (path === "/api/site-theme") return route.fulfill({json:{theme:data.user.siteTheme,ownsAutumn:data.purchases.some(p=>p.itemId === "theme-autumn-2026")}});
     if (path === "/api/cosmetics" && request.method() === "GET")
       return options.failLoad
         ? route.fulfill({
@@ -124,7 +126,8 @@ async function setup(
         });
       }
       if (item.kind === "frame") data.user.avatarFrame = item.id;
-      else data.user.profileStyle = item.id;
+      else if (item.kind === "profile") data.user.profileStyle = item.id;
+      else data.user.siteTheme = item.id;
       return route.fulfill({ json: { success: true, user: data.user } });
     }
     if (path === "/api/users/alex")
@@ -461,4 +464,56 @@ test("shop distinguishes loading failure from an empty collection", async ({
   await expect(
     main(page).getByRole("button", { name: "Повторить загрузку", exact: true }),
   ).toBeVisible();
+});
+
+for (const width of [320, 390, 1440]) test(`autumn theme previews without spending and cancels on navigation at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({width,height:1000});
+  const api=await setup(page,{balance:800});
+  await page.goto('/cosmetics');
+  await page.getByRole('button',{name:'Темы',exact:true}).click();
+  await expect(card(page,'Осень 2026').getByText('🍿 500',{exact:true})).toBeVisible();
+  await card(page,'Осень 2026').getByRole('button',{name:'Примерить',exact:true}).click();
+  await expect(page.locator('html')).toHaveAttribute('data-site-theme','autumn-2026');
+  await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+  expect(api.calls).toHaveLength(0);
+  expect(await page.evaluate(()=>localStorage.getItem('episyhub.theme.v1'))).not.toBe('autumn-2026');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:testInfo.outputPath(`autumn-${width}.png`),fullPage:true});
+  await page.getByRole('button',{name:'Отменить примерку',exact:true}).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+  await card(page,'Осень 2026').getByRole('button',{name:'Примерить',exact:true}).click();
+  await main(page).getByRole('link',{name:'← Назад в профиль'}).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+  expect(api.calls).toHaveLength(0);
+});
+
+test('autumn purchase confirms 500, applies persistently and restores from account on a fresh browser', async ({page})=>{
+  const api=await setup(page,{balance:800});
+  await page.goto('/cosmetics');await page.getByRole('button',{name:'Темы',exact:true}).click();
+  await card(page,'Осень 2026').getByRole('button',{name:'Примерить',exact:true}).click();
+  await page.getByRole('button',{name:'Купить за 500 🍿',exact:true}).click();
+  const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();
+  await dialog.getByRole('button',{name:/Купить|Подтвердить/}).click();
+  await expect(dialog).toHaveCount(0);
+  expect(api.data.user.popcorn).toBe(300);
+  expect(api.calls.filter(c=>c.action==='purchase')).toEqual([{action:'purchase',itemId:'theme-autumn-2026',expectedPrice:500}]);
+  await page.getByRole('button',{name:'Применить тему',exact:true}).click();
+  await expect(page.getByText('Тема применена и сохранена в аккаунте.')).toBeVisible();
+  expect(api.data.user.siteTheme).toBe('theme-autumn-2026');
+  expect(await page.evaluate(()=>localStorage.getItem('episyhub.theme.v1'))).toBe('autumn-2026');
+  await page.evaluate(()=>localStorage.removeItem('episyhub.theme.v1'));await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-site-theme','autumn-2026');
+  expect(api.data.user.popcorn).toBe(300);
+});
+
+test('themes split into light and dark, and an insufficient balance still allows free preview',async({page})=>{
+  const api=await setup(page,{balance:499});await page.goto('/cosmetics');
+  await page.getByRole('button',{name:'Темы',exact:true}).click();
+  await page.getByRole('button',{name:'Тёмные',exact:true}).click();
+  await expect(card(page,'Космос')).toBeVisible();await expect(card(page,'Осень 2026')).toHaveCount(0);
+  await page.getByRole('button',{name:'Светлые',exact:true}).click();
+  await card(page,'Осень 2026').getByRole('button',{name:'Примерить',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Купить за 500 🍿',exact:true})).toBeDisabled();
+  await expect(page.getByText('Не хватает 1 попкорна. Примерка бесплатна.')).toBeVisible();
+  expect(api.calls).toHaveLength(0);
 });

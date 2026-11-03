@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./themes.css";
+@import "./autumn-theme.css";
 
 @layer base {
 /* У поля уже есть доступная кнопка очистки; нативный крестик не дублируем. */

@@ -96,6 +96,9 @@ before(async () => {
   assert.equal((await prisma.userShow.findUniqueOrThrow({ where: { id: legacyEntry.id } })).notifyReleases, false);
   const rls = await prisma.$queryRaw<{ relrowsecurity: boolean }[]>`SELECT c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ${schema} AND c.relname = 'ReleaseNotification'`;
   assert.equal(rls[0].relrowsecurity, true);
+  await prisma.$executeRawUnsafe('ALTER TABLE "User" DROP COLUMN "siteTheme"');
+  await prisma.$executeRawUnsafe(await readFile('prisma/migrations/20261103010000_site_themes/migration.sql', 'utf8'));
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:legacyUser.id}})).siteTheme, null);
   // Cosmetic migration is additive and preserves existing balances and uploaded covers.
   await prisma.user.update({ where: { id: legacyUser.id }, data: { popcorn: 321, bannerUrl: 'https://example.test/cover.png' } });
   const cosmeticMigration = await readFile('prisma/migrations/20261027000000_popcorn_cosmetics/migration.sql', 'utf8');
@@ -2185,4 +2188,32 @@ test("saved titles stay private and independent of profile favorites and viewing
   assert.equal(titles.find((x:{showId:number})=>x.showId===f.show.id).isBookmarked, false);
   const backup = await (await client.request('/api/export')).json();
   assert.equal(backup.userShows.find((x:{show:{id:number}})=>x.show.id===f.show.id).settings.isBookmarked, false);
+});
+
+
+test('site themes cost 500, require ownership, preserve other slots and charge only once concurrently', async () => {
+  await resetCosmetics(1000);
+  await prisma.user.update({where:{id:alice.id},data:{siteTheme:null}});
+  assert.equal((await guest.request('/api/site-theme')).status,401);
+  assert.equal((await equip('theme-autumn-2026')).status,403);
+  assert.equal((await buy('theme-autumn-2026',200)).status,409);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,1000);
+  const results = await Promise.all([buy('theme-autumn-2026',500),buy('theme-autumn-2026',500)]);
+  assert.ok(results.every(r=>r.status===200));
+  assert.equal(await prisma.cosmeticPurchase.count({where:{userId:alice.id,itemId:'theme-autumn-2026'}}),1);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,500);
+  assert.equal((await equip('theme-autumn-2026')).status,200);
+  let user=await prisma.user.findUniqueOrThrow({where:{id:alice.id}});
+  assert.equal(user.siteTheme,'theme-autumn-2026');assert.equal(user.avatarFrame,'frame-standard');assert.equal(user.profileStyle,'profile-standard');
+  const response=await owner.request('/api/site-theme?userId='+bob.id);
+  assert.match(response.headers.get('cache-control')!,/no-store/);
+  assert.equal((await response.json()).theme,'theme-autumn-2026');
+  assert.equal((await (await other.request('/api/site-theme')).json()).ownsAutumn,false);
+  assert.equal((await equip('theme-mint')).status,200);
+  assert.equal((await equip('theme-autumn-2026')).status,200);
+  user=await prisma.user.findUniqueOrThrow({where:{id:alice.id}});assert.equal(user.popcorn,500);
+  assert.equal(await prisma.popcornEntry.count({where:{userId:alice.id,eventKey:'purchase:theme-autumn-2026',amount:-500}}),1);
+  await resetCosmetics(499);
+  assert.equal((await buy('theme-autumn-2026',500)).status,409);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,499);
 });
