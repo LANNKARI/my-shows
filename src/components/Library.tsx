@@ -18,6 +18,8 @@ import {
   filterLibrary,
   libraryProgress,
   libraryStatuses,
+  libraryViews,
+  inLibraryView,
   personalRating,
   type LibraryItem,
 } from "@/lib/library";
@@ -207,7 +209,7 @@ export default function Library() {
   const [resource, setResource] = useState<Resource | null>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const status =
-    libraryStatuses.find((status) => status.value === params.get("status")) ||
+    libraryViews.find((status) => status.value === params.get("status")) ||
     libraryStatuses[0];
   const query = params.get("q") || "";
   const type = ["movie", "series"].includes(params.get("type") || "")
@@ -329,7 +331,7 @@ export default function Library() {
     window.history.replaceState(null, "", href(changes));
   const visible = filterLibrary(items, status.value, query, type, sort);
   const statusCount = items.filter(
-    (item) => item.status === status.value,
+    (item) => inLibraryView(item, status.value),
   ).length;
 
   const inlineUndo = Boolean(
@@ -440,7 +442,7 @@ export default function Library() {
             aria-label="Статусы библиотеки"
             className="compact-tabs flex gap-2 overflow-x-auto pb-1"
           >
-            {libraryStatuses.map((tab) => (
+            {libraryViews.map((tab) => (
               <Link
                 key={tab.value}
                 href={href({ status: tab.value })}
@@ -451,7 +453,7 @@ export default function Library() {
                 {tab.label}
                 <span className="rounded-md bg-neutral-800/70 px-1.5 py-0.5 text-xs">
                   {current && !current.error
-                    ? items.filter((item) => item.status === tab.value).length
+                    ? items.filter((item) => inLibraryView(item, tab.value)).length
                     : "—"}
                 </span>
               </Link>

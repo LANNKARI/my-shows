@@ -32,6 +32,7 @@ export async function GET() {
       status: us.status,
       isCompleted: us.status === "completed",
       isFavorite: us.isFavorite,
+      isBookmarked: us.isBookmarked,
       totalSeasons: us.totalSeasons,
       totalEpisodes: us.totalEpisodes,
       dubbing: us.dubbing,

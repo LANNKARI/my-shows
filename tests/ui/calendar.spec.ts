@@ -174,7 +174,7 @@ async function setup(
 const main = (page: Page) => page.getByRole("main");
 
 for (const width of [320, 390, 1440])
-  test(`calendar week and month fit ${width}px, keep day cells usable and show real dates`, async ({
+  test(`weekly release list fits ${width}px and shows real dates without a day strip`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
@@ -201,46 +201,20 @@ for (const width of [320, 390, 1440])
       path: testInfo.outputPath(`calendar-week-${width}.png`),
       fullPage: true,
     });
-    await main(page)
-      .getByRole("button", { name: "Месяц", exact: true })
-      .click();
-    await expect(page).toHaveURL(/view=month/);
-    await expect(
-      main(page).getByRole("button", {
-        name: "четверг, 1 октября, серий: 0",
-        exact: true,
-      }),
-    ).toBeVisible();
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
-    const selected = main(page).getByRole("button", {
-      name: "среда, 28 октября, серий: 1",
-      exact: true,
-    });
-    await expect(selected).toHaveAttribute("aria-pressed", "true");
-    await page.screenshot({
-      path: testInfo.outputPath(`calendar-month-${width}.png`),
-      fullPage: true,
-    });
+    await expect(main(page).getByRole("button", { name: "Месяц", exact: true })).toHaveCount(0);
+    await expect(page.locator('.rc-date-grid')).toHaveCount(0);
+    await main(page).getByRole("button", { name: "Следующий период" }).click();
+    await expect(page).toHaveURL(/date=2026-11-04/);
   });
 
-test("month selection and filters survive reload and back without shifting a release date", async ({
+test("weekly navigation and filters survive reload and back without shifting a release date", async ({
   page,
 }) => {
   await setup(page);
   await page.goto("/calendar?date=2026-10-28&view=month");
-  const nextDay = main(page).getByRole("button", {
-    name: "четверг, 29 октября, серий: 1",
-    exact: true,
-  });
-  await nextDay.click();
-  await expect(page).toHaveURL(/date=2026-10-29/);
   await expect(main(page).getByText("Сезон 2 · Серия 5")).toBeVisible();
   await page.reload();
-  await expect(nextDay).toHaveAttribute("aria-pressed", "true");
+  await expect(main(page).getByText("Сезон 2 · Серия 5")).toBeVisible();
   await main(page)
     .getByRole("button", { name: "В планах", exact: true })
     .click();
@@ -487,11 +461,6 @@ test("calendar keeps an original air date when the viewer timezone is on the pre
   await expect(
     main(page).getByRole("heading", { name: "Завтра · 28 октября" }),
   ).toBeVisible();
-  await expect(
-    main(page).getByRole("button", {
-      name: "среда, 28 октября, серий: 1",
-      exact: true,
-    }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(main(page).getByText("Сезон 2 · Серия 4")).toBeVisible();
   await context.close();
 });

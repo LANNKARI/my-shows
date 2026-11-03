@@ -211,9 +211,9 @@ export default function WhatToWatchPage() {
   }, []);
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="discovery-page space-y-8 pb-20">
       {/* 1. НОВАЯ ШАПКА СО СКРУГЛЕНИЕМ rounded-3xl (В ЕДИНОМ СТИЛЕ ВСЕХ СТРАНИЦ) */}
-      <div className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 shadow-2xl backdrop-blur-sm">
+      <div className="discovery-heading rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 sm:p-8 shadow-2xl backdrop-blur-sm">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
           <div className="space-y-1.5">
             <div className="flex items-center gap-3">
@@ -231,7 +231,7 @@ export default function WhatToWatchPage() {
           </div>
 
           {/* Переключатель режимов: Рулетка / Подборка */}
-          <div className="flex bg-neutral-950 p-1.5 rounded-2xl border border-neutral-800 self-start sm:self-auto shadow-inner">
+          <div className="compact-tabs flex bg-neutral-950 p-1.5 rounded-2xl border border-neutral-800 self-start sm:self-auto shadow-inner">
             <button
               type="button"
               onClick={() => {
@@ -267,7 +267,7 @@ export default function WhatToWatchPage() {
       </div>
 
       {/* 2. ПАНЕЛЬ ФИЛЬТРОВ */}
-      <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+      <div className="discovery-filters bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* Тип контента */}
           <div>
@@ -491,8 +491,9 @@ export default function WhatToWatchPage() {
             </div>
           )}
 
-          {!loading && randomItem && (
-            <div className="bg-neutral-900/80 border border-neutral-800 rounded-3xl overflow-hidden max-w-4xl mx-auto shadow-2xl relative">
+          {randomItem && (
+            <div aria-busy={loading}
+              className="discovery-result bg-neutral-900/80 border border-neutral-800 rounded-3xl overflow-hidden max-w-4xl mx-auto shadow-2xl relative">
               {randomItem.backdropUrl && (
                 <div
                   className="absolute inset-0 bg-cover bg-center opacity-15 blur-xl pointer-events-none"
@@ -500,11 +501,11 @@ export default function WhatToWatchPage() {
                 />
               )}
 
-              <div className="relative p-6 sm:p-8 flex flex-col md:flex-row gap-6 sm:gap-8 items-start">
+              <div className="discovery-result-inner relative p-6 sm:p-8 flex flex-col md:flex-row gap-6 sm:gap-8 items-start">
                 {/* Постер */}
                 <div
                   onClick={() => handleOpenShow(randomItem)}
-                  className="w-full md:w-72 flex-shrink-0 cursor-pointer group mx-auto md:mx-0"
+                  className="discovery-result-poster w-full md:w-72 flex-shrink-0 cursor-pointer group mx-auto md:mx-0"
                   title="Открыть страницу тайтла"
                 >
                   <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800 shadow-xl relative">
@@ -532,7 +533,7 @@ export default function WhatToWatchPage() {
                 </div>
 
                 {/* Инфо и кнопки */}
-                <div className="flex-1 flex flex-col h-full w-full">
+                <div className="discovery-result-info flex-1 flex flex-col h-full w-full">
                   <div className="flex flex-wrap items-center gap-3 mb-2">
                     <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
                       {randomItem.year}
@@ -577,14 +578,14 @@ export default function WhatToWatchPage() {
                   </div>
 
                   {/* Кнопки действий */}
-                  <div className="mt-auto pt-4 border-t border-neutral-800/80 flex flex-wrap items-center gap-3">
+                  <div className="discovery-result-actions mt-auto pt-4 border-t border-neutral-800/80 flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={spinRoulette}
                       disabled={loading}
                       className="px-5 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-semibold text-xs sm:text-sm transition-colors flex items-center gap-2 border border-neutral-700 cursor-pointer"
                     >
-                      <span>🎲 Крутить ещё</span>
+                      <span>{loading ? "Загрузка…" : "🎲 Крутить ещё"}</span>
                     </button>
 
                     <button

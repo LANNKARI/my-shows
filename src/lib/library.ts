@@ -9,10 +9,20 @@ export const libraryStatuses = [
   },
   { value: "dropped", label: "Брошено", empty: "Брошенных тайтлов пока нет" },
 ] as const;
+export const libraryViews = [
+  ...libraryStatuses,
+  { value: "bookmarked", label: "♡ Избранное", empty: "В избранном пока нет тайтлов" },
+  { value: "favorites", label: "★ Любимые", empty: "Вы пока не отметили любимые тайтлы" },
+] as const;
+export function inLibraryView(item: {status: string; isBookmarked?: boolean; isFavorite?: boolean}, view: string) {
+  return view === "bookmarked" ? !!item.isBookmarked : view === "favorites" ? !!item.isFavorite : item.status === view;
+}
 export type LibraryStatus = (typeof libraryStatuses)[number]["value"];
 export type LibraryEpisode = { id: number; season: number; episode: number };
 export type LibraryItem = {
   hasNote?: boolean;
+  isBookmarked?: boolean;
+  isFavorite?: boolean;
   id: number;
   userShowId: number;
   showId: number;
@@ -102,7 +112,7 @@ export function filterLibrary(
   });
   const filtered = items.filter(
     (item) =>
-      item.status === status &&
+      inLibraryView(item, status) &&
       (type === "all" || item.kind === type) &&
       (!search ||
         [item.title, item.originalTitle, item.originalName].some((value) =>

@@ -182,6 +182,9 @@ export async function saveLibrary(
         ...(body.isFavorite !== undefined
           ? { isFavorite: body.isFavorite as boolean }
           : {}),
+        ...(body.isBookmarked !== undefined
+          ? { isBookmarked: body.isBookmarked as boolean }
+          : {}),
         ...(body.dubbing !== undefined
           ? {
               dubbing:

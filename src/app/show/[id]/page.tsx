@@ -14,6 +14,9 @@ import TrailerPlayer, { type TrailerItem } from "@/components/TrailerPlayer";
 import {
   PersonalNotes,
   TitleControls,
+  TitleLibraryLinks,
+  PosterFavorite,
+  LovedTitleButton,
   TitleRatings,
 } from "@/components/TitlePersonal";
 import "@/components/title-detail.css";
@@ -22,6 +25,7 @@ type PersonalRecord = {
   id: number;
   status: string;
   isFavorite: boolean;
+  isBookmarked?: boolean;
   dubbing?: string | null;
   watchSite?: string | null;
   userRating?: number | null;
@@ -213,6 +217,7 @@ function ShowContent({
         <span aria-hidden="true">/</span>
         <span>{movie ? "Фильм" : "Сериал"}</span>
       </nav>
+      <TitleLibraryLinks />
       <section className="td-hero td-panel" aria-label="Карточка тайтла">
         {show.backdropUrl && (
           <div
@@ -222,16 +227,22 @@ function ShowContent({
             }}
           />
         )}
-        {show.posterUrl /* eslint-disable-next-line @next/next/no-img-element */ ? (
-          <img
-            className="td-poster"
-            src={tmdbImageUrl(show.posterUrl)}
-            alt={`Постер: ${title}`}
-          />
-        ) : (
-          <div className="td-poster td-poster-empty">Нет постера</div>
-        )}
-        <div>
+        <div className="td-poster-column">
+          <div className="td-poster-wrap">
+            {show.posterUrl /* eslint-disable-next-line @next/next/no-img-element */ ? (
+              <img
+                className="td-poster"
+                src={tmdbImageUrl(show.posterUrl)}
+                alt={`Постер: ${title}`}
+              />
+            ) : (
+              <div className="td-poster td-poster-empty">Нет постера</div>
+            )}
+            <PosterFavorite value={personal} busy={disabled} save={save} />
+          </div>
+          {!movie && <Link className="td-button td-primary td-under-poster" href={authStatus === "authenticated" ? `/library/${show.id}` : "/login"}>Открыть трекер серий →</Link>}
+        </div>
+        <div className="td-title-copy">
           <h1>{title}</h1>
           {original && original !== title && (
             <p className="td-original">{original}</p>
@@ -257,6 +268,7 @@ function ShowContent({
             busy={disabled}
             save={save}
           />
+          <TitleControls value={personal} busy={disabled} save={save} />
         </div>
         <div className="td-actions">
           {movie ? (
@@ -271,19 +283,8 @@ function ShowContent({
                   ? "Сохранение…"
                   : "Отметить просмотренным"}
             </button>
-          ) : (
-            <Link
-              className="td-button td-primary"
-              href={
-                authStatus === "authenticated"
-                  ? `/library/${show.id}`
-                  : "/login"
-              }
-            >
-              Открыть трекер серий →
-            </Link>
-          )}
-          <TitleControls value={personal} busy={disabled} save={save} />
+          ) : null}
+          <LovedTitleButton value={personal} busy={disabled} save={save} />
           {show.trailers && <TrailerPlayer trailers={show.trailers} compact />}
         </div>
         {authStatus === "authenticated" && (

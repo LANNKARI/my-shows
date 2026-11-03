@@ -10,6 +10,7 @@ function tracker() {
       kind: "series",
       updatedAt: "2026-10-26T10:00:00.000Z",
       isFavorite: false,
+      isBookmarked: false,
       dubbing: "Дубляж",
       watchSite: "Сервис",
       userRating: 6,
@@ -284,8 +285,8 @@ test("film sections preserve discussion and status survives rating, favorite and
     .getByRole("button", { name: "Отметить просмотренным" })
     .click();
   await expect(
-    main(page).getByRole("combobox", { name: "Статус просмотра" }),
-  ).toHaveValue("completed");
+    main(page).getByRole("group", { name: "Статус просмотра" }).getByRole("button", {name:"Просмотрено",exact:true}),
+  ).toHaveAttribute("aria-pressed", "true");
   await main(page)
     .getByRole("combobox", { name: "Моя оценка" })
     .selectOption("9");
@@ -333,12 +334,12 @@ test("film sections preserve discussion and status survives rating, favorite and
   expect(calls.map((call) => call.body)).toEqual([
     { status: "completed" },
     { score: 9 },
-    { isFavorite: true },
+    { isBookmarked: true },
     { dubbing: "Новая озвучка" },
   ]);
   await expect(
-    main(page).getByRole("combobox", { name: "Статус просмотра" }),
-  ).toHaveValue("completed");
+    main(page).getByRole("group", { name: "Статус просмотра" }).getByRole("button", {name:"Просмотрено",exact:true}),
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("failed film edits keep the confirmed rating, favorite and note and keep the draft", async ({
@@ -531,8 +532,8 @@ test("last episode keeps undo accessible and restores the watching status", asyn
   await undo.click();
   await expect(current(page).getByText("Время остановки: 18:42")).toBeVisible();
   await expect(
-    main(page).getByRole("combobox", { name: "Статус просмотра" }),
-  ).toHaveValue("watching");
+    main(page).getByRole("group", { name: "Статус просмотра" }).getByRole("button", {name:"Смотрю",exact:true}),
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 test("trailer opens above the card and Escape returns keyboard focus", async ({
@@ -573,8 +574,8 @@ test("explicit completion updates all tracker checkboxes and counts immediately"
   const calls = await setup(page);
   await page.goto("/library/10");
   await main(page)
-    .getByRole("combobox", { name: "Статус просмотра" })
-    .selectOption("completed");
+    .getByRole("group", { name: "Статус просмотра" })
+    .getByRole("button", { name: "Просмотрено", exact: true }).click();
   await expect(main(page).getByRole("progressbar")).toHaveAttribute(
     "aria-valuenow",
     "100",
@@ -609,26 +610,26 @@ test("unmarking a completed episode resumes watching and status selection preser
 }) => {
   await setup(page);
   await page.goto("/library/10");
-  const status = main(page).getByRole("combobox", { name: "Статус просмотра" });
-  await status.selectOption("completed");
+  const status = main(page).getByRole("group", { name: "Статус просмотра" });
+  await status.getByRole("button", { name: "Просмотрено", exact: true }).click();
   await expect(main(page).getByRole("progressbar")).toHaveAttribute(
     "aria-valuenow",
     "100",
   );
-  await status.selectOption("watching");
-  await expect(status).toHaveValue("watching");
+  await status.getByRole("button", { name: "Смотрю", exact: true }).click();
+  await expect(status.getByRole("button", { name: "Смотрю", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(main(page).getByRole("progressbar")).toHaveAttribute(
     "aria-valuenow",
     "100",
   );
-  await status.selectOption("completed");
+  await status.getByRole("button", { name: "Просмотрено", exact: true }).click();
   await main(page)
     .getByRole("checkbox", {
       name: "Сезон 1, серия 1: просмотрено",
       exact: true,
     })
     .click();
-  await expect(status).toHaveValue("watching");
+  await expect(status.getByRole("button", { name: "Смотрю", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(current(page).getByText("Сезон 1 · Серия 1")).toBeVisible();
   await expect(main(page).getByRole("progressbar")).toHaveAttribute(
     "aria-valuenow",
@@ -712,4 +713,21 @@ test("unchecking an episode displays immediately and rolls back on save failure"
   });
   await expect(main(page).getByRole("alert")).toBeVisible();
   await expect(checkbox).toHaveAttribute("aria-checked", "true");
+});
+
+test("saved heart and profile favorite toggle independently and persist across reload", async ({ page }) => {
+  const calls = await setup(page);
+  await page.goto('/show/10');
+  const heart = main(page).getByRole('button', { name: 'В избранное', exact: true });
+  const loved = main(page).getByRole('button', { name: 'Добавить в любимые', exact: true });
+  await heart.click();
+  await expect(main(page).getByRole('button', { name: 'Убрать из избранного' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(loved).toHaveAttribute('aria-pressed', 'false');
+  await loved.click();
+  await page.reload();
+  await expect(main(page).getByRole('button', { name: 'Убрать из избранного' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(main(page).getByRole('button', { name: 'Убрать из любимых' })).toHaveAttribute('aria-pressed', 'true');
+  await main(page).getByRole('button', { name: 'Убрать из избранного' }).click();
+  await expect(main(page).getByRole('button', { name: 'Убрать из любимых' })).toHaveAttribute('aria-pressed', 'true');
+  expect(calls.map(c => c.body)).toEqual([{isBookmarked:true},{isFavorite:true},{isBookmarked:false}]);
 });

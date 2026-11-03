@@ -9,8 +9,6 @@ import {
   addDays,
   calendarRange,
   formatDay,
-  rangeDays,
-  shiftMonth,
   todayInZone,
   validDay,
 } from "@/lib/calendar-dates";
@@ -44,7 +42,7 @@ function Calendar() {
     validDay(rawDay) && rawDay >= "2000-01-01" && rawDay <= "2100-12-31"
       ? rawDay
       : today;
-  const view = params.get("view") === "month" ? "month" : "week";
+  const view = "week";
   const filter = ["watching", "planned", "completed", "all"].includes(
     params.get("status") || "",
   )
@@ -188,13 +186,8 @@ function Calendar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, key]);
   const currentData = loadedKey === key ? data : null;
-  const days = rangeDays(from, to),
-    chosenDay = anchor;
   const events = currentData?.events || [];
-  const shown =
-    view === "month"
-      ? events.filter((event) => event.date === chosenDay)
-      : events;
+  const shown = events;
   const groups = [...new Set(shown.map((event) => event.date))];
   return (
     <div className="release-ui rc-calendar">
@@ -208,20 +201,6 @@ function Calendar() {
         </Link>
       </div>
       <div className="rc-toolbar">
-        <div className="rc-tabs" aria-label="Вид календаря">
-          <button
-            aria-pressed={view === "week"}
-            onClick={() => navigate({ view: "week" })}
-          >
-            Неделя
-          </button>
-          <button
-            aria-pressed={view === "month"}
-            onClick={() => navigate({ view: "month" })}
-          >
-            Месяц
-          </button>
-        </div>
         <div className="rc-period">
           <button
             className="rc-button"
@@ -229,19 +208,14 @@ function Calendar() {
             disabled={anchor < "2000-02-01"}
             onClick={() =>
               navigate({
-                date:
-                  view === "month"
-                    ? shiftMonth(anchor, -1)
-                    : addDays(anchor, -7),
+                date: addDays(anchor, -7),
               })
             }
           >
             ‹
           </button>
           <strong>
-            {view === "month"
-              ? formatDay(anchor, { month: "long", year: "numeric" })
-              : `${formatDay(from, { day: "numeric", month: "short" })} — ${formatDay(to, { day: "numeric", month: "short" })}`}
+            {`${formatDay(from, { day: "numeric", month: "short" })} — ${formatDay(to, { day: "numeric", month: "short" })}`}
           </strong>
           <button
             className="rc-button"
@@ -249,8 +223,7 @@ function Calendar() {
             disabled={anchor > "2100-11-01"}
             onClick={() =>
               navigate({
-                date:
-                  view === "month" ? shiftMonth(anchor, 1) : addDays(anchor, 7),
+                date: addDays(anchor, 7),
               })
             }
           >
@@ -279,50 +252,6 @@ function Calendar() {
             {label}
           </button>
         ))}
-      </div>
-      <div
-        className={`rc-date-grid ${view === "month" ? "is-month" : ""}`}
-        aria-label={view === "month" ? "Дни месяца" : "Дни недели"}
-      >
-        {view === "month" &&
-          ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((day) => (
-            <span className="rc-weekday" key={day}>
-              {day}
-            </span>
-          ))}
-        {days.map((day) => {
-          const count = events.filter((event) => event.date === day).length;
-          return (
-            <button
-              key={day}
-              className={`${day === today ? "is-today" : ""} ${day.slice(0, 7) !== anchor.slice(0, 7) ? "is-outside" : ""}`}
-              aria-pressed={chosenDay === day}
-              aria-label={`${formatDay(day, { weekday: "long", day: "numeric", month: "long" })}, серий: ${count}`}
-              onClick={() => {
-                navigate({ date: day });
-                if (view === "week")
-                  document
-                    .getElementById(`day-${day}`)
-                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
-              }}
-            >
-              {view === "week" && (
-                <span>{formatDay(day, { weekday: "short" })}</span>
-              )}
-              <strong>{formatDay(day, { day: "numeric" })}</strong>
-              {count > 0 && (
-                <span className="rc-day-count">
-                  <i aria-hidden="true" />
-                  {view === "month" ? (
-                    count
-                  ) : (
-                    <span className="sr-only">{count} серий</span>
-                  )}
-                </span>
-              )}
-            </button>
-          );
-        })}
       </div>
       {error && (
         <div role="alert" className="rc-error">

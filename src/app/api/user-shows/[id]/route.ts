@@ -304,6 +304,7 @@ export async function GET(
           status: userShow.status,
           kind: userShow.kind,
           isFavorite: userShow.isFavorite,
+          isBookmarked: userShow.isBookmarked,
           notifyReleases: userShow.notifyReleases,
           isCompleted: userShow.isCompleted,
           dubbing: userShow.dubbing,

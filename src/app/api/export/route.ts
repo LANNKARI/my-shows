@@ -117,6 +117,7 @@ export async function GET() {
         totalEpisodes: us.totalEpisodes,
         isCompleted: us.isCompleted,
         isFavorite: us.isFavorite,
+        isBookmarked: us.isBookmarked,
         dubbing: us.dubbing,
         watchSite: us.watchSite,
       },

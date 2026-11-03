@@ -10,6 +10,9 @@ import { useSession } from "next-auth/react";
 import {
   PersonalNotes,
   TitleControls,
+  TitleLibraryLinks,
+  PosterFavorite,
+  LovedTitleButton,
   TitleRatings,
   type PersonalValues,
 } from "@/components/TitlePersonal";
@@ -378,10 +381,13 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
         <span aria-hidden="true">/</span>
         <span>Трекер</span>
       </nav>
+      <TitleLibraryLinks />
       <div className="td-tracker">
         <aside className="td-tracker-side">
-          {poster}
-          <PersonalNotes value={userShow} busy={disabled} save={save} />
+          <div className="td-poster-wrap">
+            {poster}
+            <PosterFavorite value={userShow} busy={disabled} save={save} />
+          </div>
           <Link className="td-card-link mt-4" href={`/show/${show.id}`}>
             <span aria-hidden="true" className="td-card-link-icon">
               🎬
@@ -401,10 +407,14 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
               <path d="M5 12h14m-6-6 6 6-6 6" />
             </svg>
           </Link>
+          <PersonalNotes value={userShow} busy={disabled} save={save} />
         </aside>
         <section className="td-tracker-header" aria-label="Тайтл и статус">
-          {poster}
-          <div>
+          <div className="td-mobile-poster td-poster-wrap">
+            {poster}
+            <PosterFavorite value={userShow} busy={disabled} save={save} />
+          </div>
+          <div className="td-tracker-copy">
             <h1>{show.title}</h1>
             {(show.originalTitle || show.originalName) && (
               <p className="td-original">
@@ -422,6 +432,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
               save={save}
             />
             <TitleControls value={userShow} busy={disabled} save={save} />
+            <LovedTitleButton value={userShow} busy={disabled} save={save} />
           </div>
         </section>
         <div className="td-tracker-content">

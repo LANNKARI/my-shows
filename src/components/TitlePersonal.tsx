@@ -1,11 +1,13 @@
 "use client";
 
 import { useId, useState } from "react";
+import Link from "next/link";
 import { libraryStatuses } from "@/lib/library";
 
 export type PersonalValues = {
   status?: string;
   isFavorite?: boolean;
+  isBookmarked?: boolean;
   dubbing?: string | null;
   watchSite?: string | null;
   userRating?: number | null;
@@ -14,46 +16,48 @@ export type SavePersonal = (
   values: Record<string, unknown>,
 ) => Promise<boolean>;
 
-export function TitleControls({
-  value,
-  busy,
-  save,
-}: {
-  value: PersonalValues | null;
-  busy: boolean;
-  save: SavePersonal;
-}) {
+type PersonalControlProps = { value: PersonalValues | null; busy: boolean; save: SavePersonal };
+
+export function TitleLibraryLinks() {
+  return <nav className="td-library-links" aria-label="Личные списки">
+    <Link href="/watching">Библиотека</Link>
+    <Link href="/watching?status=bookmarked">♡ Избранное</Link>
+    <Link href="/watching?status=favorites">★ Любимые</Link>
+  </nav>;
+}
+
+export function TitleControls({ value, busy, save }: PersonalControlProps) {
   return (
-    <div className="td-controls">
-      <label className="td-status">
-        <span className="sr-only">Статус просмотра</span>
-        <select
-          value={value?.status || ""}
-          disabled={busy}
-          onChange={(e) => void save({ status: e.target.value })}
-        >
-          <option value="" disabled>
-            Добавить в библиотеку
-          </option>
-          {libraryStatuses.map((status) => (
-            <option key={status.value} value={status.value}>
-              {status.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
-        className="td-button td-favorite"
-        aria-label={value?.isFavorite ? "Убрать из избранного" : "В избранное"}
-        aria-pressed={!!value?.isFavorite}
-        disabled={busy}
-        onClick={() => void save({ isFavorite: !value?.isFavorite })}
-      >
-        <span aria-hidden="true">{value?.isFavorite ? "♥" : "♡"}</span>
-        <span>В избранное</span>
-      </button>
+    <div className="compact-tabs td-status-tabs" role="group" aria-label="Статус просмотра">
+      {libraryStatuses.map((status) => (
+        <button key={status.value} type="button" disabled={busy}
+          aria-pressed={value?.status === status.value}
+          onClick={() => void save({ status: status.value })}>
+          {status.label}
+        </button>
+      ))}
     </div>
   );
+}
+
+export function PosterFavorite({ value, busy, save }: PersonalControlProps) {
+  const saved = !!value?.isBookmarked;
+  return <button type="button" className="td-poster-heart"
+    aria-label={saved ? "Убрать из избранного" : "В избранное"}
+    aria-pressed={saved} disabled={busy}
+    onClick={() => void save({ isBookmarked: !saved })}>
+    <span aria-hidden="true">{saved ? "♥" : "♡"}</span>
+  </button>;
+}
+
+export function LovedTitleButton({ value, busy, save }: PersonalControlProps) {
+  const loved = !!value?.isFavorite;
+  return <button type="button" className="td-button td-loved"
+    aria-label={loved ? "Убрать из любимых" : "Добавить в любимые"}
+    aria-pressed={loved} disabled={busy}
+    onClick={() => void save({ isFavorite: !loved })}>
+    <span aria-hidden="true">{loved ? "★" : "☆"}</span> Любимый
+  </button>;
 }
 
 export function TitleRatings({

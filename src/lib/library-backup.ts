@@ -18,6 +18,7 @@ export type BackupTitle = {
   runtime: number | null;
   status: string;
   isFavorite: boolean;
+  isBookmarked: boolean;
   totalSeasons: number;
   totalEpisodes: number;
   dubbing: string | null;
@@ -192,6 +193,7 @@ export function parseBackup(raw: unknown, legacyStatus?: unknown) {
         runtime: show.runtime == null ? null : num(show.runtime, 10000, 1),
         status: status as string,
         isFavorite: settings.isFavorite === true,
+        isBookmarked: settings.isBookmarked === true,
         totalSeasons: num(settings.totalSeasons ?? 1, 1000),
         totalEpisodes: num(settings.totalEpisodes ?? 0, 100000),
         dubbing: str(settings.dubbing, 500, true),

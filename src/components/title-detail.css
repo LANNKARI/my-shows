@@ -633,3 +633,38 @@
   .td-tracker-header .td-rating select { min-height: 32px; }
 }
 .td-ring[aria-valuenow="0"] .td-ring-value { visibility: hidden; }
+
+/* Saved titles and profile favorites are independent controls. */
+.td-status-tabs { margin:16px 0 12px; }
+.td-poster-wrap { position:relative; }
+.td-poster-heart { position:absolute; top:10px; right:10px; z-index:1; display:grid; place-items:center; width:36px; height:36px; border-radius:50%; background:#ffffffeb; color:#493d57; border:1px solid #fff8; font-size:25px; box-shadow:0 2px 12px #0002; }
+.td-poster-heart[aria-pressed="true"] { color:#e44267; background:#fff4f6; }
+.td-loved.td-button { min-height:32px; padding:6px 11px; border-radius:9px; font-size:12px; }
+.td-loved[aria-pressed="true"] { color:var(--gold); background:color-mix(in srgb,var(--gold) 10%,var(--bg-2)); border-color:var(--gold); }
+.td-poster-column { grid-row:1 / span 4; align-self:start; }
+.td-under-poster { width:100%; min-height:36px; margin-top:10px; padding:8px; font-size:12px; }
+.td-hero { grid-template-columns:250px minmax(0,1fr); gap:0 26px; padding:24px; }
+.td-hero > .td-title-copy,.td-hero > .td-actions,.td-hero > .td-notes { grid-column:2; }
+.td-hero > .td-actions { gap:9px; }
+.td-hero .td-rating { padding:7px 11px; gap:3px; }
+.td-hero h1 { font-size:34px; }
+.td-hero .td-actions > .td-button { min-height:32px; padding:6px 11px; font-size:12px; }
+.td-tracker-header > .td-tracker-copy { padding-right:0; }
+.td-tracker-header .td-ratings { position:static; margin:16px 0 0; }
+.td-tracker-header > .td-mobile-poster { display:none; }
+.td-tracker-side .td-card-link { margin-top:10px; margin-bottom:14px; }
+@media(max-width:767px) {
+ .td-hero { grid-template-columns:1fr; padding:16px; gap:16px; }
+ .td-hero > .td-poster-column { grid-row:auto; grid-column:1; max-width:210px; width:100%; justify-self:center; }
+ .td-hero > .td-title-copy,.td-hero > .td-actions,.td-hero > .td-notes { grid-column:1; }
+ .td-hero h1 { font-size:27px; }
+ .td-status-tabs.compact-tabs > button { padding-inline:9px; font-size:11px; }
+ .td-tracker-header > .td-mobile-poster { display:block; width:90px; flex-shrink:0; }
+ .td-tracker-header .td-mobile-poster > .td-poster { width:90px; }
+ .td-tracker-header .td-status-tabs { width:calc(100% + 106px); max-width:none; margin-left:-106px; }
+ .td-tracker-header .td-loved { margin-left:-106px; }
+}
+
+.td-library-links { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 16px; }
+.td-library-links a { display:inline-flex; align-items:center; padding:7px 11px; min-height:34px; border:1px solid var(--border); border-radius:9px; background:var(--bg-2); color:var(--text-dim); font-size:12px; }
+.td-library-links a:hover { color:var(--accent); border-color:var(--accent); }

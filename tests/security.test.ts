@@ -2162,3 +2162,27 @@ test("registration rejects missing name, mismatched passwords and missing consen
   assert.equal(await prisma.pendingRegistration.count({ where: { email } }), 0);
   assert.equal(mailRequests.length, initial);
 });
+
+test("saved titles stay private and independent of profile favorites and viewing progress", async () => {
+  const { record, client } = await featureAccount();
+  const f = await fixture('series', 2, record.id);
+  const path = `/api/user-shows/${f.show.id}`;
+  assert.equal((await guest.request(path, 'PATCH', { isBookmarked: true })).status, 401);
+  assert.equal((await client.request(path, 'PATCH', { isBookmarked: 'yes' })).status, 400);
+  assert.equal((await client.request(path, 'PATCH', { isBookmarked: true, status: 'planned' })).status, 200);
+  let row = await prisma.userShow.findUniqueOrThrow({where:{userId_showId:{userId:record.id,showId:f.show.id}}});
+  assert.equal(row.isBookmarked, true); assert.equal(row.isFavorite, false);
+  let profile = await (await guest.request(`/api/users/${record.username}`)).json();
+  assert.equal(profile.favorites.some((x:{showId:number})=>x.showId===f.show.id), false);
+  assert.equal((await client.request(path, 'PATCH', { isFavorite: true })).status, 200);
+  profile = await (await guest.request(`/api/users/${record.username}`)).json();
+  assert.equal(profile.favorites.length, 1);
+  assert.equal((await client.request(path, 'PATCH', { isBookmarked: false })).status, 200);
+  row = await prisma.userShow.findUniqueOrThrow({where:{id:row.id}});
+  assert.equal(row.isFavorite, true); assert.equal(row.isBookmarked, false); assert.equal(row.status, 'planned');
+  assert.equal(await prisma.episodeProgress.count({where:{userShowId:row.id}}), 0);
+  const titles = await (await client.request('/api/user-shows?status=library')).json();
+  assert.equal(titles.find((x:{showId:number})=>x.showId===f.show.id).isBookmarked, false);
+  const backup = await (await client.request('/api/export')).json();
+  assert.equal(backup.userShows.find((x:{show:{id:number}})=>x.show.id===f.show.id).settings.isBookmarked, false);
+});

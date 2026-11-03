@@ -177,6 +177,7 @@ export async function GET(request: NextRequest) {
         status: us.status || "watching",
         isCompleted: us.status === "completed",
         isFavorite: us.isFavorite,
+        isBookmarked: us.isBookmarked,
         hasNote: noted.has(us.showId),
         totalSeasons: us.totalSeasons || 1,
         totalEpisodes,

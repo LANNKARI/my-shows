@@ -1,0 +1,26 @@
+import { expect, test } from '@playwright/test';
+for (const width of [390, 1440]) test(`roulette keeps its current card and scroll position during another spin at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 600 });
+  await page.route('**/api/**', r => r.fulfill({json:new URL(r.request().url()).pathname === '/api/auth/session' ? null : {}}));
+  let calls = 0, release: (() => void) | undefined;
+  await page.route('**/api/random?*', async r => {
+    calls++;
+    if (calls === 2) await new Promise<void>(resolve => { release = resolve; });
+    await r.fulfill({json:{randomItem:{id:calls,tmdbId:calls,type:'movie',title:'Фильм '+calls,originalTitle:'Film',overview:'Описание фильма. '.repeat(20),posterUrl:null,backdropUrl:null,year:'2025',voteAverage:8,voteCount:100,genres:['Драма']}}});
+  });
+  await page.goto('/random');
+  const result = page.locator('.discovery-result');
+  await expect(result.getByRole('heading', {name:'Фильм 1',exact:true})).toBeVisible();
+  const spin = result.getByRole('button', {name:'Крутить ещё',exact:false});
+  await spin.scrollIntoViewIfNeeded();
+  const position = await page.evaluate(() => scrollY);
+  await spin.click();
+  await expect(result).toHaveAttribute('aria-busy','true');
+  await expect(result.getByRole('button', {name:'Загрузка…',exact:true})).toBeDisabled();
+  await expect(result.getByRole('heading', {name:'Фильм 1',exact:true})).toBeVisible();
+  expect(Math.abs(await page.evaluate(() => scrollY)-position)).toBeLessThan(3);
+  await expect.poll(() => !!release).toBe(true);
+  release!();
+  await expect(result.getByRole('heading', {name:'Фильм 2',exact:true})).toBeVisible();
+  expect(Math.abs(await page.evaluate(() => scrollY)-position)).toBeLessThan(3);
+});

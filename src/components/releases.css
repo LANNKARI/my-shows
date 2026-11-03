@@ -629,3 +629,8 @@
 .rc-notifications-page .rc-settings { padding:15px; }
 .rc-notifications-page .rc-setting { gap:12px; padding:11px 0; }
 }
+
+/* Weekly release list, without the redundant day strip. */
+.rc-calendar .rc-toolbar { justify-content:flex-end; }
+.rc-calendar .rc-filters { margin-top:-48px; }
+@media(max-width:767px) { .rc-calendar .rc-filters { margin-top:0; } .rc-calendar .rc-toolbar { margin-bottom:12px; } }

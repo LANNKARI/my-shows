@@ -333,6 +333,7 @@ export async function commitImport(
             status: t.status,
             isCompleted: t.status === "completed",
             isFavorite: t.isFavorite,
+            isBookmarked: t.isBookmarked,
             totalSeasons: t.totalSeasons,
             totalEpisodes: t.totalEpisodes,
             dubbing: t.dubbing,

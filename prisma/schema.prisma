@@ -287,6 +287,7 @@ model UserShow {
   totalEpisodes Int   @default(0)
   isCompleted   Boolean @default(false)
   isFavorite    Boolean @default(false)
+  isBookmarked  Boolean @default(false)
   status String @default("watching")
 
   notifyReleases Boolean @default(false)

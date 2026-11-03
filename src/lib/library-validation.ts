@@ -26,6 +26,8 @@ export function validateLibraryInput(
   }
   if (body.isFavorite !== undefined && typeof body.isFavorite !== "boolean")
     return "Некорректное значение избранного";
+  if (body.isBookmarked !== undefined && typeof body.isBookmarked !== "boolean")
+    return "Некорректное значение избранного";
   for (const key of ["dubbing", "watchSite"]) {
     if (
       body[key] !== undefined &&
