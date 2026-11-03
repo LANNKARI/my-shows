@@ -771,3 +771,24 @@ test('a last-episode quick mark renders immediately and keeps inline undo in a s
   await undo.click();
   await expect(main(page).getByRole('progressbar')).toHaveAttribute('aria-valuenow','75');
 });
+
+test('time edits stay in the current panel, cancel with Escape and can clear a saved timestamp', async ({page})=>{
+  const calls=await setup(page);await page.goto('/library/10');
+  const region=current(page), edit=region.getByRole('button',{name:'Изменить время',exact:true});
+  const before=await region.boundingBox();await edit.click();
+  const input=region.getByRole('textbox',{name:/Время остановки/});await expect(input).toHaveValue('18:42');
+  await input.fill('12:34');await input.press('Escape');await expect(edit).toBeFocused();expect(calls).toHaveLength(0);
+  await edit.click();await input.fill('');await input.press('Enter');
+  await expect(region.getByText('Время остановки не указано')).toBeVisible();
+  expect(calls[0].body).toEqual({episodeId:104,stoppedAt:null});
+  expect(Math.abs((await region.boundingBox())!.height-before!.height)).toBeLessThan(2);
+});
+
+test('episode list edits its own timestamp in place and keeps failed edits available',async({page})=>{
+  await setup(page,{fail:true});await page.goto('/library/10');
+  const row=main(page).getByRole('button',{name:'Изменить время: сезон 1, серия 4',exact:true});await row.click();
+  const input=main(page).getByRole('textbox',{name:'Время остановки: сезон 1, серия 4',exact:true});
+  await input.fill('01:02:03');await input.press('Enter');
+  await expect(main(page).getByRole('alert')).toBeVisible();await expect(input).toHaveValue('01:02:03');
+  await page.getByRole('button',{name:'Отменить изменение времени'}).click();await expect(row).toBeFocused();
+});

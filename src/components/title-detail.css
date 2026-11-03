@@ -692,3 +692,13 @@
 @keyframes td-saving-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { .td-progress-feedback[data-state="pending"] > span:before { animation:none; } }
 @media(max-width:767px) { .td-actions > .td-loved,.td-actions > div > .td-button { min-width:106px; } .td-note-field-inline .td-note-value { height:40px; } .td-note-inline-controls button,.td-inline-input { height:36px; } .td-current-content { min-height:196px; } }
+
+/* Edit timestamps in place without adding a separate panel. */
+.td-time-inline { display:flex; align-items:center; gap:6px; width:224px; max-width:100%; height:40px; }
+.td-time-inline-current { margin-top:12px; }
+.td-time-inline .td-inline-input { flex:1; width:0; min-width:0; height:36px; padding-inline:4px; font-size:14px; }
+.td-time-inline .td-note-inline-controls { width:78px; flex-basis:78px; }
+.td-episode .td-time-inline { width:auto; min-width:0; }
+.td-episode .td-time-inline:has(input) { width:200px; }
+@media(max-width:640px){.td-episode:has(.td-time-inline input) {flex-wrap:wrap;}.td-episode .td-inline:has(input) {max-width:100%;}}
+@media(max-width:767px){.td-current-content {min-height:208px;}}

@@ -164,6 +164,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
   >({});
   const [editingTime, setEditingTime] = useState<Episode | null>(null);
   const [timeInput, setTimeInput] = useState("");
+  const [timeLocation, setTimeLocation] = useState<"current" | "episode">("current");
   const [reload, setReload] = useState(0);
   const quick = useQuickProgress(
     userId,
@@ -308,7 +309,9 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
     setReload(reload + 1);
   }
   const save = (body: Record<string, unknown>) => mutate("PATCH", body);
-  function editTime(episode: Episode) {
+  function editTime(episode: Episode, location: "current" | "episode") {
+    setTimeLocation(location);
+    setSaveError("");
     setEditingTime(episode);
     setTimeInput(episode.stoppedAt || "");
   }
@@ -341,6 +344,36 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
   const episodes = seasons.flatMap((season) => season.episodes);
   const next = episodes.find((episode) => !episode.watched);
   const disabled = busy || !!quick.pending;
+  function closeTime(episode: Episode, location: "current" | "episode") {
+    setEditingTime(null);
+    setSaveError("");
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-time-edit="${location}-${episode.id}"]`)?.focus({ preventScroll: true }));
+  }
+  function timeControl(episode: Episode, location: "current" | "episode") {
+    const editing = editingTime?.id === episode.id && timeLocation === location;
+    return (
+      <form className={`td-time-inline ${location === "current" ? "td-time-inline-current" : ""}`} aria-label={`Время остановки: сезон ${episode.season}, серия ${episode.episode}`}
+        onSubmit={async event => {
+          event.preventDefault();
+          if (!editing || disabled) return;
+          const time = timeInput.trim();
+          if (time && !/^\d{1,3}:(?:[0-5]\d:)?[0-5]\d$/.test(time)) {
+            setSaveError("Введите время в формате ММ:СС или ЧЧ:ММ:СС.");
+            return;
+          }
+          if (await mutate("POST", { episodeId: episode.id, stoppedAt: time || null })) closeTime(episode, location);
+        }}>
+        {editing ? <>
+          <input className="td-inline-input" aria-label={`Время остановки: сезон ${episode.season}, серия ${episode.episode}`} value={timeInput} onChange={event => setTimeInput(event.target.value)} placeholder="ММ:СС" title="ММ:СС или ЧЧ:ММ:СС. Пустое поле удаляет время." autoFocus maxLength={12} disabled={disabled} onKeyDown={event => { if (event.key === "Escape" && !disabled) { event.preventDefault(); closeTime(episode, location); } }} />
+          <span className="td-note-inline-controls">
+            <button className="td-inline-save" type="submit" aria-label="Сохранить время" disabled={disabled}>✓</button>
+            <button type="button" aria-label="Отменить изменение времени" disabled={disabled} onClick={() => closeTime(episode, location)}>×</button>
+          </span>
+        </> : <button type="button" className="td-text-button" data-time-edit={`${location}-${episode.id}`} aria-label={location === "current" ? "Изменить время" : `Изменить время: сезон ${episode.season}, серия ${episode.episode}`} title={episode.watched ? "Снимите отметку просмотра, чтобы указать время" : "Изменить время"} disabled={disabled || episode.watched} onClick={event => { event.preventDefault(); editTime(episode, location); }}>{location === "current" ? "Изменить время" : episode.stoppedAt || "+ Время"}</button>}
+      </form>
+    );
+  }
+
   const item: LibraryItem = {
     id: show.id,
     showId: show.id,
@@ -505,13 +538,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
                     </button>
                   )}
                 </div>
-                <button
-                  className="td-text-button"
-                  disabled={disabled}
-                  onClick={() => editTime(next)}
-                >
-                  Изменить время
-                </button>
+                {timeControl(next, "current")}
               </>
             ) : (
               <p className="td-muted">
@@ -539,55 +566,6 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
                 Обновить трекер
               </button>
             </div>
-          )}
-          {editingTime && (
-            <form
-              className="td-panel td-time-form"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                const time = timeInput.trim();
-                if (time && !/^\d{1,3}:(?:[0-5]\d:)?[0-5]\d$/.test(time)) {
-                  setSaveError("Введите время в формате ММ:СС или ЧЧ:ММ:СС.");
-                  return;
-                }
-                if (
-                  await mutate("POST", {
-                    episodeId: editingTime.id,
-                    stoppedAt: time || null,
-                  })
-                )
-                  setEditingTime(null);
-              }}
-            >
-              <label htmlFor="episode-time">
-                Время остановки: сезон {editingTime.season}, серия{" "}
-                {editingTime.episode}
-              </label>
-              <input
-                id="episode-time"
-                className="td-input"
-                value={timeInput}
-                onChange={(event) => setTimeInput(event.target.value)}
-                placeholder="18:42"
-                autoFocus
-                maxLength={12}
-                disabled={disabled}
-              />
-              <button className="td-button td-primary" disabled={disabled}>
-                Сохранить время
-              </button>
-              <button
-                className="td-button"
-                type="button"
-                disabled={disabled}
-                onClick={() => setEditingTime(null)}
-              >
-                Отмена
-              </button>
-              <p className="td-muted w-full">
-                ММ:СС или ЧЧ:ММ:СС. Оставьте поле пустым, чтобы удалить время.
-              </p>
-            </form>
           )}
           <PersonalNoteEditor showId={show.id} />
           <div className="lg:hidden">
@@ -719,19 +697,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
                           <span className="td-muted">
                             {episode.watched ? "Просмотрено" : ""}
                           </span>
-                          <button
-                            className="td-text-button"
-                            aria-label={`Изменить время: сезон ${episode.season}, серия ${episode.episode}`}
-                            title={
-                              episode.watched
-                                ? "Снимите отметку просмотра, чтобы указать время"
-                                : "Изменить время"
-                            }
-                            disabled={disabled || episode.watched}
-                            onClick={() => editTime(episode)}
-                          >
-                            {episode.stoppedAt || "+ Время"}
-                          </button>
+                          {timeControl(episode, "episode")}
                         </div>
                       </div>
                     ))}
