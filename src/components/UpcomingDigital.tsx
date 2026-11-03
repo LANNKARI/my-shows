@@ -40,7 +40,7 @@ export default function UpcomingDigital() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
   return <section className="digital-premieres" aria-labelledby="digital-heading">
-    <div className="digital-heading"><div><h2 id="digital-heading">Скоро выходит в цифре</h2><p>Первые цифровые релизы · Ближайшие даты — сначала</p></div><span className="digital-drag-hint" aria-hidden="true">↔ Потяните карточки, чтобы листать</span></div>
+    <div className="digital-heading"><h2 id="digital-heading">Скоро выходит в цифре</h2></div>
     {error && <p role="alert" className="digital-message">{error} <button className="action-button" onClick={() => { setError(""); setAttempt(value => value + 1); }}>Повторить загрузку</button></p>}
     {!items && !error && <p className="digital-message" role="status">Проверяем даты цифровых премьер…</p>}
     {visible?.length === 0 && !error && <p className="digital-message">Подтверждённых цифровых премьер на ближайшее время пока нет.</p>}
