@@ -61,6 +61,13 @@ type TrackerData = {
   seasons: Season[];
 };
 
+function remainingDescription(count: number, movie: boolean) {
+  const forms = movie ? ["часть", "части", "частей"] : ["серия", "серии", "серий"];
+  const lastTwo = count % 100;
+  const index = lastTwo >= 11 && lastTwo <= 14 ? 2 : count % 10 === 1 ? 0 : count % 10 >= 2 && count % 10 <= 4 ? 1 : 2;
+  return `${index === 0 ? "Осталась" : "Осталось"} ${count} ${forms[index]}`;
+}
+
 function withProgress(data: TrackerData, patch: ProgressPatch): TrackerData {
   const progress = new Map(
     patch.progress.map((value) => [value.episodeId, value]),
@@ -408,33 +415,40 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
               {show.year && <span>{show.year}</span>}
               <span>{show.genres?.join(", ")}</span>
             </div>
-            <TitleControls value={userShow} busy={disabled} save={save} />
             <TitleRatings
               tmdb={show.tmdbRating}
               rating={userShow.userRating}
               busy={disabled}
               save={save}
             />
+            <TitleControls value={userShow} busy={disabled} save={save} />
           </div>
         </section>
         <div className="td-tracker-content">
-          <section className="td-panel" aria-label="Прогресс просмотра">
-            <div className="td-progress-label">
-              <span>
-                Отмечено {stats.watchedEpisodesCount} из {stats.totalEpisodes}{" "}
-                {show.kind === "movie" ? "частей" : "серий"}
-              </span>
-              <strong>{stats.progressPercent}%</strong>
-            </div>
+          <section className="td-panel td-ring-progress" aria-label="Прогресс просмотра">
             <div
-              className="td-progress"
+              className="td-ring"
               role="progressbar"
               aria-label="Прогресс просмотра"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={stats.progressPercent}
+              aria-valuetext={`${stats.watchedEpisodesCount} из ${stats.totalEpisodes} ${show.kind === "movie" ? "частей" : "серий"}`}
             >
-              <div style={{ width: `${stats.progressPercent}%` }} />
+              <svg viewBox="0 0 68 68" aria-hidden="true">
+                <circle className="td-ring-track" cx="34" cy="34" r="27" />
+                <circle
+                  className="td-ring-value"
+                  cx="34" cy="34" r="27"
+                  strokeDasharray={169.646}
+                  strokeDashoffset={169.646 * (1 - Math.min(100, Math.max(0, stats.progressPercent)) / 100)}
+                />
+              </svg>
+              <span aria-hidden="true">{stats.progressPercent}%</span>
+            </div>
+            <div className="td-ring-copy">
+              <strong>{stats.watchedEpisodesCount} из {stats.totalEpisodes} {show.kind === "movie" ? "частей" : "серий"} просмотрено</strong>
+              <p>{remainingDescription(Math.max(0, stats.totalEpisodes - stats.watchedEpisodesCount), show.kind === "movie")}</p>
             </div>
           </section>
           <section className="td-panel td-current" aria-label="Текущая серия">

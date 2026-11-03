@@ -143,6 +143,7 @@
   max-width: 100%;
 }
 .td-status option {
+  color: var(--text);
   background: var(--bg-2);
 }
 .td-favorite[aria-pressed="true"] {
@@ -186,6 +187,7 @@
   min-height: 28px;
 }
 .td-rating option {
+  color: var(--text);
   background: var(--bg-2);
 }
 .td-notes {
@@ -583,10 +585,51 @@
   }
 }
 
-.td-card-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: linear-gradient(120deg, var(--hero), var(--bg-3)); color: var(--text); text-decoration: none; font-size: .875rem; font-weight: 650; box-shadow: 0 5px 22px #e7003f12; transition: background .15s ease, border-color .15s ease; }
+.td-card-link { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 43px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 11px; background: linear-gradient(120deg, var(--hero), var(--bg-3)); color: var(--text); text-decoration: none; font-size: .75rem; font-weight: 650; box-shadow: none; transition: background .15s ease, border-color .15s ease; }
 .td-card-link > span:not(.td-card-link-icon) { flex: 1; overflow-wrap: anywhere; }
 .td-card-link-icon, .td-card-link svg { flex-shrink: 0; color: var(--accent); }
 .td-card-link:hover { background: linear-gradient(120deg, var(--hero), var(--bg-3)); border-color: var(--accent); }
 @media (min-width: 1024px) { .td-card-link.lg\:hidden { display: none; } }
 
 .td-button.td-primary, .td-status select { color: var(--on-accent); }
+
+/* Compact tracker header and accessible circular progress. */
+.td-tracker-header > div { position: relative; padding-right: 200px; }
+.td-tracker-header h1 { font-size: clamp(26px, 3vw, 40px); letter-spacing: -1px; }
+.td-tracker-header .td-ratings { position: absolute; top: 0; right: 0; margin: 0; gap: 7px; }
+.td-tracker-header .td-rating { padding: 7px 10px; gap: 2px; border-radius: 10px; font-size: 10px; }
+.td-tracker-header .td-rating strong, .td-tracker-header .td-rating select { font-size: 14px; }
+.td-tracker-header .td-rating select { min-height: 22px; }
+.td-tracker-header .td-status { flex: 0 0 auto; }
+.td-edit-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-3); color: var(--text); padding: 5px 9px; font-size: 11px; min-height: 29px; transition: background .15s, border-color .15s; }
+.td-edit-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.td-edit-button:disabled { opacity: .55; cursor: wait; }
+.td-card-link svg { width: 16px; height: 16px; }
+.td-ring-progress { display: flex; align-items: center; gap: 17px; padding: 18px 20px; border-radius: 20px; }
+.td-ring { width: 68px; height: 68px; position: relative; flex-shrink: 0; }
+.td-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.td-ring circle { fill: none; stroke-width: 6px; }
+.td-ring-track { stroke: var(--bg-3); }
+.td-ring-value { stroke: var(--accent); stroke-linecap: round; }
+.td-ring > span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; font-weight: 750; letter-spacing: -.5px; }
+.td-ring-copy strong { display: block; font-size: 16px; font-weight: 700; margin-bottom: 5px; }
+.td-ring-copy p { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+@media (max-width: 1023px) {
+  .td-tracker-header > div { padding-right: 0; }
+  .td-tracker-header .td-ratings { position: static; margin: 10px 0 0; }
+  .td-tracker-header .td-rating { padding: 5px 8px; }
+  .td-tracker-header .td-controls { margin-top: 10px; gap: 8px; }
+}
+@media (max-width: 700px) {
+  .td-tracker-header h1 { font-size: 25px; letter-spacing: -.6px; }
+  .td-ring-progress { padding: 15px; gap: 13px; }
+  .td-ring { width: 60px; height: 60px; }
+  .td-ring > span { font-size: 15px; }
+  .td-ring-copy strong { font-size: 14px; }
+  .td-ring-copy p { font-size: 11px; }
+}
+@media (pointer: coarse) {
+  .td-edit-button { min-height: 40px; }
+  .td-tracker-header .td-rating select { min-height: 32px; }
+}
+.td-ring[aria-valuenow="0"] .td-ring-value { visibility: hidden; }

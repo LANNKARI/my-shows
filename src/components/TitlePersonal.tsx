@@ -187,7 +187,7 @@ function NoteField({
               )}
             </span>
             <button
-              className="td-text-button"
+              className="td-edit-button"
               aria-label={`Изменить: ${label}`}
               disabled={busy}
               onClick={() => {
