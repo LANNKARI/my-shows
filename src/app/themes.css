@@ -301,3 +301,36 @@ body::before {
   .action-button,
   :is(.release-ui, .title-detail, .cosmetics-ui) :is(.rc-link, .rc-text, .rc-read-one, .td-text-button, .cx-link) { min-height: 40px; }
 }
+
+/* Approved registration and guest navigation */
+.guest-actions { gap:6px!important; }
+.guest-actions .guest-login { display:inline-flex; align-items:center; justify-content:center; min-height:34px; border:1px solid var(--border); color:var(--text); background:var(--bg-2); padding:7px 11px; border-radius:10px; font-size:11px; font-weight:600; }
+.guest-actions .guest-register { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:7px 11px; border-radius:10px; background:var(--accent); color:var(--on-accent); font-size:11px; font-weight:600; }
+.registration-form { margin-top:16px!important; }
+.registration-form > .card { padding:26px 28px; }
+.registration-form form > * + * { margin-top:13px!important; }
+.registration-form form .input { min-height:40px; font-size:13px; }
+.registration-form .label { font-size:10px; margin-bottom:5px; }
+.registration-form h1 { font-size:25px; }
+.registration-form > .card > p:first-of-type { margin-bottom:20px; font-size:12px; }
+.registration-form > .card > p:last-child { margin-top:16px; font-size:12px; }
+.registration-form .registration-consent { display:flex; align-items:flex-start; gap:9px; font-size:11px; line-height:1.6; color:var(--text-dim); cursor:pointer; }
+.registration-form .registration-consent input { accent-color:var(--accent); width:16px; height:16px; margin-top:2px; flex-shrink:0; }
+.registration-form .password-hint { font-size:11px; color:var(--text-dim); margin-top:5px; line-height:1.5; }
+.registration-form .password-hint.error { color:var(--danger); }
+.registration-form .password-hint.success { color:var(--success); }
+.registration-form input[aria-invalid="true"] { border-color:var(--danger); }
+.registration-form .btn-primary:disabled { opacity:.42; cursor:not-allowed; }
+
+@media(max-width:640px){
+.guest-actions .guest-login,.guest-actions .guest-register { padding:7px 9px; font-size:11px; }
+.guest-actions > button { padding:5px; }
+.registration-form > .card { padding:22px 20px; }
+.registration-form { margin-top:8px!important; }
+}
+
+.guest-actions :is(.guest-login,.guest-register) { transition:background .16s,filter .16s; }
+.guest-actions .guest-login:hover { background:var(--bg-3); }
+.guest-actions .guest-register:hover { filter:brightness(1.08); }
+.guest-actions :is(.guest-login,.guest-register):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+@media(pointer:coarse) { .guest-actions :is(.guest-login,.guest-register) { min-height:40px; } }

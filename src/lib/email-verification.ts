@@ -82,6 +82,11 @@ export async function startRegistration(body: unknown) {
       400,
       "Проверьте почту и имя пользователя. Пароль: от 8 символов, не более 72 байт UTF-8.",
     );
+  if (!name) throw new VerificationError(400, "Укажите имя");
+  if (fields.confirmPassword !== password)
+    throw new VerificationError(400, "Пароли не совпадают");
+  if (fields.consent !== true)
+    throw new VerificationError(400, "Необходимо согласие с пользовательским соглашением и политикой конфиденциальности");
   emailConfiguration();
   const now = new Date();
   await prisma.pendingRegistration.deleteMany({

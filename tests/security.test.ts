@@ -1607,7 +1607,7 @@ test("different games pay full rewards concurrently beyond fifty popcorn", async
 });
 
 function receivedToken(email:string){const mail=mailRequests.findLast(m=>m.message.recipients[0].email===email);assert.ok(mail);const link=mail.message.body.plaintext.match(/https?:\/\/\S+/)?.[0];assert.ok(link);return new URLSearchParams(new URL(link).hash.slice(1)).get("token")!;}
-async function pendingAccount(){await prisma.authRateLimit.deleteMany({});const username="pending_"+randomBytes(4).toString("hex"),email=username+"@example.test";const body={username,email,password};const response=await guest.request("/api/register","POST",body);assert.equal(response.status,202);return {body,email,username,token:receivedToken(email)};}
+async function pendingAccount(){await prisma.authRateLimit.deleteMany({});const username="pending_"+randomBytes(4).toString("hex"),email=username+"@example.test";const body={username,email,password,name:"Киноман",confirmPassword:password,consent:true};const response=await guest.request("/api/register","POST",body);assert.equal(response.status,202);return {body,email,username,token:receivedToken(email)};}
 test("new accounts require mailbox confirmation and receive the welcome award only once", async()=>{
  const account=await pendingAccount();
  assert.equal(await prisma.user.count({where:{email:account.email}}),0);
@@ -1634,7 +1634,7 @@ test("resending rotates the token, enforces a cooldown and never replaces the pa
 });
 test("mail failures are recoverable and failed resends preserve the previous valid link",async()=>{
  await prisma.authRateLimit.deleteMany({});const username='mailfail_'+randomBytes(3).toString('hex'),email=username+'@example.test';
- mailFails=true;let failed;try{failed=await guest.request('/api/register','POST',{username,email,password});}finally{mailFails=false;}
+ mailFails=true;let failed;try{failed=await guest.request('/api/register','POST',{username,email,password,name:'Киноман',confirmPassword:password,consent:true});}finally{mailFails=false;}
  assert.equal(failed.status,503);assert.equal((await failed.json()).verificationRequired,true);assert.equal(await prisma.user.count({where:{email}}),0);
  assert.equal((await guest.request('/api/email-verification/request','POST',{email})).status,200);const token=receivedToken(email);
  await prisma.pendingRegistration.update({where:{email},data:{sentAt:new Date(Date.now()-61000)}});
@@ -2148,4 +2148,17 @@ test("reward history groups complete days before pagination without changing wal
     400,
   );
   assert.equal((await guest.request("/api/popcorn-history")).status, 401);
+});
+
+test("registration rejects missing name, mismatched passwords and missing consent before sending mail", async () => {
+  await prisma.authRateLimit.deleteMany({});
+  const username = 'invalid_' + randomBytes(3).toString('hex');
+  const email = username + '@example.test';
+  const valid = { username, email, password, name: 'Киноман', confirmPassword: password, consent: true };
+  const initial = mailRequests.length;
+  for (const invalid of [{ ...valid, name: '   ' }, { ...valid, confirmPassword: 'other-password' }, { ...valid, consent: false }, { ...valid, consent: 'true' }]) {
+    assert.equal((await guest.request('/api/register', 'POST', invalid)).status, 400);
+  }
+  assert.equal(await prisma.pendingRegistration.count({ where: { email } }), 0);
+  assert.equal(mailRequests.length, initial);
 });

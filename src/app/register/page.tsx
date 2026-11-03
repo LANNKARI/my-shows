@@ -15,12 +15,18 @@ export default function RegisterPage() {
     username: "",
     password: "",
     name: "",
+    confirmPassword: "",
+    consent: false,
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const passwordsMatch = form.password === form.confirmPassword;
+  const canSubmit = Boolean(form.email.trim() && form.username.trim() && form.name.trim() && form.password.length >= 8 && passwordsMatch && form.consent);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!canSubmit || loading) return;
     setLoading(true);
     setError(null);
 
@@ -39,7 +45,7 @@ export default function RegisterPage() {
       setSentEmail(form.email);
       setSentMessage(r.ok ? data.message : "");
       setSentError(r.ok ? "" : data.error);
-      setForm((previous) => ({ ...previous, password: "" }));
+      setForm((previous) => ({ ...previous, password: "", confirmPassword: "" }));
     } catch {
       setError("Ошибка сети");
     } finally {
@@ -62,7 +68,7 @@ export default function RegisterPage() {
       </div>
     );
   return (
-    <div className="max-w-md mx-auto mt-10">
+    <div className="registration-form max-w-md mx-auto mt-10">
       <div className="card p-8">
         <h1 className="text-2xl font-bold mb-1">Регистрация</h1>
         <p className="text-neutral-500 text-sm mb-6">
@@ -99,7 +105,7 @@ export default function RegisterPage() {
               id="register-username"
               maxLength={20}
               autoComplete="username"
-              placeholder="например: lannkari"
+              placeholder="например: cinefan_24"
             />
             <p className="text-xs text-neutral-500 mt-1">
               3–20 символов: a–z, 0–9, _
@@ -108,12 +114,13 @@ export default function RegisterPage() {
 
           <div>
             <label className="label" htmlFor="register-name">
-              Имя (необязательно)
+              Имя *
             </label>
             <input
               className="input"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
               id="register-name"
               maxLength={80}
               autoComplete="name"
@@ -137,6 +144,29 @@ export default function RegisterPage() {
             />
           </div>
 
+          <div>
+            <label className="label" htmlFor="register-confirm-password">Повторите пароль *</label>
+            <PasswordInput
+              id="register-confirm-password"
+              minLength={8}
+              autoComplete="new-password"
+              required
+              value={form.confirmPassword}
+              onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+              placeholder="Введите пароль ещё раз"
+              aria-describedby="password-match-hint"
+              aria-invalid={Boolean(form.confirmPassword && !passwordsMatch)}
+            />
+            <p id="password-match-hint" aria-live="polite" className={`password-hint${form.confirmPassword ? passwordsMatch ? " success" : " error" : ""}`}>
+              {form.confirmPassword ? passwordsMatch ? "Пароли совпадают" : "Пароли не совпадают" : "Пароли должны совпадать"}
+            </p>
+          </div>
+
+          <label className="registration-consent">
+            <input type="checkbox" required checked={form.consent} onChange={(e) => setForm({ ...form, consent: e.target.checked })} />
+            <span>Регистрируясь, вы соглашаетесь с условиями пользовательского соглашения и политикой конфиденциальности.</span>
+          </label>
+
           {error && (
             <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2 text-sm text-red-400">
               {error}
@@ -145,10 +175,10 @@ export default function RegisterPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !canSubmit}
             className="btn btn-primary w-full justify-center"
           >
-            {loading ? "Регистрирую..." : "Создать аккаунт"}
+            {loading ? "Регистрирую..." : "Зарегистрироваться"}
           </button>
         </form>
 

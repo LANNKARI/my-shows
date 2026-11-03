@@ -40,9 +40,12 @@ export default function UserMenu() {
   }, []);
 
   return (
-    <div className="relative flex items-center gap-2" ref={menuRef}>
+    <div className={`relative flex items-center gap-2${!session?.user ? " guest-actions" : ""}`} ref={menuRef}>
       {!session?.user && (
-        <Link href="/login" className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-sm">Войти</Link>
+        <>
+          <Link href="/login" className="guest-login">Войти</Link>
+          <Link href="/register" className="guest-register">Регистрация</Link>
+        </>
       )}
       <button
         ref={triggerRef}

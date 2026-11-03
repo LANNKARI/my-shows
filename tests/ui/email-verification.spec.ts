@@ -18,7 +18,10 @@ test("registration waits for mailbox verification and never signs in automatical
   await page.getByLabel("Email", { exact: true }).fill("new@example.test");
   await page.getByLabel("Username").fill("new_user");
   await page.getByLabel("Пароль", { exact: true }).fill("secure-password-123");
-  await page.getByRole("button", { name: "Создать аккаунт" }).click();
+  await page.getByLabel("Имя *", { exact: true }).fill("Киноман");
+  await page.getByLabel("Повторите пароль *", { exact: true }).fill("secure-password-123");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Зарегистрироваться", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Подтвердите почту" }),
   ).toBeVisible();
@@ -105,7 +108,10 @@ test("a mail delivery error retains a recovery screen instead of creating a sign
   await page.getByLabel("Email", { exact: true }).fill("retry@example.test");
   await page.getByLabel("Username").fill("retry_user");
   await page.getByLabel("Пароль", { exact: true }).fill("secure-password-123");
-  await page.getByRole("button", { name: "Создать аккаунт" }).click();
+  await page.getByLabel("Имя *", { exact: true }).fill("Киноман");
+  await page.getByLabel("Повторите пароль *", { exact: true }).fill("secure-password-123");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Зарегистрироваться", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Подтвердите почту" }),
   ).toBeVisible();
@@ -164,4 +170,37 @@ test("login shows resend only after a valid pending-account response", async ({
   await expect(
     main.getByRole("link", { name: "Отправить письмо подтверждения повторно" }),
   ).toBeVisible();
+});
+
+test("registration requires name, matching passwords and explicit consent", async ({ page }) => {
+  await shell(page);
+  let calls = 0;
+  await page.route("**/api/register", route => {
+    calls++;
+    expect(route.request().postDataJSON()).toMatchObject({ name: "Киноман", consent: true, confirmPassword: "secure-password-123" });
+    return route.fulfill({ status: 400, json: { error: "Имя пользователя занято" } });
+  });
+  await page.goto("/register");
+  await expect(page.getByRole("link", { name: "Регистрация", exact: true })).toBeVisible();
+  await page.getByLabel("Email", { exact: true }).fill("new@example.test");
+  await page.getByLabel("Username").fill("cinefan_24");
+  await page.getByLabel("Пароль", { exact: true }).fill("secure-password-123");
+  await page.getByLabel("Повторите пароль *", { exact: true }).fill("different-password");
+  const submit = page.getByRole("button", { name: "Зарегистрироваться", exact: true });
+  await expect(page.getByText("Пароли не совпадают", { exact: true })).toBeVisible();
+  await page.getByRole("checkbox").check();
+  await expect(submit).toBeDisabled();
+  await page.getByLabel("Повторите пароль *", { exact: true }).fill("secure-password-123");
+  await expect(submit).toBeDisabled();
+  await page.getByLabel("Имя *", { exact: true }).fill("Киноман");
+  await expect(submit).toBeEnabled();
+  await page.getByRole("checkbox").uncheck();
+  await expect(submit).toBeDisabled();
+  expect(calls).toBe(0);
+  await page.getByRole("checkbox").check();
+  await submit.click();
+  await expect(page.getByText("Имя пользователя занято")).toBeVisible();
+  expect(calls).toBe(1);
+  await page.goto("/login");
+  await expect(page.getByLabel("Email", { exact: true })).not.toHaveAttribute("placeholder", /.+/);
 });

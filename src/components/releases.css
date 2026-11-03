@@ -597,3 +597,35 @@
 .rc-calendar .rc-event-actions .rc-button { min-height:34px; padding:5px 8px; font-size:10px; }
 }
 .rc-calendar .rc-date-grid.is-month > button[aria-pressed="true"] { color: var(--accent); }
+
+/* Compact notification inbox */
+.rc-notifications-page { max-width:760px; }
+.rc-notifications-page > .rc-heading { margin-bottom:14px; }
+.rc-notifications-page > .rc-heading h1 { font-size:30px; }
+.rc-notifications-page > .rc-tabs { width:max-content; padding:3px; border-radius:10px; margin:0 0 12px; }
+.rc-notifications-page > .rc-tabs button { min-height:30px; min-width:76px; padding:5px 14px; font-size:12px; border-radius:7px; flex:0 0 auto; }
+.rc-notifications-page > .rc-heading:not(:first-child) { margin-bottom:12px; }
+.rc-notifications-page .rc-heading > .rc-muted { font-size:12px; }
+.rc-notifications-page .rc-empty { padding:20px 24px; border-radius:18px; }
+.rc-notifications-page .rc-empty h2 { font-size:17px; }
+.rc-notifications-page .rc-empty p { font-size:12px; margin:7px auto 12px; max-width:600px; }
+.rc-notifications-page .rc-settings { padding:16px 20px; border-radius:18px; margin-top:16px; }
+.rc-notifications-page .rc-settings > h2 { font-size:17px; margin-bottom:8px; }
+.rc-notifications-page .rc-setting { padding:12px 0; margin-top:0; gap:16px; }
+.rc-notifications-page .rc-setting:last-of-type { padding-bottom:0; }
+.rc-notifications-page .rc-setting strong { font-size:13px; }
+.rc-notifications-page .rc-setting p { font-size:11px; margin-top:4px; max-width:560px; }
+.rc-notifications-page .rc-switch { position:relative; width:36px; min-height:20px; height:20px; padding:2px; border-radius:20px; }
+.rc-notifications-page .rc-switch:before { content:'';position:absolute;inset:-10px -4px; }
+.rc-notifications-page .rc-switch > span { width:14px; height:14px; background:#fff; box-shadow:0 1px 3px #0003; }
+.rc-notifications-page > p.rc-muted:last-child { margin-top:14px; font-size:11px; }
+.rc-notifications-page .rc-notice { padding:12px; border-radius:14px; gap:10px; }
+.rc-notifications-page .rc-notice h3 { font-size:14px; }
+.rc-notifications-page .rc-notice-content p { font-size:11px; }
+
+@media(max-width:640px){
+.rc-notifications-page > .rc-heading h1 { font-size:25px; }
+.rc-notifications-page .rc-empty { padding:17px 15px; }
+.rc-notifications-page .rc-settings { padding:15px; }
+.rc-notifications-page .rc-setting { gap:12px; padding:11px 0; }
+}
