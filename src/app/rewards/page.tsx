@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import PromoCodeForm from "@/components/PromoCodeForm";
 import GameBanners from "@/components/GameBanners";
 import DailyBonus from "@/components/DailyBonus";
 import { privateFetch } from "@/lib/private-fetch";
@@ -188,6 +189,7 @@ function Rewards() {
           . Ежедневный бонус и задания учитываются отдельно.
         </p>
       </section>
+      <PromoCodeForm onRedeemed={() => { void load(); void loadHistory(); }} />
       <DailyBonus
         {...data}
         busy={busy}

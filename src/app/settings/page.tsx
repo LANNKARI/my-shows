@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import FilePicker from "@/components/FilePicker";
 import LibraryImport from "@/components/LibraryImport";
 import ChangePasswordForm from "@/components/ChangePasswordForm";
 import { privateFetch } from "@/lib/private-fetch";
@@ -141,14 +142,7 @@ export default function SettingsPage() {
               </div>
             )}
             <div className="flex-1">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) =>
-                  e.target.files?.[0] && uploadAvatar(e.target.files[0])
-                }
-                className="input"
-              />
+              <FilePicker accept="image/*" label="Выбрать изображение" disabled={uploading} onFile={uploadAvatar} />
               {uploading && (
                 <p className="text-xs text-neutral-500 mt-2">Загрузка...</p>
               )}

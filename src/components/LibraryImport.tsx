@@ -1,4 +1,5 @@
 "use client";
+import FilePicker from "./FilePicker";
 import { useEffect, useState, useRef } from "react";
 type Preview = {
   jobId: string;
@@ -130,18 +131,10 @@ export default function LibraryImport() {
         JSON-бэкап EpisyHub. Добавляем недостающее, существующие тайтлы и их
         данные сохраняем. До 500 тайтлов и 20 000 эпизодов.
       </p>
-      <label className="block text-sm">
-        Файл резервной копии
-        <input
-          type="file"
-          accept=".json,application/json"
-          disabled={busy}
-          onChange={(e) => {
-            if (e.target.files?.[0]) void choose(e.target.files[0]);
-          }}
-          className="input mt-2"
-        />
-      </label>
+      <div className="block text-sm">
+        <p className="mb-2">Файл резервной копии</p>
+        <FilePicker accept=".json,application/json" label="Выбрать файл резервной копии" inputLabel="Файл резервной копии" disabled={busy} onFile={choose} />
+      </div>
       {backup !== null && (
         <>
           <p className="text-xs text-neutral-400 break-all">{filename}</p>

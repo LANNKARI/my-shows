@@ -11,7 +11,6 @@ import { once } from 'node:events';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import sharp from 'sharp';
 import { config } from 'dotenv';
 import { answerDuel, createDuel, publicDuel, type DuelState } from '../src/lib/higher-lower';
 import { signProgressUndo, verifyProgressUndo, type ProgressUndo } from '../src/lib/progress-undo';
@@ -132,6 +131,13 @@ before(async () => {
   assert.equal((await prisma.user.findUniqueOrThrow({where:{id:legacyUser.id}})).popcorn,321);
   assert.equal((await prisma.popcornEntry.findUniqueOrThrow({where:{userId_eventKey:{userId:legacyUser.id,eventKey:'opening'}}})).amount,321);
   await prisma.user.delete({ where: { id: legacyUser.id } }); await prisma.show.delete({ where: { id: legacyShow.id } });
+  await prisma.$executeRawUnsafe('DROP TABLE "PromoRedemption"');
+  await prisma.$executeRawUnsafe('DROP TABLE "PromoCode"');
+  const promoMigration=await readFile('prisma/migrations/20261104010000_promo_codes/migration.sql','utf8');
+  await prisma.$transaction(async tx=>{for(const statement of promoMigration.split(';').map(s=>s.trim()).filter(Boolean))await tx.$executeRawUnsafe(statement);});
+  for(const table of ['PromoCode','PromoRedemption']) {
+    const flags=await prisma.$queryRawUnsafe<{relrowsecurity:boolean}[]>('SELECT relrowsecurity FROM pg_class WHERE oid=$1::regclass',`"${table}"`);assert.equal(flags[0].relrowsecurity,true);
+  }
   const passwordHash = await bcrypt.hash(password, 10);
   alice = await prisma.user.create({ data: { username: 'security_alice', email: 'alice@example.test', passwordHash } });
   bob = await prisma.user.create({ data: { username: 'security_bob', email: 'bob@example.test', passwordHash } });
@@ -249,28 +255,13 @@ test('only the recipient can accept a pending friend request', async () => {
   assert.equal((await prisma.friendship.findFirstOrThrow()).status, 'accepted');
 });
 
-test('banner uploads reject HTML, SVG, forged MIME and oversized files; valid images are reencoded', async () => {
-  for (const [bytes, type, name] of [
-    ['<html>inert</html>', 'text/html', 'test.html'],
-    ['<html>inert</html>', 'image/png', 'test.png'],
-    ['<svg xmlns="http://www.w3.org/2000/svg"></svg>', 'image/svg+xml', 'test.svg'],
-  ]) {
-    const form = new FormData(); form.set('file', new File([bytes], name, { type }));
-    assert.equal((await owner.request(`/api/users/${alice.username}/banner`, 'POST', form)).status, 400);
-  }
-  const large = new FormData(); large.set('file', new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'large.png', { type: 'image/png' }));
-  assert.equal((await owner.request(`/api/users/${alice.username}/banner`, 'POST', large)).status, 413);
-  const image = await sharp({ create: { width: 20, height: 20, channels: 3, background: 'red' } }).png().toBuffer();
-  const form = new FormData(); form.set('file', new File([new Uint8Array(image)], 'not-trusted.html', { type: 'text/html' }));
-  const response = await owner.request(`/api/users/${alice.username}/banner`, 'POST', form);
-  assert.equal(response.status, 200);
-  const { bannerUrl } = await response.json();
-  assert.match(bannerUrl, /^\/uploads\/banner-[\w-]+\.webp$/);
-  uploads.push(process.cwd() + '/public' + bannerUrl);
-  const served = await guest.request(bannerUrl);
-  assert.equal(served.status, 200);
-  assert.match(served.headers.get('content-type')!, /image\/webp/);
-  assert.equal((await owner.request(`/api/users/${alice.username}/banner`, 'POST', { bannerUrl: 'javascript:alert(1)' })).status, 400);
+test('personal banner changes are disabled for owners and guests while existing covers remain', async () => {
+  const before=await prisma.user.findUniqueOrThrow({where:{id:alice.id}});
+  for(const bannerUrl of [null,'https://example.test/new-cover.jpg','javascript:alert(1)'])assert.equal((await owner.request(`/api/users/${alice.username}/banner`,'POST',{bannerUrl})).status,403);
+  const form=new FormData();form.set('file',new File(['bytes'],'cover.jpg',{type:'image/jpeg'}));
+  assert.equal((await owner.request(`/api/users/${alice.username}/banner`,'POST',form)).status,403);
+  assert.equal((await other.request(`/api/users/${alice.username}/banner`,'POST',{bannerUrl:null})).status,403);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).bannerUrl,before.bannerUrl);
 });
 
 test('all library mutation routes reject invalid scores and statuses before writing', async () => {
@@ -2240,4 +2231,43 @@ test('favorite order is owner-only, validates membership and preserves library t
   assert.equal((await prisma.userShow.findUniqueOrThrow({where:{id:foreign.id}})).favoriteOrder,null);
   assert.equal((await owner.request(`/api/user-shows/${entries[0].showId}`,'PATCH',{isFavorite:false})).status,200);
   assert.equal((await prisma.userShow.findUniqueOrThrow({where:{id:entries[0].id}})).favoriteOrder,null);
+});
+
+
+async function resetPromos() {
+  await prisma.promoRedemption.deleteMany();await prisma.promoCode.deleteMany();await prisma.authRateLimit.deleteMany();
+  await prisma.user.updateMany({where:{id:{in:[alice.id,bob.id]}},data:{popcorn:100}});
+}
+const redeem=(client:Client,code:string)=>client.request('/api/promo-codes/redeem','POST',{code});
+test('promo codes authenticate, reject forged rewards, enforce dates and disabled codes',async()=>{
+  await resetPromos();assert.equal((await redeem(guest,'WELCOME')).status,401);
+  for(const input of [null,[],{}, {code:'WELCOME',reward:1000000},{code:'WELCOME',userId:bob.id},{code:'x'.repeat(129)}])assert.equal((await owner.request('/api/promo-codes/redeem','POST',input as object)).status,400);
+  for(const [code,conditions] of [['OFF',{}],['FUTURE',{active:true,startsAt:new Date(Date.now()+3600000)}],['EXPIRED',{active:true,expiresAt:new Date(Date.now()-1000)}]] as const){await prisma.promoCode.create({data:{code,reward:50,...conditions}});assert.equal((await redeem(owner,code)).status,409);}
+  assert.equal((await redeem(owner,'UNKNOWN')).status,404);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,100);
+  assert.equal(await prisma.promoRedemption.count(),0);
+});
+test('promo codes normalize input and concurrent retries credit once with an audit entry',async()=>{
+  await resetPromos();const promo=await prisma.promoCode.create({data:{code:'HELLO_100',reward:100,active:true}});
+  const results=await Promise.all([redeem(owner,' hello_100 '),redeem(owner,'HELLO_100'),redeem(owner,'HELLO_100')]);
+  assert.equal(results.filter(r=>r.status===200).length,1);assert.equal(results.filter(r=>r.status===409).length,2);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,200);
+  assert.equal(await prisma.promoRedemption.count({where:{promoCodeId:promo.id,userId:alice.id}}),1);
+  assert.equal((await prisma.promoCode.findUniqueOrThrow({where:{id:promo.id}})).redeemedCount,1);
+  assert.equal(await prisma.popcornEntry.count({where:{userId:alice.id,eventKey:`promo:${promo.id}`,amount:100}}),1);
+  const history=await(await owner.request('/api/popcorn-history')).json();assert.ok(history.items.some((r:{reason:string;amount:number})=>r.reason==='Промокод HELLO_100'&&r.amount===100));
+});
+test('promo codes global limit holds across users and rejected attempts do not consume uses',async()=>{
+  await resetPromos();const promo=await prisma.promoCode.create({data:{code:'ONE_USE',reward:75,active:true,maxActivations:1}});
+  const results=await Promise.all([redeem(owner,promo.code),redeem(other,promo.code)]);
+  assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
+  assert.equal((await prisma.promoCode.findUniqueOrThrow({where:{id:promo.id}})).redeemedCount,1);assert.equal(await prisma.promoRedemption.count({where:{promoCodeId:promo.id}}),1);
+  const wallets=await prisma.user.findMany({where:{id:{in:[alice.id,bob.id]}},select:{popcorn:true}});assert.equal(wallets.reduce((s,w)=>s+w.popcorn,0),275);
+});
+test('promo codes roll back all changes on failure, reject cross-origin requests and limit guesses',async()=>{
+  await resetPromos();const promo=await prisma.promoCode.create({data:{code:'ROLLBACK',reward:99,active:true,maxActivations:1}});
+  await prisma.popcornEntry.create({data:{userId:alice.id,eventKey:`promo:${promo.id}`,category:'test-anchor',amount:0,reason:'Rollback fixture',day:new Date('2026-11-04')}});
+  assert.equal((await redeem(owner,promo.code)).status,503);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,100);assert.equal((await prisma.promoCode.findUniqueOrThrow({where:{id:promo.id}})).redeemedCount,0);assert.equal(await prisma.promoRedemption.count({where:{promoCodeId:promo.id}}),0);
+  const response=await fetch(base+'/api/promo-codes/redeem',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://untrusted.example',Cookie:[...owner.cookies].map(([k,v])=>`${k}=${v}`).join('; ')},body:JSON.stringify({code:promo.code})});assert.equal(response.status,403);
+  let status=0;for(let i=0;i<21;i++)status=(await redeem(owner,'MISSING')).status;assert.equal(status,429);
 });

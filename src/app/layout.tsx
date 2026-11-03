@@ -4,6 +4,7 @@ import Link from "next/link";
 import "./globals.css";
 import Providers from "./providers";
 import { themeInitScript } from "@/lib/theme";
+import VkLink from "@/components/VkLink";
 import ReleaseBell from "@/components/ReleaseBell";
 import UserMenu from "@/components/UserMenu";
 import SearchBar from "@/components/SearchBar";
@@ -89,8 +90,9 @@ export default function RootLayout({
             {children}
           </main>
 
-          <footer className="max-w-7xl mx-auto px-4 md:px-6 py-10 text-center text-xs text-neutral-600 border-t border-neutral-900">
-            EpisyHub — место для твоих киноисторий
+          <footer className="site-footer max-w-7xl mx-auto px-4 md:px-6 py-10 text-center text-xs text-neutral-600 border-t border-neutral-900">
+            <span>EpisyHub — место для твоих киноисторий</span>
+            <VkLink />
           </footer>
           <MobileNavigation />
         </Providers>

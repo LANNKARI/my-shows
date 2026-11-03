@@ -14,6 +14,7 @@ datasource db {
 // ==================== ПОЛЬЗОВАТЕЛИ ====================
 
 model User {
+  promoRedemptions PromoRedemption[]
   personalNotes PersonalNote[]
   importJobs LibraryImportJob[]
   popcornEntries PopcornEntry[]
@@ -422,4 +423,29 @@ model AuthRateLimit {
   count Int
   expiresAt DateTime
   @@index([expiresAt])
+}
+
+
+model PromoCode {
+  id Int @id @default(autoincrement())
+  code String @unique @db.VarChar(64)
+  reward Int
+  active Boolean @default(false)
+  startsAt DateTime?
+  expiresAt DateTime?
+  maxActivations Int?
+  redeemedCount Int @default(0)
+  createdAt DateTime @default(now())
+  redemptions PromoRedemption[]
+}
+model PromoRedemption {
+  id Int @id @default(autoincrement())
+  promoCodeId Int
+  userId String
+  amount Int
+  createdAt DateTime @default(now())
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([promoCodeId, userId])
+  @@index([userId, createdAt])
 }

@@ -79,17 +79,17 @@ function Shelf() {
             >
               {item.posterUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Link href={`/library/${item.showId}`} className="continue-poster-link" aria-label={`Открыть трекер: ${item.title}`}><img
                   src={tmdbImageUrl(item.posterUrl)}
                   alt=""
                   width={84}
                   height={126}
                   className="continue-poster object-cover"
                   loading="lazy"
-                />
+                /></Link>
               )}
               <div className="min-w-0 flex-1">
-                <h3 className="font-bold break-words text-sm leading-snug">{item.title}</h3>
+                <h3 className="font-bold break-words text-sm leading-snug"><Link href={`/library/${item.showId}`}>{item.title}</Link></h3>
                 <p className="continue-meta text-neutral-400">
                   {item.kind === "series" && item.next
                     ? `${item.next.season} сезон · ${item.next.episode} серия`
@@ -117,10 +117,10 @@ function Shelf() {
                   </div>
                 )}
                 <Link
-                  href={`/library/${item.showId}`}
+                  href={`/show/${item.showId}?type=${item.kind === "movie" ? "movie" : "tv"}`}
                   className="continue-tracker-link"
                 >
-                  Открыть трекер →
+                  Открыть карточку {item.kind === "movie" ? "фильма" : "сериала"} →
                 </Link>
               </div>
             </article>

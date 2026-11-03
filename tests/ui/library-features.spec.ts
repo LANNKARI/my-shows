@@ -69,8 +69,9 @@ for (const width of [320, 390, 1440])
       "63",
     );
     await expect(
-      shelf.getByRole("link", { name: "Открыть трекер →" }),
-    ).toHaveAttribute("href", "/library/10");
+      shelf.getByRole("link", { name: "Открыть карточку сериала →" }),
+    ).toHaveAttribute("href", "/show/10?type=tv");
+    await expect(shelf.locator("h3 a")).toHaveAttribute("href", "/library/10");
     expect(writes).toBe(0);
     expect(
       await page.evaluate(

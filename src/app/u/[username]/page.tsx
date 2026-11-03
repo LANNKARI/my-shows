@@ -90,11 +90,6 @@ export default function UserProfilePage({
   const [isAchievementsExpanded, setIsAchievementsExpanded] =
     useState<boolean>(false);
 
-  const [isBannerModalOpen, setIsBannerModalOpen] = useState<boolean>(false);
-  const [bannerUrlInput, setBannerUrlInput] = useState<string>("");
-  const [bannerFile, setBannerFile] = useState<File | null>(null);
-  const [savingBanner, setSavingBanner] = useState<boolean>(false);
-
   const fetchProfile = async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
@@ -116,7 +111,6 @@ export default function UserProfilePage({
       const json = await res.json();
       if (signal?.aborted) return;
       setData(json);
-      setBannerUrlInput(json.user?.bannerUrl || "");
     } catch (err: unknown) {
       if (signal?.aborted) return;
       const msg =
@@ -190,48 +184,6 @@ export default function UserProfilePage({
       console.error("Ошибка изменения дружбы:", err);
     } finally {
       setFriendshipLoading(false);
-    }
-  };
-
-  const handleSaveBanner = async () => {
-    setSavingBanner(true);
-    try {
-      let res;
-      if (bannerFile) {
-        const fd = new FormData();
-        fd.append("file", bannerFile);
-        res = await fetch(`/api/users/${username}/banner`, {
-          method: "POST",
-          body: fd,
-        });
-      } else {
-        res = await fetch(`/api/users/${username}/banner`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bannerUrl: bannerUrlInput.trim() }),
-        });
-      }
-
-      if (res.ok) {
-        const result = await res.json();
-        setData((prev) =>
-          prev
-            ? {
-                ...prev,
-                user: { ...prev.user, bannerUrl: result.bannerUrl },
-              }
-            : prev,
-        );
-        setIsBannerModalOpen(false);
-        setBannerFile(null);
-      } else {
-        alert("Не удалось сохранить обложку");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Ошибка при сохранении обложки");
-    } finally {
-      setSavingBanner(false);
     }
   };
 
@@ -319,23 +271,6 @@ export default function UserProfilePage({
               bannerUrl={user.bannerUrl}
             />
           </div>
-
-          {isOwnProfile && (
-            <button
-              type="button"
-              onClick={() => setIsBannerModalOpen(true)}
-              className="absolute top-4 right-4 z-30 px-3.5 py-2 rounded-xl bg-black/75 hover:bg-black/95 backdrop-blur-md border border-white/20 text-xs font-semibold text-neutral-200 hover:text-white transition-all flex items-center gap-1.5 shadow-xl cursor-pointer"
-            >
-              <span>📷</span>
-              <span>
-                {profileStyleId(user.profileStyle) !== STANDARD_PROFILE
-                  ? "Личная обложка"
-                  : user.bannerUrl
-                    ? "Изменить обложку"
-                    : "Добавить обложку"}
-              </span>
-            </button>
-          )}
 
           <div className="relative z-10 p-6 sm:p-8 flex flex-col sm:flex-row items-center sm:items-start gap-6">
             <CosmeticAvatar
@@ -724,99 +659,7 @@ export default function UserProfilePage({
         </section>
       </div>
 
-      {/* Модальное окно настройки обложки */}
-      {isBannerModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <span>📷 Обложка профиля</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsBannerModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 flex items-center justify-center text-neutral-400 hover:text-white cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-neutral-400 mb-1">
-                  1. Прямая ссылка на изображение (URL):
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://images.unsplash.com/... или ссылка на арт"
-                  value={bannerUrlInput}
-                  onChange={(e) => {
-                    setBannerUrlInput(e.target.value);
-                    setBannerFile(null);
-                  }}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-600 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-neutral-600">
-                <div className="flex-1 border-t border-neutral-800" />
-                <span>ИЛИ</span>
-                <div className="flex-1 border-t border-neutral-800" />
-              </div>
-
-              <div>
-                <label className="block text-xs text-neutral-400 mb-1">
-                  2. Загрузить файл с устройства:
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) {
-                      setBannerFile(e.target.files[0]);
-                      setBannerUrlInput("");
-                    }
-                  }}
-                  className="w-full text-xs text-neutral-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-neutral-800 file:text-white hover:file:bg-neutral-700 cursor-pointer"
-                />
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-neutral-800 flex items-center justify-between">
-              {user.bannerUrl && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBannerUrlInput("");
-                    setBannerFile(null);
-                    handleSaveBanner();
-                  }}
-                  className="text-xs text-rose-400 hover:text-rose-300 cursor-pointer"
-                >
-                  Удалить обложку
-                </button>
-              )}
-              <div className="flex items-center gap-2 ml-auto">
-                <button
-                  type="button"
-                  onClick={() => setIsBannerModalOpen(false)}
-                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold rounded-xl cursor-pointer"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveBanner}
-                  disabled={savingBanner}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-md shadow-blue-600/20 cursor-pointer"
-                >
-                  {savingBanner ? "Сохранение..." : "Сохранить"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
