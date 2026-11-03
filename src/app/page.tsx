@@ -3,6 +3,7 @@
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import UpcomingDigital from "@/components/UpcomingDigital";
 import ContinueWatching from "@/components/ContinueWatching";
 import ThemeWelcome from "@/components/ThemeWelcome";
 
@@ -237,6 +238,8 @@ export default function HomePage() {
           </div>
         </div>
       )}
+
+      <UpcomingDigital />
 
       {/* 2. СВЕЖИЕ ПРЕМЬЕРЫ И СЕЗОНЫ */}
       <section className="space-y-4">
