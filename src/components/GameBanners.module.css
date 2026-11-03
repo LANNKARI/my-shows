@@ -211,3 +211,13 @@
 .play, .duel .play { background: var(--accent); color: var(--on-accent); box-shadow: none; border-radius: 999px; }
 .dots i.currentDot, .duel .dots i.currentDot { background: var(--accent); }
 .content:focus-visible, .pause:focus-visible { outline-color: var(--accent); }
+
+/* Theme the surface while preserving the film stills. */
+:global([data-theme="light"]) .frames {filter:brightness(1) saturate(.85)}
+:global([data-theme="light"]) .content {color:var(--text)}
+:global([data-theme="light"]) .description {color:var(--text-dim)}
+:global([data-theme="light"]) .reward {color:var(--gold)}
+:global([data-theme="light"]) :is(.tag,.pause) {background:#fffffff0;border-color:var(--border);color:var(--text)}
+:global([data-theme="light"]) .dots i {background:#a3bba6}
+:global([data-theme="light"]) .dots i.currentDot {background:var(--accent)}
+:global([data-theme="light"]) .shade {background:linear-gradient(90deg,#f4f9eecf 0%,#f4f9ee70 50%,#f4f9ee00 100%),linear-gradient(180deg,#f2f8ed10,#f0f8ee70 22%,#f4f9eef5 65%,#f4f9ee)}

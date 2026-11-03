@@ -403,7 +403,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
       ) : (
         <>
           <div className="cx-toolbar">
-            <div className="cx-tabs" aria-label="Раздел оформления">
+            <div className="cx-tabs compact-tabs" aria-label="Раздел оформления">
               <button
                 aria-pressed={tab === "shop"}
                 onClick={() => setTab("shop")}
@@ -419,7 +419,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
             </div>
             <p className="cx-muted">Покупки остаются в вашей коллекции</p>
           </div>
-          <div className="cx-tabs" aria-label="Категория оформления">
+          <div className="cx-tabs compact-tabs" aria-label="Категория оформления">
             <button
               aria-pressed={category === "frame"}
               onClick={() => setCategory("frame")}
@@ -478,31 +478,33 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
                         ? "Куплено"
                         : `🍿 ${item.price}`}
                   </p>
-                  <button
-                    className={`cx-button ${selected ? "" : "cx-primary"}`}
-                    disabled={busy || selected}
-                    onClick={() => {
-                      if (isOwned(item)) void mutate("equip", item);
-                      else startPreview(item);
-                    }}
-                  >
-                    {selected
-                      ? "Выбрано"
-                      : isOwned(item)
-                        ? item.kind === "frame"
-                          ? "Надеть"
-                          : "Применить"
-                        : "Примерить"}
-                  </button>
-                  {isOwned(item) && !selected && (
+                  <div className="cx-card-actions">
                     <button
-                      className="cx-link justify-center"
-                      disabled={busy}
-                      onClick={() => startPreview(item)}
+                      className={`cx-button ${selected ? "" : "cx-primary"}`}
+                      disabled={busy || selected}
+                      onClick={() => {
+                        if (isOwned(item)) void mutate("equip", item);
+                        else startPreview(item);
+                      }}
                     >
-                      Примерить
+                      {selected
+                        ? "Выбрано"
+                        : isOwned(item)
+                          ? item.kind === "frame"
+                            ? "Надеть"
+                            : "Применить"
+                          : "Примерить"}
                     </button>
-                  )}
+                    {isOwned(item) && !selected && (
+                      <button
+                        className="cx-link justify-center"
+                        disabled={busy}
+                        onClick={() => startPreview(item)}
+                      >
+                        Примерить
+                      </button>
+                    )}
+                  </div>
                 </article>
               );
             })}

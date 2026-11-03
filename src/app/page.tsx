@@ -118,7 +118,7 @@ export default function HomePage() {
         <div
           onMouseEnter={() => setIsPaused(true)}
           onMouseLeave={() => setIsPaused(false)}
-          className="theme-cinematic relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-2xl min-h-[380px] sm:min-h-[450px] flex items-end group"
+          className="home-hero theme-cinematic relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-950 shadow-2xl min-h-[380px] sm:min-h-[450px] flex items-end group"
         >
           {slides.map((slide, idx) => (
             <div
@@ -132,18 +132,18 @@ export default function HomePage() {
                 <img
                   src={tmdbImageUrl(slide.backdropUrl)}
                   alt={slide.title}
-                  className="w-full h-full object-cover object-top opacity-45 scale-105"
+                  className="home-hero-image w-full h-full object-cover object-top opacity-45 scale-105"
                 />
               ) : slide.posterUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={tmdbImageUrl(slide.posterUrl)}
                   alt={slide.title}
-                  className="w-full h-full object-cover opacity-25 blur-sm"
+                  className="home-hero-image w-full h-full object-cover opacity-25 blur-sm"
                 />
               ) : null}
-              <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/75 to-transparent" />
-              <div className="absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/60 to-transparent" />
+              <div className="home-hero-shade-bottom absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/75 to-transparent" />
+              <div className="home-hero-shade-side absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/60 to-transparent" />
             </div>
           ))}
 

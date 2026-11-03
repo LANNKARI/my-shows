@@ -174,3 +174,13 @@ button.dayContent:focus-visible { outline-color: #d6c7ff; outline-offset: -4px; 
   .day:last-child { grid-column: 1 / -1; height: 132px; }
   .day:last-child .still { object-position: center 30%; }
 }
+
+/* Theme the surface while preserving the film stills. */
+:global([data-theme="light"]) .day { background:#edf5e8;color:var(--text); }
+:global([data-theme="light"]) .day:before { background:linear-gradient(180deg,#ffffff0d 0%,#eff7ee40 30%,#f4f9efed 66%,#f4f9ef 100%); }
+:global([data-theme="light"]) .dayLabel {background:#fffffff0;color:var(--text);border-color:var(--border)}
+:global([data-theme="light"]) .state {color:var(--text-dim)}
+:global([data-theme="light"]) .day[data-state="today"] .state,:global([data-theme="light"]) .day[data-state="received"] .state {color:var(--success)}
+:global([data-theme="light"]) .amount {color:var(--text)}
+:global([data-theme="light"]) .day:last-child .amount {color:var(--gold)}
+:global([data-theme="light"]) .day:after {background:repeating-linear-gradient(to bottom,#4f765a40 0 5px,transparent 5px 11px)}

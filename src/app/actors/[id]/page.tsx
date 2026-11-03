@@ -302,7 +302,7 @@ function ActorContent({ id }: { id: string }) {
             </select>
           </label>
         </div>
-        <div className={styles.filters} role="group" aria-label="Тип работ">
+        <div className={`${styles.filters} compact-tabs`} role="group" aria-label="Тип работ">
           {[
             { id: "all", label: "Все" },
             { id: "movie", label: "Фильмы" },

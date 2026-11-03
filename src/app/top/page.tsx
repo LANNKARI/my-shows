@@ -126,7 +126,7 @@ export default function TopPage() {
         </div>
 
         {/* Вкладки */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
+        <div className="compact-tabs flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
           {[
             { key: 'active', label: '🏆 Активные' },
             { key: 'collectors', label: '📚 Коллекционеры' },

@@ -78,7 +78,7 @@ export default function DiscoverPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 bg-neutral-950 p-1.5 rounded-xl border border-neutral-800">
+          <div className="compact-tabs flex items-center gap-2 bg-neutral-950 p-1.5 rounded-xl border border-neutral-800">
             <button className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-md flex items-center gap-2">
               <span>🎲</span> Рулетка
             </button>
@@ -94,7 +94,7 @@ export default function DiscoverPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="space-y-3">
             <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">Тип контента</label>
-            <div className="flex bg-neutral-950 rounded-xl border border-neutral-800 p-1">
+            <div className="compact-tabs flex bg-neutral-950 rounded-xl border border-neutral-800 p-1">
               {[{ id: 'all', label: 'Все' }, { id: 'movie', label: 'Фильмы' }, { id: 'tv', label: 'Сериалы' }].map((type) => (
                 <button
                   key={type.id}

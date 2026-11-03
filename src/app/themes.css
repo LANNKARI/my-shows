@@ -334,3 +334,19 @@ body::before {
 .guest-actions .guest-register:hover { filter:brightness(1.08); }
 .guest-actions :is(.guest-login,.guest-register):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
 @media(pointer:coarse) { .guest-actions :is(.guest-login,.guest-register) { min-height:40px; } }
+
+/* Light cinematic artwork surfaces */
+:root[data-theme="light"] .home-hero { --text:#203b2c;--text-dim:#526d59;--tone-50:#163522;--tone-100:#203b2c;--tone-200:#2b4535;--tone-300:#405c48;--tone-400:#526d59;--tone-500:#5c7562;--tone-700:#a3bba6;--tone-800:#cbdccb;--tone-900:#ffffff;--tone-950:#eff7ee;--gold:#86600c;--success:#247648;--info:#285c91;--violet:#6d4496;background:#e8f3e5;box-shadow:var(--shadow); }
+:root[data-theme="light"] .home-hero .home-hero-image { opacity:.85; }
+:root[data-theme="light"] .home-hero .home-hero-shade-bottom { background:linear-gradient(0deg,#f5faf2 0%,#f0f8eac9 30%,#edf7e82b 100%); }
+:root[data-theme="light"] .home-hero .home-hero-shade-side { background:linear-gradient(90deg,#f1f8ee 0%,#eff7eef2 30%,#edf7ee8a 60%,#edf7ee00 100%); }
+:root[data-theme="light"] .home-hero > button {background:#fff9;color:var(--text);border-color:var(--border)}
+:root[data-theme="light"] .home-hero :is(h2,p) {filter:none;text-shadow:none}
+
+/* Shared density for segmented navigation, matching the release calendar. */
+.compact-tabs.compact-tabs { display:flex; align-items:center; flex-wrap:nowrap; gap:3px; width:max-content; max-width:100%; padding:3px; border:1px solid var(--border); border-radius:10px; background:var(--bg-2); overflow-x:auto; }
+.compact-tabs.compact-tabs > :is(button,a) { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; gap:6px; min-height:32px; padding:6px 12px; border:0; border-radius:7px; font-size:12px; line-height:18px; white-space:nowrap; text-decoration:none; box-shadow:none; }
+.compact-tabs.compact-tabs > :is(button,a):is([aria-pressed="true"],[aria-current="page"]) { background:var(--accent); color:var(--on-accent); }
+.compact-tabs.compact-tabs > :is(button,a):focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+@media (max-width:640px) { .compact-tabs.compact-tabs > :is(button,a) { padding-inline:10px; } }
+@media (pointer:coarse) { .compact-tabs.compact-tabs > :is(button,a) { min-height:40px; } }

@@ -99,7 +99,7 @@ function Bell() {
               Прочитать все
             </button>
           </div>
-          <div className="rc-tabs mb-4" aria-label="Фильтр уведомлений">
+          <div className="rc-tabs compact-tabs mb-4" aria-label="Фильтр уведомлений">
             <button
               aria-pressed={mode === "unread"}
               onClick={() => setMode("unread")}

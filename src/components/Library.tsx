@@ -438,7 +438,7 @@ export default function Library() {
           <nav
             ref={tabsRef}
             aria-label="Статусы библиотеки"
-            className="flex gap-2 overflow-x-auto pb-1"
+            className="compact-tabs flex gap-2 overflow-x-auto pb-1"
           >
             {libraryStatuses.map((tab) => (
               <Link

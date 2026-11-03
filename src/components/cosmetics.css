@@ -536,3 +536,16 @@
 .cx-button.cx-primary, .cx-tabs > button[aria-pressed="true"] { color: var(--on-accent); }
 .cx-profile-preview { color: #f1efff; }
 .cx-profile-preview .cx-muted { color: #cdc8e1; }
+
+/* Compact catalog with aligned actions */
+.cx-heading {margin:0 0 18px;gap:12px}
+.cx-heading h1 {font-size:30px}.cx-heading p {margin-top:5px;font-size:12px}.cx-balance {padding:8px 12px;font-size:14px}
+.cx-toolbar {margin-bottom:10px;gap:10px}.cx-toolbar .cx-muted {font-size:11px}.cx-tabs {padding:3px;gap:3px;margin-bottom:12px;border-radius:10px}.cx-toolbar .cx-tabs {margin-bottom:0}
+.cx-tabs > button {min-height:32px;padding:6px 12px;font-size:12px;border-radius:7px;line-height:18px}
+.cx-grid {grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.cx-card {padding:16px;border-radius:16px}.cx-card h2 {font-size:14px;min-height:20px}.cx-card-preview {min-height:110px;padding:12px 0}.cx-card-preview .cosmetic-avatar {width:76px!important;height:76px!important;font-size:24px}.cx-card p {font-size:12px;margin-bottom:10px}
+.cx-card-actions {display:flex;align-items:center;gap:6px;margin-top:auto;min-height:34px}.cx-card-actions > button {flex:1;min-height:32px;padding:6px 8px;font-size:11px;border-radius:8px;margin:0;width:auto}.cx-card-actions .cx-link {flex:0 0 auto}
+.cx-earn {padding:14px 16px;margin-top:16px}.cx-earn h2 {font-size:15px}.cx-earn .cx-muted {font-size:12px}
+@media(max-width:767px){.cx-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cx-card{padding:12px 10px}.cx-heading h1{font-size:26px}.cx-toolbar{gap:6px}.cx-toolbar .cx-muted{display:none}.cx-card h2{font-size:12px}.cx-card-preview{min-height:96px}.cx-card-preview .cosmetic-avatar{width:64px!important;height:64px!important}.cx-card-actions{flex-wrap:wrap;min-height:70px;align-content:flex-end}.cx-card-actions>button{flex:1 0 100%}.cx-card-actions .cx-link{flex:1 0 100%}.cx-tabs>button{padding-inline:10px}}
+
+@media(max-width:767px){.cx-card-actions{display:grid;grid-template-columns:1fr;grid-template-rows:32px 32px;gap:6px;min-height:70px;align-content:initial}.cx-card-actions>button{min-width:0;width:100%;grid-column:1}}

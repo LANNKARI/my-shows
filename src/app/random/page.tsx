@@ -274,7 +274,7 @@ export default function WhatToWatchPage() {
             <label className="block text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-2">
               Тип контента
             </label>
-            <div className="grid grid-cols-3 gap-2 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+            <div className="compact-tabs grid grid-cols-3 gap-2 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
               <button
                 type="button"
                 onClick={() => setContentType('all')}

@@ -308,7 +308,7 @@ function ShowContent({
           , чтобы сохранять прогресс, оценки и заметки.
         </p>
       )}
-      <nav className="td-tabs" aria-label="Разделы карточки">
+      <nav className="td-tabs compact-tabs" aria-label="Разделы карточки">
         {[
           ["about", movie ? "О фильме" : "О сериале"],
           ["cast", "Актёры"],
