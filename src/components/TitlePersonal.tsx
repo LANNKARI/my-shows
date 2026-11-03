@@ -178,7 +178,7 @@ function NoteField({
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline"
+                  className="action-button"
                 >
                   {value} ↗
                 </a>

@@ -82,7 +82,7 @@ export default function UniversePage({
     return (
       <div className="p-12 text-center bg-neutral-900 rounded-3xl border border-neutral-800">
         <h1 className="text-xl font-bold text-white mb-2">Киновселенная не найдена</h1>
-        <Link href="/" className="text-xs text-rose-400 hover:underline">
+        <Link href="/" className="action-button">
           ← Вернуться на главную
         </Link>
       </div>

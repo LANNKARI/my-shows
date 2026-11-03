@@ -263,3 +263,41 @@ body::before {
   .profile-menu-appearance .theme-toggle button { min-height: 40px; min-width: 38px; }
   .continue-shelf h2 { font-size: 20px; }
 }
+
+/* Shared treatment for small actions previously presented as text links. */
+.action-button,
+:is(.release-ui, .title-detail, .cosmetics-ui) :is(.rc-link, .rc-text, .rc-read-one, .td-text-button, .cx-link) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-2);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  transition: background .16s, border-color .16s, color .16s;
+}
+.action-button:is(:hover, :focus-visible),
+:is(.release-ui, .title-detail, .cosmetics-ui) :is(.rc-link, .rc-text, .rc-read-one, .td-text-button, .cx-link):is(:hover, :focus-visible) {
+  background: var(--bg-3);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.action-button:disabled,
+:is(.release-ui, .title-detail, .cosmetics-ui) :is(.rc-text, .rc-read-one, .td-text-button, .cx-link):disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+@media (pointer: coarse) {
+  .action-button,
+  :is(.release-ui, .title-detail, .cosmetics-ui) :is(.rc-link, .rc-text, .rc-read-one, .td-text-button, .cx-link) { min-height: 40px; }
+}

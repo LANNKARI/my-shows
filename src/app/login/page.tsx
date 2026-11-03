@@ -120,7 +120,7 @@ export default function LoginPage() {
 
         <p className="text-sm text-neutral-500 mt-6 text-center">
           Нет аккаунта?{" "}
-          <Link href="/register" className="text-red-500 hover:underline">
+          <Link href="/register" className="action-button">
             Зарегистрироваться
           </Link>
         </p>

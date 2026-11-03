@@ -302,7 +302,7 @@ function ShowContent({
       )}
       {authStatus === "unauthenticated" && (
         <p className="td-muted mt-5">
-          <Link className="underline" href="/login">
+          <Link className="action-button" href="/login">
             Войдите
           </Link>
           , чтобы сохранять прогресс, оценки и заметки.

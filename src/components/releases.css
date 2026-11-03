@@ -540,3 +540,60 @@
 }
 
 .rc-primary { color: var(--on-accent); }
+
+/* Compact release calendar. */
+.rc-calendar .rc-heading { margin-bottom:16px; }
+.rc-calendar .rc-heading h1 { font-size:32px; }
+.rc-calendar .rc-heading > div > p { margin-top:5px; font-size:12px; }
+.rc-calendar .rc-calendar-inbox { display:inline-flex; }
+.rc-calendar .rc-toolbar { gap:12px; margin-bottom:12px; }
+.rc-calendar .rc-tabs,.rc-calendar .rc-filters { border-radius:10px; padding:3px; }
+.rc-calendar .rc-tabs button,.rc-calendar .rc-filters button { min-height:30px; padding:5px 12px; font-size:12px; border-radius:7px; }
+.rc-calendar .rc-filters { margin-bottom:14px; }
+.rc-calendar .rc-period { gap:7px; }
+.rc-calendar .rc-period .rc-button { min-height:32px; min-width:32px; padding:5px 9px; font-size:12px; }
+.rc-calendar .rc-period strong { font-size:12px; }
+.rc-calendar .rc-date-grid { border-radius:11px; }
+.rc-calendar .rc-date-grid > button { min-height:54px; gap:3px; font-size:11px; }
+.rc-calendar .rc-day-count { font-size:10px; }
+.rc-calendar .rc-day-count i { height:4px; width:4px; }
+.rc-calendar .rc-date-grid.is-month > button { min-height:56px; padding:7px; }
+.rc-calendar .rc-weekday { padding:7px 2px; font-size:11px; }
+.rc-calendar .rc-sync { margin:12px 0 0; gap:10px; }
+.rc-calendar .rc-sync p { font-size:11px; }
+.rc-calendar .rc-agenda { gap:12px; margin-top:14px; }
+.rc-calendar .rc-agenda > .rc-panel { padding:12px 16px; border-radius:18px; }
+.rc-calendar .rc-agenda h2 { font-size:15px; margin-bottom:4px; }
+.rc-calendar .rc-event { grid-template-columns:84px minmax(0,1fr) auto; gap:14px; padding:8px 0; }
+.rc-calendar .rc-event .rc-poster { width:84px; border-radius:8px; }
+.rc-calendar .rc-event h3 { font-size:14px; }
+.rc-calendar .rc-event-info p { font-size:11px; margin:5px 0; }
+.rc-calendar .rc-release-tag { padding:4px 7px; font-size:10px; border-radius:6px; }
+.rc-calendar .rc-event-actions { gap:7px; }
+.rc-calendar .rc-event-actions .rc-button { min-height:31px; padding:5px 10px; font-size:11px; border-radius:9px; gap:6px; }
+.rc-calendar .rc-event-actions svg { width:15px; height:15px; }
+.rc-calendar .rc-event-actions > .rc-link { background:var(--accent); color:var(--on-accent); border-color:var(--accent); min-height:30px; }
+@media(max-width:767px){
+.rc-calendar .rc-heading { gap:10px; align-items:flex-start; }
+.rc-calendar .rc-heading > div { flex:1; }
+.rc-calendar .rc-heading h1 { font-size:24px; }
+.rc-calendar .rc-heading > div > p { font-size:11px; }
+.rc-calendar .rc-calendar-inbox { font-size:10px; padding:6px 9px; min-height:34px; }
+.rc-calendar .rc-toolbar > .rc-tabs { width:auto; }
+.rc-calendar .rc-tabs button,.rc-calendar .rc-filters button { min-height:36px; padding:5px 10px; font-size:11px; }
+.rc-calendar .rc-period { display:grid; grid-template-columns:34px minmax(0,1fr) 34px 68px; width:100%; }
+.rc-calendar .rc-period .rc-button { min-height:36px; }
+.rc-calendar .rc-period > button:last-child { grid-column:auto; padding:5px 8px; }
+.rc-calendar .rc-period strong { font-size:11px; }
+.rc-calendar .rc-date-grid > button { min-height:52px; }
+.rc-calendar .rc-date-grid.is-month > button { min-height:50px; padding:6px 3px; }
+.rc-calendar .rc-sync { flex-wrap:wrap; }
+.rc-calendar .rc-sync p { font-size:10px; }
+.rc-calendar .rc-agenda > .rc-panel { padding:12px; }
+.rc-calendar .rc-event { grid-template-columns:72px minmax(0,1fr); gap:9px 12px; }
+.rc-calendar .rc-event .rc-poster { width:72px; grid-row:span 2; }
+.rc-calendar .rc-event-actions { grid-column:2; flex-direction:row; justify-content:flex-start; flex-wrap:wrap; gap:6px; }
+.rc-calendar .rc-event-actions > .rc-link { min-height:34px; padding:5px 8px; font-size:10px; }
+.rc-calendar .rc-event-actions .rc-button { min-height:34px; padding:5px 8px; font-size:10px; }
+}
+.rc-calendar .rc-date-grid.is-month > button[aria-pressed="true"] { color: var(--accent); }
