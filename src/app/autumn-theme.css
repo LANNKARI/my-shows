@@ -4,7 +4,7 @@
 :root[data-site-theme="autumn-2026"] .home-hero .home-hero-shade-side {background:linear-gradient(90deg,#fff5e8fa 0%,#fff5e8f0 26%,#fff5e8cc 42%,#fff5e83b 60%,transparent 76%)}
 :root[data-site-theme="autumn-2026"] .home-hero .home-hero-shade-bottom {background:linear-gradient(0deg,#fff5e83b,transparent 42%)}
 
-:root[data-site-theme="autumn-2026"] body::before { background-image:linear-gradient(#fff5e844,#fff5e844),url('/backgrounds/autumn-2026.webp');background-position:center;background-size:cover; }
+:root[data-site-theme="autumn-2026"] body::before { background-image:linear-gradient(#fff5e844,#fff5e844),url('/backgrounds/autumn-2026-soft.webp');background-position:center;background-size:cover; }
 :root[data-site-theme="autumn-2026"] .site-header {background:#fff7ecef;}
 :root[data-site-theme="autumn-2026"] .theme-art{display:flex;align-items:center;justify-content:center}
 :root[data-site-theme="autumn-2026"] .theme-art>*{display:none}
