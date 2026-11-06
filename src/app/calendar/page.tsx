@@ -366,6 +366,7 @@ function EventRow({ event, today }: { event: ReleaseEvent; today: string }) {
       className="rc-event"
       aria-label={`${event.title}: сезон ${event.season}, серия ${event.episode}`}
     >
+      <Link href={`/library/${event.showId}`} className="rc-poster-link" aria-label={`Открыть трекер: ${event.title}`}>
       {event.posterUrl ? (
         <img className="rc-poster" src={tmdbImageUrl(event.posterUrl)} alt="" />
       ) : (
@@ -373,8 +374,9 @@ function EventRow({ event, today }: { event: ReleaseEvent; today: string }) {
           TV
         </div>
       )}
+      </Link>
       <div className="rc-event-info">
-        <h3>{event.title}</h3>
+        <h3><Link href={`/library/${event.showId}`}>{event.title}</Link></h3>
         <p>
           Сезон {event.season} · Серия {event.episode}
         </p>
@@ -396,8 +398,8 @@ function EventRow({ event, today }: { event: ReleaseEvent; today: string }) {
           enabled={event.notifyReleases}
           title={event.title}
         />
-        <Link className="rc-link" href={`/library/${event.showId}`}>
-          Открыть трекер →
+        <Link className="rc-link" href={`/show/${event.showId}`}>
+          Открыть карточку сериала
         </Link>
       </div>
     </article>

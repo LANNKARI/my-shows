@@ -203,6 +203,15 @@ for (const width of [320, 390, 1440])
     });
     await expect(main(page).getByRole("button", { name: "Месяц", exact: true })).toHaveCount(0);
     await expect(page.locator('.rc-date-grid')).toHaveCount(0);
+    const event = main(page).locator('.rc-event').first();
+    await expect(event.locator('.rc-poster-link')).toHaveAttribute('href','/library/10');
+    await expect(event.getByRole('heading').getByRole('link')).toHaveAttribute('href','/library/10');
+    const cardLink=event.getByRole('link',{name:'Открыть карточку сериала',exact:true});
+    await expect(cardLink).toHaveAttribute('href','/show/10');
+    const followBox=await event.locator('.rc-follow button').boundingBox(),cardBox=await cardLink.boundingBox();
+    expect(Math.abs(followBox!.width-cardBox!.width)).toBeLessThan(1);
+    expect(Math.abs(followBox!.height-cardBox!.height)).toBeLessThan(1);
+
     await main(page).getByRole("button", { name: "Следующий период" }).click();
     await expect(page).toHaveURL(/date=2026-11-04/);
   });
@@ -418,6 +427,10 @@ test("desktop inbox supports Escape and returns focus to the bell", async ({
   const dialog = page.getByRole("dialog", { name: "Уведомления", exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog).toBeFocused();
+  const allNotifications=dialog.getByRole('link',{name:'Все уведомления и настройки →',exact:true});
+  const panelBox=await dialog.boundingBox(),allBox=await allNotifications.boundingBox();
+  expect(Math.abs(panelBox!.x+panelBox!.width/2-allBox!.x-allBox!.width/2)).toBeLessThan(1);
+
   await page.screenshot({
     path: testInfo.outputPath("notifications-desktop.png"),
     fullPage: true,

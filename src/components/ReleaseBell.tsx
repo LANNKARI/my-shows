@@ -140,7 +140,7 @@ function Bell() {
             </button>
           )}
           <Link
-            className="rc-link"
+            className="rc-link rc-inbox-all"
             href="/notifications"
             onClick={() => setOpen(false)}
           >

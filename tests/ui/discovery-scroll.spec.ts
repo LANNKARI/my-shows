@@ -13,14 +13,18 @@ for (const width of [390, 1440]) test(`roulette keeps its current card and scrol
   await expect(result.getByRole('heading', {name:'Фильм 1',exact:true})).toBeVisible();
   const spin = result.getByRole('button', {name:'Крутить ещё',exact:false});
   await spin.scrollIntoViewIfNeeded();
+  const geometry = () => result.locator(".discovery-result-actions > button").evaluateAll(buttons => buttons.map(button => {const box=button.getBoundingClientRect();return {width:box.width,height:box.height}}));
+  const sizes = await geometry();
   const position = await page.evaluate(() => scrollY);
   await spin.click();
   await expect(result).toHaveAttribute('aria-busy','true');
+  expect(await geometry()).toEqual(sizes);
   await expect(result.getByRole('button', {name:'Загрузка…',exact:true})).toBeDisabled();
   await expect(result.getByRole('heading', {name:'Фильм 1',exact:true})).toBeVisible();
   expect(Math.abs(await page.evaluate(() => scrollY)-position)).toBeLessThan(3);
   await expect.poll(() => !!release).toBe(true);
   release!();
   await expect(result.getByRole('heading', {name:'Фильм 2',exact:true})).toBeVisible();
+  expect(await geometry()).toEqual(sizes);
   expect(Math.abs(await page.evaluate(() => scrollY)-position)).toBeLessThan(3);
 });

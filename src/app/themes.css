@@ -422,3 +422,8 @@ body::before {
 .promo-code-panel button:disabled {opacity:.5;cursor:default;}
 .promo-code-panel .promo-code-feedback {width:100%;margin:0;}
 @media(max-width:767px){.promo-code-panel{padding:15px;gap:12px;}.promo-code-panel form{width:100%;}.promo-code-panel input{flex:1;width:0;}.promo-code-panel button{padding-inline:11px;}}
+
+/* Reserve stable action slots across title changes and pending/saved states. */
+.discovery-result-actions{display:grid!important;grid-template-columns:155fr 190fr 190fr!important;width:min(100%,553px);align-items:stretch!important;justify-content:start!important;gap:9px!important}
+.discovery-result-actions>button{width:100%!important;min-width:0!important;height:42px!important;min-height:42px!important;max-height:42px!important;justify-content:center!important;flex:none!important}
+@media(max-width:767px){.discovery-result-actions{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important}.discovery-result-actions>button{height:44px!important;min-height:44px!important;max-height:44px!important;padding:5px 3px!important;white-space:normal!important;line-height:1.2!important}.discovery-result-actions>button span{white-space:normal!important}}
