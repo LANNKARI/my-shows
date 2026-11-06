@@ -60,6 +60,8 @@ for (const width of [320, 390, 1440]) {
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
+    await expect.poll(() => panel.locator('img').evaluateAll(images => images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0))).toBe(true);
+    expect(await panel.locator('img').evaluateAll(images => new Set(images.map(image => image.getAttribute('src'))).size)).toBe(7);
     if (width === 1440)
       await panel.screenshot({
         path: "/workspace/scratch/rewards-refresh/actual-desktop.png",

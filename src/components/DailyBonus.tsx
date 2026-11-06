@@ -2,6 +2,16 @@
 
 import styles from "./DailyBonus.module.css";
 
+const roomStages = [
+  "Кресло",
+  "Добавляем плед",
+  "Включаем торшер",
+  "Устанавливаем экран",
+  "Столик и тёплый чай",
+  "Готовим попкорн",
+  "Домашний кинотеатр готов",
+];
+
 const rewardsDefault: Record<number, number> = {
   1: 10,
   2: 15,
@@ -36,7 +46,10 @@ export default function DailyBonus({
       <div className={styles.header}>
         <div>
           <h2 id="daily-bonus-title">🍿 Ежедневный бонус</h2>
-          <p>Заходите каждый день — награда растёт вместе с серией</p>
+          <p>
+            Собирайте домашний кинотеатр — каждый день новая деталь и больше
+            попкорна
+          </p>
         </div>
         <strong className={styles.streak}>
           🔥 Серия: {collected} из 7 дней
@@ -59,12 +72,25 @@ export default function DailyBonus({
           const content = (
             <>
               <span className={styles.dayLabel}>День {day}</span>
-              {received && <span className={styles.tick} aria-hidden="true">✓</span>}
-              {day === 7 && !received && <span className={styles.star} aria-hidden="true">✦</span>}
+              {received && (
+                <span className={styles.tick} aria-hidden="true">
+                  ✓
+                </span>
+              )}
+              {day === 7 && !received && (
+                <span className={styles.star} aria-hidden="true">
+                  ✦
+                </span>
+              )}
               <span className={styles.reward}>
-                <strong className={styles.amount}>+{rewards[day] ?? rewardsDefault[day]}</strong>
-                <span className={styles.icon} aria-hidden="true">🍿</span>
+                <strong className={styles.amount}>
+                  +{rewards[day] ?? rewardsDefault[day]}
+                </strong>
+                <span className={styles.icon} aria-hidden="true">
+                  🍿
+                </span>
               </span>
+              <span className={styles.stage}>{roomStages[day - 1]}</span>
               <span className={styles.state}>{label}</span>
             </>
           );
@@ -75,16 +101,18 @@ export default function DailyBonus({
               data-state={today ? "today" : received ? "received" : "future"}
               aria-current={today ? "step" : undefined}
             >
-              {/* Decorative stills are bundled locally and never gate claiming. */}
+              {/* Decorative artwork never gates claiming; amounts and state stay server-driven. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 className={styles.still}
-                src={`/daily-bonus/day-${day}.webp`}
+                src={`/daily-bonus/cinema/day-${day}.webp`}
                 alt=""
                 aria-hidden="true"
                 loading="lazy"
                 decoding="async"
-                onError={(event) => { event.currentTarget.style.display = "none"; }}
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
               />
               {available ? (
                 <button
