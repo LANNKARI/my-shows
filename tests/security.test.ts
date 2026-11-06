@@ -81,6 +81,11 @@ before(async () => {
   const legacyShow = await prisma.show.create({ data: { name: 'Migration fixture', kind: 'series', episodes: { create: { season: 1, episode: 1 } } }, include: { episodes: true } });
   const legacyEntry = await prisma.userShow.create({ data: { userId: legacyUser.id, showId: legacyShow.id, dubbing: 'Сохранить' } });
   const legacyProgress = await prisma.episodeProgress.create({ data: { userShowId: legacyEntry.id, episodeId: legacyShow.episodes[0].id, watched: true, watchedAt: new Date('2025-01-02T10:00:00Z') } });
+  // Verify the statistics migration preserves historical data and defaults it to legacy.
+  await prisma.$executeRawUnsafe('ALTER TABLE "EpisodeProgress" DROP COLUMN "statisticsSource"');
+  const statisticsMigration = await readFile('prisma/migrations/20261107000000_viewing_statistics/migration.sql', 'utf8');
+  for (const statement of statisticsMigration.replace(/^--.*$/gm, '').split(';').map(s=>s.trim()).filter(Boolean)) await prisma.$executeRawUnsafe(statement);
+  assert.equal((await prisma.episodeProgress.findUniqueOrThrow({where:{id:legacyProgress.id}})).statisticsSource, 'legacy');
   const calendarMigration = await readFile('prisma/migrations/20261026000000_release_calendar/migration.sql', 'utf8');
   await prisma.$transaction(async tx => {
     await tx.$executeRawUnsafe('DROP TABLE "ReleaseNotification"');
@@ -2421,9 +2426,49 @@ test('account access: statistics stay private, validate the range and ignore for
  await prisma.episodeProgress.create({data:{userShowId:b.id,episodeId:b.show.episodes[1].id,watched:true,watchedAt:null}});
  assert.equal((await guest.request('/api/statistics')).status,401);
  assert.equal((await other.request('/api/statistics?days=999')).status,400);
- const stats=await (await other.request('/api/statistics?days=30&userId='+alice.id)).json();assert.equal(stats.episodes,1);assert.equal(stats.undated,1);assert.equal(stats.minutes,45);assert.equal(stats.daily.length,30);
+ const stats=await (await other.request('/api/statistics?days=30&userId='+alice.id)).json();assert.ok(stats.totals.episodes>=2);assert.equal(stats.totals.undated,1);assert.equal(stats.daily.length,30);assert.ok(stats.totals.minutes>=90);
  const future=await prisma.premiumPeriod.create({data:{userId:bob.id,requestKey:randomUUID(),source:'gift',startsAt:new Date(Date.now()-1000),endsAt:new Date(Date.now()+86400000),revokedAt:new Date(Date.now()-2000)}});
  const before=await (await guest.request(`/api/users/${bob.username}/achievements`)).json();
  await prisma.premiumPeriod.delete({where:{id:future.id}});
  const after=await (await guest.request(`/api/users/${bob.username}/achievements`)).json();assert.deepEqual(before,after,'never-started cancelled periods cannot unlock achievements later');
+});
+
+test('viewing statistics: Premium gate, private totals, import isolation, manual marks and undo preserve provenance',async()=>{
+ const {record,client}=await featureAccount();
+ assert.equal((await client.request('/api/statistics')).status,403);
+ await prisma.premiumPeriod.create({data:{userId:record.id,requestKey:randomUUID(),source:'gift',startsAt:new Date(Date.now()-1000),endsAt:new Date(Date.now()+86400000)}});
+ assert.equal((await client.request('/api/statistics?days=31')).status,400);
+ assert.equal((await client.request('/api/statistics?timeZone=Not_A_Zone')).status,400);
+ const raw=importBackup(890000000+Math.floor(Math.random()*100000));raw.userShows[0].progress[0].watchedAt=new Date().toISOString();await seedImportCatalog(raw);
+ const preview=await(await client.request('/api/library-import','POST',{action:'preview',backup:raw})).json();
+ assert.equal((await client.request('/api/library-import','POST',{action:'commit',jobId:preview.jobId,cursor:0})).status,200);
+ const imported=await prisma.userShow.findFirstOrThrow({where:{userId:record.id},include:{progress:true,show:{include:{episodes:true}}}});
+ assert.equal(imported.progress.find(p=>p.watched)?.statisticsSource,'import');
+ let response=await client.request('/api/statistics?days=30');assert.match(response.headers.get('cache-control')!,/private/);let report=await response.json();assert.equal(report.totals.episodes,1);assert.equal(report.totals.imported,1);assert.equal(report.activity.activeDays,0);
+ const path=`/api/user-shows/${imported.showId}`;const watched=imported.progress.find(p=>p.watched)!;
+ assert.equal((await client.request(path,'POST',{episodeId:watched.episodeId,watched:true})).status,200);
+ assert.equal((await prisma.episodeProgress.findUniqueOrThrow({where:{id:watched.id}})).statisticsSource,'import','repeated marks cannot launder an import');
+ const pending=imported.show.episodes.find(e=>e.id!==watched.episodeId)!;
+ assert.equal((await client.request(path,'POST',{episodeId:pending.id,watched:true})).status,200);
+ const manual=await prisma.episodeProgress.findFirstOrThrow({where:{userShowId:imported.id,episodeId:pending.id}});assert.equal(manual.statisticsSource,'manual');
+ report=await(await client.request('/api/statistics?days=90&timeZone=Asia%2FYekaterinburg&userId='+alice.id)).json();assert.equal(report.totals.episodes,2);assert.equal(report.activity.activeDays,1);assert.equal(report.totals.imported,1);assert.equal(report.daily.length,90);assert.equal(report.timeZone,'Asia/Yekaterinburg');assert.equal(report.percentile.views,2);
+ assert.equal((await client.request(path,'POST',{episodeId:pending.id,watched:true})).status,200);assert.equal((await prisma.episodeProgress.findUniqueOrThrow({where:{id:manual.id}})).watchedAt?.getTime(),manual.watchedAt?.getTime());
+ // Quick mark on an existing, unwatched imported row must restore its source on undo.
+ assert.equal((await client.request(path,'POST',{episodeId:pending.id,watched:false})).status,200);
+ await prisma.episodeProgress.update({where:{id:manual.id},data:{statisticsSource:'import'}});
+ const fresh=await prisma.userShow.findUniqueOrThrow({where:{id:imported.id}});
+ const quick=await client.request(`/api/user-shows/${imported.id}/quick-progress`,'POST',{action:'mark',expectedUpdatedAt:fresh.updatedAt.toISOString(),expectedEpisodeId:pending.id});assert.equal(quick.status,200);const result=await quick.json();
+ assert.equal((await prisma.episodeProgress.findUniqueOrThrow({where:{id:manual.id}})).statisticsSource,'manual');
+ assert.equal((await client.request(`/api/user-shows/${imported.id}/quick-progress`,'POST',{action:'undo',token:result.undoToken})).status,200);
+ assert.equal((await prisma.episodeProgress.findUniqueOrThrow({where:{id:manual.id}})).statisticsSource,'import');
+});
+
+test('viewing statistics: percentile uses canonical counters, excludes zero viewers and treats equal scores as ties',async()=>{
+ const {record,client}=await featureAccount();await prisma.premiumPeriod.create({data:{userId:record.id,requestKey:randomUUID(),source:'gift',startsAt:new Date(Date.now()-1000),endsAt:new Date(Date.now()+86400000)}});
+ const movie=await prisma.show.create({data:{name:'Ranking movie',kind:'movie',runtime:100,countries:[],genres:[],creators:[],studios:[],episodes:{create:[{season:1,episode:1},{season:1,episode:2}]}},include:{episodes:true}});
+ const me=await prisma.userShow.create({data:{userId:record.id,showId:movie.id,status:'completed'}});await prisma.episodeProgress.createMany({data:movie.episodes.map(e=>({userShowId:me.id,episodeId:e.id,watched:true}))});
+ const tied=await featureAccount();await prisma.userShow.create({data:{userId:tied.record.id,showId:movie.id,status:'completed'}});
+ const empty=await featureAccount();await prisma.userShow.create({data:{userId:empty.record.id,showId:movie.id,status:'planned'}});
+ const r=await(await client.request('/api/statistics')).json();assert.equal(r.percentile.views,1);assert.equal(r.totals.movies,1);assert.equal(r.totals.minutes,100);assert.equal(r.percentile.value,0,'no positive viewer can have fewer than one viewing');assert.ok(r.percentile.participants>=1);
+ assert.equal(JSON.stringify(r).includes(tied.record.id),false);assert.equal(JSON.stringify(r).includes(empty.record.id),false);
 });

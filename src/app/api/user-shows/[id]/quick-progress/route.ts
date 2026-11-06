@@ -142,6 +142,8 @@ export async function POST(
                 },
                 data: {
                   ...progress.before,
+                  statisticsSource:
+                    progress.before.statisticsSource ?? "legacy",
                   watchedAt: progress.before.watchedAt
                     ? new Date(progress.before.watchedAt)
                     : null,
@@ -219,6 +221,7 @@ export async function POST(
                   watched: old.watched,
                   stoppedAt: old.stoppedAt,
                   watchedAt: old.watchedAt?.toISOString() ?? null,
+                  statisticsSource: old.statisticsSource,
                 }
               : null,
           };

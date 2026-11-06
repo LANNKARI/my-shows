@@ -365,6 +365,7 @@ export async function commitImport(
             watched: p.watched,
             stoppedAt: p.watched ? null : p.stoppedAt,
             watchedAt: p.watchedAt ? new Date(p.watchedAt) : null,
+            statisticsSource: "import",
           })),
           skipDuplicates: true,
         });

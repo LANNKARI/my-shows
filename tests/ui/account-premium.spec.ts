@@ -1,3 +1,4 @@
+import {statisticsFixture} from "./fixtures/statistics";
 import { test, expect, type Page } from "@playwright/test";
 const user = {
   id: "account-fixture",
@@ -121,16 +122,7 @@ async function setup(
     }
     if (path === "/api/statistics")
       return route.fulfill({
-        json: {
-          minutes: 155,
-          movies: 1,
-          episodes: 1,
-          titles: 2,
-          estimated: 1,
-          undated: 2,
-          daily: [{ date: "2026-11-01", movies: 1, episodes: 1, minutes: 155 }],
-          genres: [{ name: "Драма", count: 2 }],
-        },
+        json: statisticsFixture(Number(url.searchParams.get("days"))||30),
       });
     return route.fulfill({ json: {} });
   });
@@ -257,11 +249,11 @@ test("viewing statistics is Premium only and date ranges refresh the report", as
 }) => {
   await setup(page, { active: true });
   await page.goto("/statistics");
-  await expect(page.getByText("Драма", { exact: true })).toBeVisible();
+  await expect(page.getByText("Драма", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "90 дней" }).click();
-  await expect(page.getByText("Драма", { exact: true })).toBeVisible();
+  await expect(page.getByText("Драма", { exact: true }).first()).toBeVisible();
   await expect(
-    page.getByRole("list", { name: "Просмотры по дням" }),
+    page.getByRole("heading", { name: "Календарь активности" }),
   ).toBeVisible();
   await page.unroute("**/api/**");
   await setup(page);

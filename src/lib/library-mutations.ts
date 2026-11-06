@@ -81,6 +81,7 @@ export async function writeWatched(
         episodeId,
         watched,
         watchedAt: watched ? at : null,
+        statisticsSource: "manual",
       })),
       skipDuplicates: true,
     });
@@ -113,7 +114,12 @@ export async function writeWatched(
     );
     await tx.episodeProgress.updateMany({
       where: { userShowId, episodeId: { in: ids }, watched: false },
-      data: { watched: true, watchedAt: at, stoppedAt: null },
+      data: {
+        watched: true,
+        watchedAt: at,
+        stoppedAt: null,
+        statisticsSource: "manual",
+      },
     });
     // Clearing old timecodes must not move a previous viewing into today's history.
     await tx.episodeProgress.updateMany({
@@ -180,7 +186,10 @@ export async function saveLibrary(
         ...(typeof body.status === "string" ? { status: body.status } : {}),
         isCompleted: (body.status ?? entry.status) === "completed",
         ...(body.isFavorite !== undefined
-          ? { isFavorite: body.isFavorite as boolean, ...(body.isFavorite === false ? { favoriteOrder: null } : {}) }
+          ? {
+              isFavorite: body.isFavorite as boolean,
+              ...(body.isFavorite === false ? { favoriteOrder: null } : {}),
+            }
           : {}),
         ...(body.isBookmarked !== undefined
           ? { isBookmarked: body.isBookmarked as boolean }

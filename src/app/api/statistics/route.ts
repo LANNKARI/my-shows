@@ -5,8 +5,10 @@ import {
   calendarFailure,
   privateJson,
   CalendarError,
+  timeZone,
 } from "@/lib/calendar-server";
 import { premiumActive } from "@/lib/premium";
+import { viewingStatistics } from "@/lib/viewing-statistics";
 export async function GET(req: NextRequest) {
   try {
     const id = await calendarUser(req);
@@ -15,79 +17,65 @@ export async function GET(req: NextRequest) {
     const days = Number(req.nextUrl.searchParams.get("days") || 30);
     if (![30, 90, 365].includes(days))
       throw new CalendarError(400, "Некорректный период");
-    const end = new Date(),
-      start = new Date(end);
-    start.setUTCHours(0, 0, 0, 0);
-    start.setUTCDate(start.getUTCDate() - days + 1);
-    const rows = await prisma.episodeProgress.findMany({
-      where: {
-        watched: true,
-        watchedAt: { gte: start, lte: end },
-        userShow: { userId: id },
-      },
+    const zone = timeZone(req.nextUrl.searchParams.get("timeZone"));
+    // Select only fields used by the report, never descriptions, cast, notes, or other users' libraries.
+    const entries = await prisma.userShow.findMany({
+      where: { userId: id },
       select: {
-        watchedAt: true,
-        episode: { select: { showId: true } },
-        userShow: {
+        status: true,
+        totalEpisodes: true,
+        show: {
           select: {
-            showId: true,
-            show: { select: { kind: true, runtime: true, genres: true } },
+            id: true,
+            kind: true,
+            runtime: true,
+            year: true,
+            genres: true,
+            countries: true,
+            episodes: { select: { id: true, season: true } },
           },
+        },
+        progress: {
+          where: { watched: true },
+          select: {
+            episodeId: true,
+            watched: true,
+            watchedAt: true,
+            statisticsSource: true,
+          },
+        },
+        ratings: {
+          where: { episodeId: null },
+          select: { episodeId: true, score: true, createdAt: true },
         },
       },
     });
-    const undated = await prisma.episodeProgress.count({
-      where: { watched: true, watchedAt: null, userShow: { userId: id } },
-    });
-    const bins: Record<
-        string,
-        { date: string; movies: number; episodes: number; minutes: number }
-      > = {},
-      genres: Record<string, number> = {},
-      titles = new Set<number>(),
-      movies = new Set<number>();
-    let minutes = 0,
-      estimated = 0;
-    for (let n = 0; n < days; n++) {
-      const d = new Date(start);
-      d.setUTCDate(d.getUTCDate() + n);
-      const date = d.toISOString().slice(0, 10);
-      bins[date] = { date, movies: 0, episodes: 0, minutes: 0 };
-    }
-    for (const row of rows) {
-      if (row.episode.showId !== row.userShow.showId) continue;
-      const show = row.userShow.show,
-        isMovie = show.kind === "movie";
-      if (isMovie && movies.has(row.userShow.showId)) continue;
-      const date = row.watchedAt!.toISOString().slice(0, 10),
-        bin = bins[date];
-      if (!bin) continue;
-      const duration = show.runtime || (isMovie ? 110 : 45);
-      if (!show.runtime) estimated++;
-      titles.add(row.userShow.showId);
-      if (isMovie) {
-        movies.add(row.userShow.showId);
-        bin.movies++;
-      } else bin.episodes++;
-      bin.minutes += duration;
-      minutes += duration;
-      for (const g of show.genres) genres[g] = (genres[g] || 0) + 1;
-    }
+    const stats = viewingStatistics(entries, days, zone);
+    // Aggregate counters in SQL. A movie counts once, a canonical series episode once. No user IDs leave this query.
+    const [ranking] = await prisma.$queryRaw<
+      { participants: bigint; below: bigint; views: bigint }[]
+    >`
+   WITH counts AS (
+    SELECT us."userId", SUM(CASE WHEN s.kind='movie' THEN CASE WHEN us.status='completed' OR p.n>0 THEN 1 ELSE 0 END ELSE p.n END)::bigint AS views
+    FROM "UserShow" us JOIN "Show" s ON s.id=us."showId"
+    CROSS JOIN LATERAL (SELECT count(DISTINCT ep."episodeId") AS n FROM "EpisodeProgress" ep JOIN "Episode" e ON e.id=ep."episodeId" AND e."showId"=us."showId" WHERE ep."userShowId"=us.id AND ep.watched=true) p
+    GROUP BY us."userId"
+   ), me AS (SELECT COALESCE((SELECT views FROM counts WHERE "userId"=${id}),0)::bigint AS views)
+   SELECT count(*) FILTER (WHERE c."userId"<>${id}) AS participants,
+    count(*) FILTER (WHERE c."userId"<>${id} AND c.views<me.views) AS below,
+    max(me.views) AS views FROM me LEFT JOIN counts c ON c.views>0`;
+    const participants = Number(ranking?.participants || 0),
+      views = Number(ranking?.views || 0);
     return privateJson({
-      days,
-      start: start.toISOString(),
-      end: end.toISOString(),
-      minutes,
-      movies: movies.size,
-      episodes: Object.values(bins).reduce((s, b) => s + b.episodes, 0),
-      titles: titles.size,
-      estimated,
-      undated,
-      daily: Object.values(bins),
-      genres: Object.entries(genres)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 10),
+      ...stats,
+      percentile: {
+        value:
+          participants && views > 0
+            ? Math.floor((Number(ranking.below) / participants) * 100)
+            : null,
+        participants,
+        views,
+      },
     });
   } catch (e) {
     return calendarFailure(e);
