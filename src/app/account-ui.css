@@ -361,3 +361,6 @@
 
 .premium-badge-icon{display:inline-block;flex-shrink:0;object-fit:contain;vertical-align:middle;user-select:none}
 .account-name-text{min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+.role-badge-icon{display:inline-block;flex-shrink:0;object-fit:contain;vertical-align:middle;user-select:none}
+.account-role{display:inline-flex;align-items:center;gap:6px}

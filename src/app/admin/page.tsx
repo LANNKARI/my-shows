@@ -1,4 +1,5 @@
 "use client";
+import RoleBadge, { hasRoleArtwork } from "@/components/RoleBadge";
 import PremiumBadge from "@/components/PremiumBadge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount } from "@/components/AccountAccess";
@@ -267,7 +268,12 @@ export default function AdminPage() {
               defaultValue={role?.name}
             />
           </label>
-          <label>
+          {hasRoleArtwork(role?.id) ? <div>
+            <p>Значок роли</p>
+            <RoleBadge roleId={role!.id} name={role!.name} size={32}/>
+            <input type="hidden" name="icon" value={role!.icon}/>
+            <p className="account-muted">Для этой роли используется готовый значок.</p>
+          </div> : <label>
             Значок
             <input
               required
@@ -275,7 +281,7 @@ export default function AdminPage() {
               name="icon"
               defaultValue={role?.icon || "✦"}
             />
-          </label>
+          </label>}
           <label>
             Цвет
             <input
@@ -498,7 +504,12 @@ export default function AdminPage() {
                 <div className="account-actions">
                   {row.siteOwner && (
                     <span className="account-role">
-                      ⚑ Администратор · постоянно 🔒
+                      <RoleBadge
+                        roleId="owner"
+                        name="Администратор"
+                        decorative
+                      />{" "}
+                      Администратор · постоянно 🔒
                     </span>
                   )}
                   {row.roles?.map((r) => (
@@ -507,7 +518,14 @@ export default function AdminPage() {
                       className="account-role"
                       style={{ color: r.role.color }}
                     >
-                      {r.role.icon} {r.role.name}
+                      <RoleBadge
+                        roleId={r.role.id}
+                        name={r.role.name}
+                        icon={r.role.icon}
+                        color={r.role.color}
+                        decorative
+                      />{" "}
+                      {r.role.name}
                       {r.expiresAt &&
                         ` · до ${new Date(r.expiresAt).toLocaleDateString("ru-RU")}`}{" "}
                       <button
@@ -527,7 +545,7 @@ export default function AdminPage() {
                   ))}
                   {row.premiumPeriods?.[0] && (
                     <span className="premium-chip">
-                      <PremiumBadge decorative/> Premium до{" "}
+                      <PremiumBadge decorative /> Premium до{" "}
                       {new Date(
                         row.premiumPeriods[0].endsAt,
                       ).toLocaleDateString("ru-RU")}
@@ -616,7 +634,14 @@ export default function AdminPage() {
           {data?.roles.map((r) => (
             <div className="account-line" key={r.id}>
               <span>
-                {r.icon} {r.name}
+                <RoleBadge
+                  roleId={r.id}
+                  name={r.name}
+                  icon={r.icon}
+                  color={r.color}
+                  decorative
+                />{" "}
+                {r.name}
               </span>
               <div className="account-actions">
                 <button

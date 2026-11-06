@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useId } from "react";
 import Link from "next/link";
 import CosmeticAvatar from "./CosmeticAvatar";
 import { useAccount, AccountName } from "./AccountAccess";
+import RoleBadge from "./RoleBadge";
 import PremiumBadge from "./PremiumBadge";
 import ThemeToggle from "./ThemeToggle";
 import { useSession, signOut } from "next-auth/react";
@@ -101,7 +102,7 @@ export default function UserMenu() {
           {account?.curate&&<Link href="/curation" onClick={()=>setIsOpen(false)} className="profile-menu-link">◈ Мои подборки куратора</Link>}
           <Link href="/premium" onClick={()=>setIsOpen(false)} className="profile-menu-link"><PremiumBadge decorative/> EpisyHub Premium</Link>
           <Link href="/statistics" onClick={()=>setIsOpen(false)} className="profile-menu-link">▥ Статистика просмотров</Link>
-          {(account?.owner||account?.moderate)&&<Link href="/admin" onClick={()=>setIsOpen(false)} className="profile-menu-link">⚑ Управление сайтом</Link>}
+          {(account?.owner||account?.moderate)&&<Link href="/admin" onClick={()=>setIsOpen(false)} className="profile-menu-link"><RoleBadge roleId={account?.owner?"owner":"moderator"} name="Управление сайтом" decorative/> Управление сайтом</Link>}
           <Link
             href="/cosmetics"
             onClick={() => setIsOpen(false)}
