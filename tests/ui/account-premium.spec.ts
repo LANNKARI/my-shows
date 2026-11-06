@@ -136,10 +136,10 @@ for (const width of [320, 390, 1440])
     const api = await setup(page);
     await page.goto("/premium");
     await expect(
-      page.getByRole("button", { name: "Подключить Premium", exact: true }),
+      page.getByRole("button", { name: "Подключить на 30 дней", exact: true }),
     ).toBeVisible();
     await page
-      .getByRole("button", { name: "Подключить Premium", exact: true })
+      .getByRole("button", { name: "Подключить на 30 дней", exact: true })
       .click();
     expect(api.calls).toHaveLength(0);
     await page.getByRole("button", { name: "Подтвердить за 2000 🍿" }).click();
@@ -168,16 +168,16 @@ test("Premium cannot be purchased by a guest or with an insufficient displayed b
   await setup(page, { guest: true });
   await page.goto("/premium");
   await expect(
-    page.getByRole("link", { name: "Войти для покупки" }),
+    page.getByRole("link", { name: "Войти для покупки" }).first(),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Подключить Premium" }),
+    page.getByRole("button", { name: "Подключить на 30 дней" }),
   ).toHaveCount(0);
   await page.unroute("**/api/**");
   await setup(page, { balance: 1999 });
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Подключить Premium", exact: true }),
+    page.getByRole("button", { name: "Подключить на 30 дней", exact: true }),
   ).toBeDisabled();
 });
 for (const width of [390, 1440])

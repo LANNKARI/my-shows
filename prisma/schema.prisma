@@ -209,6 +209,7 @@ model Friendship {
   status      String   @default("pending") // "pending" | "accepted"
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  notificationReadAt DateTime?
 
   requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   addressee User @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
@@ -486,6 +487,8 @@ model PremiumPeriod {
   startsAt DateTime
   endsAt DateTime
   source String
+  durationDays Int @default(30)
+  activationBonus Int @default(500)
   bonusPaidAt DateTime?
   revokedAt DateTime?
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

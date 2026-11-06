@@ -51,14 +51,32 @@ export async function cosmeticsSnapshot(userId: string) {
     { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
   );
   if (!user) throw new CosmeticError(401, "Войдите в аккаунт");
-  const activePremium=await premiumActive(userId);
-  const roles=await prisma.userRole.findMany({where:{userId,OR:[{expiresAt:null},{expiresAt:{gt:new Date()}}]},select:{roleId:true}});
-  const entitlements=COSMETICS.filter(i=>i.premium?activePremium:i.roleId?roles.some(r=>r.roleId===i.roleId):false).map(i=>i.id);
+  const activePremium = await premiumActive(userId);
+  const roles = await prisma.userRole.findMany({
+    where: {
+      userId,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    select: { roleId: true },
+  });
+  const entitlements = COSMETICS.filter((i) =>
+    i.premium
+      ? activePremium
+      : i.roleId
+        ? roles.some((r) => r.roleId === i.roleId)
+        : false,
+  ).map((i) => i.id);
   const stats = summarizeLibrary(library);
   return {
     user: {
       ...user,
-      avatarFrame: (cosmeticItem(user.avatarFrame)?.premium||cosmeticItem(user.avatarFrame)?.roleId)&&!entitlements.includes(user.avatarFrame)?"frame-standard":frameId(user.avatarFrame),
+      bannerUrl: activePremium ? user.bannerUrl : null,
+      avatarFrame:
+        (cosmeticItem(user.avatarFrame)?.premium ||
+          cosmeticItem(user.avatarFrame)?.roleId) &&
+        !entitlements.includes(user.avatarFrame)
+          ? "frame-standard"
+          : frameId(user.avatarFrame),
       profileStyle: profileStyleId(user.profileStyle),
     },
     catalog: COSMETICS,
@@ -108,10 +126,29 @@ export async function mutateCosmetics(userId: string, input: unknown) {
       const purchase = await tx.cosmeticPurchase.findUnique({
         where: { userId_itemId: { userId, itemId: item.id } },
       });
-      if(item.premium||item.roleId){
-        const allowed=item.premium?await premiumActive(userId,tx):!!await tx.userRole.findFirst({where:{userId,roleId:item.roleId,OR:[{expiresAt:null},{expiresAt:{gt:new Date()}}]},select:{roleId:true}});
-        if(!allowed)throw new CosmeticError(403,item.premium?"Нужна активная подписка Premium":"Нужна роль «Первопроходец»");
-        if(body.action==='purchase')throw new CosmeticError(400,'Это оформление применяется без отдельной покупки');
+      if (item.premium || item.roleId) {
+        const allowed = item.premium
+          ? await premiumActive(userId, tx)
+          : !!(await tx.userRole.findFirst({
+              where: {
+                userId,
+                roleId: item.roleId,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+              },
+              select: { roleId: true },
+            }));
+        if (!allowed)
+          throw new CosmeticError(
+            403,
+            item.premium
+              ? "Нужна активная подписка Premium"
+              : "Нужна роль «Первопроходец»",
+          );
+        if (body.action === "purchase")
+          throw new CosmeticError(
+            400,
+            "Это оформление применяется без отдельной покупки",
+          );
       }
       if (body.action === "purchase") {
         if (!item.price)

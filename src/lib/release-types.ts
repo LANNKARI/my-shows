@@ -39,7 +39,21 @@ export type ReleaseNotice = {
   date: string;
   read: boolean;
 };
+export type FriendNotice = {
+  id: number;
+  user: {
+    id: string;
+    username: string;
+    name: string | null;
+    avatarUrl: string | null;
+  };
+  createdAt: string;
+  read: boolean;
+};
 export type ReleaseInbox = {
+  friendRequests?: FriendNotice[];
+  latestFriendId?: number;
+  friendRequestsTruncated?: boolean;
   items: ReleaseNotice[];
   unreadCount: number;
   latestId: number;

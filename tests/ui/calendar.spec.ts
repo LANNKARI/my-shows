@@ -375,7 +375,7 @@ test("mobile bell opens inbox, read-all clears badge, settings persist and five 
   ).toBeVisible();
   expect(
     api.calls.find((call) => call.path === "/api/notifications")?.body,
-  ).toEqual({ all: true, throughId: 501 });
+  ).toEqual({ all: true, throughId: 501, throughFriendId: 0 });
   const automatic = main(page).getByRole("switch", {
     name: "Включать для новых сериалов",
   });

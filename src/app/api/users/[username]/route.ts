@@ -1,3 +1,4 @@
+import { premiumActive } from "@/lib/premium";
 import { sortFavorites } from "@/lib/favorites";
 import { summarizeLibrary } from "@/lib/progress";
 import { NextRequest, NextResponse } from "next/server";
@@ -40,6 +41,12 @@ export async function GET(
     }
 
     const isOwnProfile = currentUserId === user.id;
+    const activePremium = await premiumActive(user.id);
+    if (!activePremium) {
+      user.bannerUrl = null;
+      if (user.avatarFrame === "frame-premium-orbit")
+        user.avatarFrame = "frame-standard";
+    }
 
     let friendshipStatus:
       | "none"
@@ -123,20 +130,21 @@ export async function GET(
     } = summarizeLibrary(userShows);
 
     // 3. Любимые сериалы и фильмы
-    const favoriteShows = sortFavorites(userShows.filter((us) => us.isFavorite))
-      .map((us, index) => ({
-        id: us.id,
-        showId: us.showId,
-        rank: index + 1,
-        name: us.show?.name || "Без названия",
-        title: us.show?.name || "Без названия",
-        posterUrl: formatPosterUrl(us.show?.posterUrl),
-        year: us.show?.year || null,
-        kind: us.show.kind,
-        rating:
-          us.ratings?.[0]?.score ||
-          (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
-      }));
+    const favoriteShows = sortFavorites(
+      userShows.filter((us) => us.isFavorite),
+    ).map((us, index) => ({
+      id: us.id,
+      showId: us.showId,
+      rank: index + 1,
+      name: us.show?.name || "Без названия",
+      title: us.show?.name || "Без названия",
+      posterUrl: formatPosterUrl(us.show?.posterUrl),
+      year: us.show?.year || null,
+      kind: us.show.kind,
+      rating:
+        us.ratings?.[0]?.score ||
+        (us.show?.tmdbRating ? Math.round(us.show.tmdbRating) : null),
+    }));
 
     // Друзья
     const friendsCount = await prisma.friendship.count({
@@ -163,7 +171,16 @@ export async function GET(
 
     // 4. Расчет достижений с честным количеством сериалов
     const achievements = calculateAchievements({
-      premiumPeriods: await prisma.premiumPeriod.count({where:{userId:user.id,startsAt:{lte:new Date()},OR:[{revokedAt:null},{revokedAt:{gte:prisma.premiumPeriod.fields.startsAt}}]}}),
+      premiumPeriods: await prisma.premiumPeriod.count({
+        where: {
+          userId: user.id,
+          startsAt: { lte: new Date() },
+          OR: [
+            { revokedAt: null },
+            { revokedAt: { gte: prisma.premiumPeriod.fields.startsAt } },
+          ],
+        },
+      }),
       totalTitles,
       addedShowsCount: addedSeriesCount, // Передаем 16 сериалов, а не 57
       totalEpisodes: watchedEpisodesCount,
@@ -180,6 +197,7 @@ export async function GET(
       safeJson({
         user,
         isOwnProfile,
+        premiumActive: activePremium,
         friendshipStatus,
         stats: {
           totalCompleted: completedShows.length,

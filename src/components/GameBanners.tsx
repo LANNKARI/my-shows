@@ -2,6 +2,7 @@
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { useAccount } from "./AccountAccess";
 import styles from "./GameBanners.module.css";
 export const GAME_BANNER_INTERVAL_MS = 4000;
 const subscribeMotion = (notify: () => void) => {
@@ -59,6 +60,7 @@ function GameBanner({
   offset: number;
   type: "quiz" | "duel";
 }) {
+  const { account } = useAccount();
   const reduced = useSyncExternalStore(
     subscribeMotion,
     motionSnapshot,
@@ -164,7 +166,7 @@ function GameBanner({
             <span aria-hidden="true">→</span>
           </span>
           <span className={styles.reward}>
-            +1 🍿
+            +{account?.premium.active ? 2 : 1} 🍿
             <br />
             {quiz ? "за верный ответ" : "в банк за ответ"}
           </span>

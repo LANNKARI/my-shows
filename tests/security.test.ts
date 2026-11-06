@@ -148,6 +148,13 @@ before(async () => {
   await prisma.$executeRawUnsafe('ALTER TABLE "User" DROP COLUMN "premiumBonusTenths"');
   const accessMigration=await readFile('prisma/migrations/20261106000000_account_roles_premium/migration.sql','utf8');
   await prisma.$transaction(async tx=>{for(const statement of accessMigration.replace(/^--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean))await tx.$executeRawUnsafe(statement);});
+  const planLegacyUser=await prisma.user.create({data:{email:'plan-migration@example.test',username:'plan_legacy'}});
+  const legacyPeriodId=randomUUID();
+  await prisma.$executeRawUnsafe('INSERT INTO "PremiumPeriod" (id,"userId","requestKey","startsAt","endsAt",source) VALUES ($1,$2,$3,$4,$5,$6)',legacyPeriodId,planLegacyUser.id,randomUUID(),new Date(),new Date(Date.now()+86400000),'gift');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Friendship" DROP COLUMN "notificationReadAt"');
+  const socialMigration=await readFile('prisma/migrations/20261107010000_premium_plans_social/migration.sql','utf8');
+  for(const statement of socialMigration.split(';').map(s=>s.trim()).filter(Boolean))await prisma.$executeRawUnsafe(statement);
+  const migratedPlan=await prisma.premiumPeriod.findUniqueOrThrow({where:{id:legacyPeriodId}});assert.equal(migratedPlan.durationDays,30);assert.equal(migratedPlan.activationBonus,500);await prisma.user.delete({where:{id:planLegacyUser.id}});
   for(const table of ['SiteOwner','SiteRole','UserRole','PremiumPeriod','AdminAudit','EditorialPick']) {
     const flags=await prisma.$queryRawUnsafe<{relrowsecurity:boolean}[]>('SELECT relrowsecurity FROM pg_class WHERE oid=$1::regclass',`"${table}"`);assert.equal(flags[0].relrowsecurity,true);
   }
@@ -2352,15 +2359,15 @@ test('account access: Premium purchase is atomic, idempotent, wallet scoped and 
   assert.equal((await owner.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-premium-orbit'})).status,403);
 });
 
-test('account access: fractional game bonus is exact across games and duplicate rewards never advance it twice', async()=>{
+test('account access: game rewards double exactly and duplicate rewards never pay twice', async()=>{
   const {credit}=await import('../src/lib/popcorn-economy');
   const before=(await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).popcorn;
-  for(let i=0;i<9;i++)assert.equal((await prisma.$transaction(tx=>credit(tx,bob.id,`premium-game-${i}`,'game',1,'Fixture'))).amount,1);
-  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).premiumBonusTenths,9);
+  for(let i=0;i<9;i++)assert.equal((await prisma.$transaction(tx=>credit(tx,bob.id,`premium-game-${i}`,'game',1,'Fixture'))).amount,2);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).premiumBonusTenths,0);
   const duplicate=await prisma.$transaction(tx=>credit(tx,bob.id,'premium-game-0','game',1,'Fixture'));assert.equal(duplicate.duplicate,true);
-  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).premiumBonusTenths,9);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).premiumBonusTenths,0);
   assert.equal((await prisma.$transaction(tx=>credit(tx,bob.id,'premium-game-10','game',1,'Fixture'))).amount,2);
-  const after=await prisma.user.findUniqueOrThrow({where:{id:bob.id}});assert.equal(after.popcorn,before+11);assert.equal(after.premiumBonusTenths,0);
+  const after=await prisma.user.findUniqueOrThrow({where:{id:bob.id}});assert.equal(after.popcorn,before+20);assert.equal(after.premiumBonusTenths,0);
   const ordinary=await prisma.$transaction(tx=>credit(tx,bob.id,'premium-not-game','daily',10,'Fixture'));assert.equal(ordinary.amount,10);
   await prisma.premiumPeriod.updateMany({where:{userId:bob.id},data:{revokedAt:new Date()}});
   assert.equal((await prisma.$transaction(tx=>credit(tx,bob.id,'premium-expired-game','game',1,'Fixture'))).amount,1);
@@ -2471,4 +2478,56 @@ test('viewing statistics: percentile uses canonical counters, excludes zero view
  const empty=await featureAccount();await prisma.userShow.create({data:{userId:empty.record.id,showId:movie.id,status:'planned'}});
  const r=await(await client.request('/api/statistics')).json();assert.equal(r.percentile.views,1);assert.equal(r.totals.movies,1);assert.equal(r.totals.minutes,100);assert.equal(r.percentile.value,0,'no positive viewer can have fewer than one viewing');assert.ok(r.percentile.participants>=1);
  assert.equal(JSON.stringify(r).includes(tied.record.id),false);assert.equal(JSON.stringify(r).includes(empty.record.id),false);
+});
+
+test('premium social: weekly purchase is scoped, idempotent and mixed renewals pay the correct bonus only at activation',async()=>{
+ const {record,client}=await featureAccount();await prisma.user.update({where:{id:record.id},data:{popcorn:5000}});const key=randomUUID();
+ const body={requestKey:key,expectedUntil:null,expectedPrice:1290,days:7};
+ assert.equal((await client.request('/api/premium','POST',{...body,expectedPrice:1})).status,400);assert.equal((await client.request('/api/premium','POST',{...body,days:8})).status,400);
+ let response=await client.request('/api/premium','POST',body);assert.equal(response.status,200);let result=await response.json();assert.equal(result.balance,3860);
+ const weekly=await prisma.premiumPeriod.findFirstOrThrow({where:{userId:record.id}});assert.equal(weekly.endsAt.getTime()-weekly.startsAt.getTime(),7*86400000);assert.equal(weekly.activationBonus,150);assert.ok(weekly.bonusPaidAt);
+ assert.equal((await client.request('/api/premium','POST',body)).status,200);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).popcorn,3860);
+ assert.equal((await client.request('/api/premium','POST',{...body,days:30,expectedPrice:2000})).status,409);
+ response=await client.request('/api/premium','POST',{requestKey:randomUUID(),expectedUntil:weekly.endsAt.toISOString(),expectedPrice:2000,days:30});assert.equal(response.status,200);result=await response.json();assert.equal(result.balance,1860,'future monthly bonus is not paid early');
+ const month=await prisma.premiumPeriod.findFirstOrThrow({where:{userId:record.id,durationDays:30}});assert.equal(month.startsAt.getTime(),weekly.endsAt.getTime());assert.equal(month.endsAt.getTime()-month.startsAt.getTime(),30*86400000);assert.equal(month.bonusPaidAt,null);
+ const {settlePremiumBonus}=await import('../src/lib/premium');const {lockWallet}=await import('../src/lib/popcorn-economy');const future=new Date(month.startsAt.getTime()+1000);
+ for(let i=0;i<2;i++)await prisma.$transaction(async tx=>{await lockWallet(tx,record.id);await settlePremiumBonus(tx,record.id,future)});
+ assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).popcorn,2360);assert.deepEqual((await prisma.popcornEntry.findMany({where:{userId:record.id,category:'premium'},orderBy:{createdAt:'asc'}})).map(p=>p.amount),[150,500]);
+});
+
+test('premium social: incoming requests are private, read-all preserves new requests and direct actions require the recipient',async()=>{
+ const {record,client}=await featureAccount();
+ assert.equal((await owner.request('/api/friendships','POST',{targetUserId:record.id})).status,200);
+ let inbox=await(await client.request('/api/notifications?mode=unread')).json();assert.equal(inbox.friendRequests.length,1);assert.equal(inbox.unreadCount,1);const first=inbox.friendRequests[0];
+ assert.equal((await other.request('/api/friendships','POST',{targetUserId:record.id})).status,200);
+ assert.equal((await client.request('/api/notifications','PATCH',{all:true,throughId:inbox.latestId,throughFriendId:inbox.latestFriendId})).status,200);
+ inbox=await(await client.request('/api/notifications?mode=unread')).json();assert.equal(inbox.friendRequests.length,1);assert.equal(inbox.friendRequests[0].user.id,bob.id);assert.equal((await prisma.friendship.findUniqueOrThrow({where:{id:first.id}})).status,'pending');
+ const path=`/api/notifications/friends/${first.id}`;
+ assert.equal((await guest.request(path,'POST',{action:'accept'})).status,401);assert.equal((await owner.request(path,'POST',{action:'accept'})).status,409);assert.equal((await other.request(path,'POST',{action:'accept'})).status,409);
+ assert.equal((await client.request(path,'POST',{action:'bad'})).status,400);
+ const csrf=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://evil.example',Cookie:[...client.cookies].map(([k,v])=>`${k}=${v}`).join('; ')},body:JSON.stringify({action:'accept'})});assert.equal(csrf.status,403);
+ assert.equal((await client.request(path,'POST',{action:'accept'})).status,200);assert.equal((await client.request(path,'POST',{action:'accept'})).status,409);
+ assert.equal((await prisma.friendship.findUniqueOrThrow({where:{id:first.id}})).status,'accepted');
+ const second=inbox.friendRequests[0];assert.equal((await client.request(`/api/notifications/friends/${second.id}`,'POST',{action:'decline'})).status,200);assert.equal(await prisma.friendship.count({where:{id:second.id}}),0);
+ inbox=await(await client.request('/api/notifications?mode=all')).json();assert.equal(inbox.friendRequests.length,0);
+});
+
+test('premium social: personal covers enforce ownership, decode images, survive expiry and restore with renewal',async()=>{
+ const {record,client}=await featureAccount();const path=`/api/users/${record.username}/banner`;
+ assert.equal((await client.request(path,'POST',{action:'reset'})).status,403);
+ const period=await prisma.premiumPeriod.create({data:{userId:record.id,requestKey:randomUUID(),startsAt:new Date(Date.now()-1000),endsAt:new Date(Date.now()+86400000),source:'gift'}});
+ assert.equal((await other.request(path,'POST',{action:'reset'})).status,403);assert.equal((await client.request(path,'POST',{bannerUrl:'https://untrusted.example/image.png'})).status,400);
+ const invalid=new FormData();invalid.append('file',new Blob(['not a picture'],{type:'image/png'}),'bad.png');assert.equal((await client.request(path,'POST',invalid)).status,400);
+ const {saveProfileBanner}=await import('../src/lib/profile-banner');const sharp=(await import('sharp')).default;const bytes=await sharp({create:{width:400,height:150,channels:3,background:'#ab8bd4'}}).png().toBuffer();let uploaded=0;
+ const fake=async(encoded:Buffer)=>{uploaded++;assert.equal((await sharp(encoded).metadata()).format,'webp');return 'https://example.test/profile-banner.webp'};
+ await saveProfileBanner(record.id,record.username,bytes,fake,prisma);assert.equal(uploaded,1);assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.bannerUrl,'https://example.test/profile-banner.webp');
+ await prisma.user.update({where:{id:record.id},data:{avatarFrame:'frame-premium-orbit',siteTheme:'theme-obsidian'}});
+ await prisma.premiumPeriod.update({where:{id:period.id},data:{endsAt:new Date(Date.now()-1)}});
+ assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.bannerUrl,null);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).bannerUrl,'https://example.test/profile-banner.webp');
+ assert.equal((await(await client.request('/api/site-theme')).json()).theme,null);assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.avatarFrame,'frame-standard');
+ await assert.rejects(saveProfileBanner(record.id,record.username,bytes,fake,prisma));assert.equal(uploaded,1);
+ await prisma.premiumPeriod.create({data:{userId:record.id,requestKey:randomUUID(),startsAt:new Date(Date.now()-1000),endsAt:new Date(Date.now()+86400000),durationDays:7,activationBonus:150,source:'gift'}});
+ assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.bannerUrl,'https://example.test/profile-banner.webp');
+ assert.equal((await(await client.request('/api/site-theme')).json()).theme,'theme-obsidian');assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.avatarFrame,'frame-premium-orbit');
+ assert.equal((await client.request(path,'POST',{action:'reset'})).status,200);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).bannerUrl,null);
 });

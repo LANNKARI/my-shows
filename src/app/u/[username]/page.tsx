@@ -1,6 +1,7 @@
 "use client";
 
-import { AccountName } from "@/components/AccountAccess";
+import ProfileBannerEditor from "@/components/ProfileBannerEditor";
+import { AccountName, useAccountBadges } from "@/components/AccountAccess";
 
 import FavoriteGrid from "@/components/FavoriteGrid";
 import { tmdbImageUrl } from "@/lib/tmdb-image";
@@ -82,6 +83,7 @@ export default function UserProfilePage({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const profileBadges = useAccountBadges(data?.user.id);
   const [friendshipLoading, setFriendshipLoading] = useState<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<"all" | "movies" | "series">(
@@ -135,6 +137,32 @@ export default function UserProfilePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const update = () => {
+      void privateFetch(
+        `/api/users/${encodeURIComponent(username)}`,
+        controller.signal,
+      )
+        .then(async (r) => {
+          if (r.ok) {
+            const fresh = await r.json();
+            if (!controller.signal.aborted) setData(fresh);
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("account-updated", update);
+    window.addEventListener("friends-updated", update);
+    window.addEventListener("focus", update);
+    return () => {
+      controller.abort();
+      window.removeEventListener("account-updated", update);
+      window.removeEventListener("friends-updated", update);
+      window.removeEventListener("focus", update);
+    };
+  }, [username]);
+
   const handleFriendshipAction = async () => {
     if (!data?.user) return;
     setFriendshipLoading(true);
@@ -151,6 +179,7 @@ export default function UserProfilePage({
           }),
         });
         if (res.ok) {
+          window.dispatchEvent(new Event("notifications-updated"));
           setData((prev) =>
             prev ? { ...prev, friendshipStatus: "pending_sent" } : prev,
           );
@@ -165,6 +194,7 @@ export default function UserProfilePage({
           }),
         });
         if (res.ok) {
+          window.dispatchEvent(new Event("notifications-updated"));
           setData((prev) =>
             prev ? { ...prev, friendshipStatus: "friends" } : prev,
           );
@@ -177,6 +207,7 @@ export default function UserProfilePage({
           method: "DELETE",
         });
         if (res.ok) {
+          window.dispatchEvent(new Event("notifications-updated"));
           setData((prev) =>
             prev ? { ...prev, friendshipStatus: "none" } : prev,
           );
@@ -265,10 +296,37 @@ export default function UserProfilePage({
     <div className="min-h-screen text-neutral-100 pb-24">
       {/* Скругленная шапка профиля */}
       <div className="max-w-6xl mx-auto px-4 pt-6">
-        <div data-custom-cover={Boolean(user.bannerUrl) || profileStyleId(user.profileStyle) !== STANDARD_PROFILE}
-          className="profile-theme-header relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-900/80 shadow-2xl">
+        {isOwnProfile && (
+          <ProfileBannerEditor
+            username={user.username}
+            onSaved={(bannerUrl) =>
+              setData((previous) =>
+                previous
+                  ? {
+                      ...previous,
+                      user: {
+                        ...previous.user,
+                        bannerUrl,
+                        profileStyle: "profile-standard",
+                      },
+                    }
+                  : previous,
+              )
+            }
+          />
+        )}
+        <div
+          data-custom-cover={
+            Boolean(
+              user.bannerUrl &&
+                profileBadges?.some((b) => b.roleId === "premium"),
+            ) || profileStyleId(user.profileStyle) !== STANDARD_PROFILE
+          }
+          className="profile-theme-header relative rounded-3xl overflow-hidden border border-neutral-800 bg-neutral-900/80 shadow-2xl"
+        >
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
             <CosmeticCover
+              userId={user.id}
               styleId={user.profileStyle}
               bannerUrl={user.bannerUrl}
             />
@@ -287,7 +345,9 @@ export default function UserProfilePage({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-sm">
-                    <AccountName userId={user.id}>{user.name || user.username}</AccountName>
+                    <AccountName userId={user.id}>
+                      {user.name || user.username}
+                    </AccountName>
                   </h1>
                   <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
                     @{user.username}
@@ -396,16 +456,23 @@ export default function UserProfilePage({
         {/* 1. БЛОК: ЛЮБИМЫЕ СЕРИАЛЫ И ФИЛЬМЫ */}
         <section>
           <div className="favorite-section-heading">
-            <div><h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>⭐ Любимые сериалы и фильмы</span>
-              <span className="text-xs font-normal text-neutral-500">
-                ({favorites.length})
-              </span>
-            </h2>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Первые пять в выбранном порядке
-            </p></div>
-            <Link className="favorite-button" href={`/u/${encodeURIComponent(user.username)}/favorites`}>Все любимые фильмы и сериалы →</Link>
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <span>⭐ Любимые сериалы и фильмы</span>
+                <span className="text-xs font-normal text-neutral-500">
+                  ({favorites.length})
+                </span>
+              </h2>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Первые пять в выбранном порядке
+              </p>
+            </div>
+            <Link
+              className="favorite-button"
+              href={`/u/${encodeURIComponent(user.username)}/favorites`}
+            >
+              Все любимые фильмы и сериалы →
+            </Link>
           </div>
 
           {favorites.length === 0 ? (
@@ -661,8 +728,6 @@ export default function UserProfilePage({
           )}
         </section>
       </div>
-
-
     </div>
   );
 }

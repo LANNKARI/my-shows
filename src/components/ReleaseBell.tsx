@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import NavigationIcon from "./NavigationIcon";
 import useReleaseInbox from "./useReleaseInbox";
+import FriendNoticeList from "@/components/FriendNoticeList";
 import ReleaseNoticeList from "./ReleaseNoticeList";
 import "./releases.css";
 export default function ReleaseBell() {
@@ -91,7 +92,10 @@ function Bell() {
         >
           <div className="rc-heading inbox-compact-heading">
             <h2>Уведомления</h2>
-            <div className="rc-tabs compact-tabs" aria-label="Фильтр уведомлений">
+            <div
+              className="rc-tabs compact-tabs"
+              aria-label="Фильтр уведомлений"
+            >
               <button
                 aria-pressed={mode === "unread"}
                 onClick={() => setMode("unread")}
@@ -119,19 +123,35 @@ function Bell() {
               {inbox.error}
             </p>
           )}
+          {inbox.message && (
+            <p role="status" className="rc-muted">
+              {inbox.message}
+            </p>
+          )}
           {inbox.loading && !inbox.data && (
             <p role="status">Загрузка уведомлений…</p>
           )}
           {inbox.data && (
             <>
+              <FriendNoticeList
+                items={(inbox.data.friendRequests || []).slice(0, 3)}
+                saving={inbox.saving}
+                respond={inbox.respondFriend}
+              />
               <ReleaseNoticeList
-                items={inbox.data.items.slice(0, 3)}
+                items={inbox.data.items.slice(
+                  0,
+                  Math.max(0, 3 - (inbox.data.friendRequests?.length || 0)),
+                )}
                 saving={inbox.saving}
                 read={inbox.read}
               />
-              {!inbox.data.items.length && (
-                <p className="rc-muted rc-empty">Новых уведомлений пока нет.</p>
-              )}
+              {!inbox.data.items.length &&
+                !inbox.data.friendRequests?.length && (
+                  <p className="rc-muted rc-empty">
+                    Новых уведомлений пока нет.
+                  </p>
+                )}
             </>
           )}
           {inbox.error && (

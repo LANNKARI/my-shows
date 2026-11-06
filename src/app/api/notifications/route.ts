@@ -57,7 +57,14 @@ export async function GET(request: NextRequest) {
       userShow: { userId },
       episode: { airDate: { lte: dayDate(today) } },
     };
-    const [rows, unreadCount, latest] = await Promise.all([
+    const [
+      rows,
+      unreadCount,
+      latest,
+      friendRows,
+      friendUnreadCount,
+      latestFriend,
+    ] = await Promise.all([
       prisma.releaseNotification.findMany({
         where: {
           ...base,
@@ -74,22 +81,59 @@ export async function GET(request: NextRequest) {
         orderBy: { id: "desc" },
         select: { id: true },
       }),
+      prisma.friendship.findMany({
+        where: {
+          addresseeId: userId,
+          status: "pending",
+          ...(mode === "unread" ? { notificationReadAt: null } : {}),
+        },
+        orderBy: { id: "desc" },
+        take: 101,
+        select: {
+          id: true,
+          createdAt: true,
+          notificationReadAt: true,
+          requester: {
+            select: { id: true, username: true, name: true, avatarUrl: true },
+          },
+        },
+      }),
+      prisma.friendship.count({
+        where: {
+          addresseeId: userId,
+          status: "pending",
+          notificationReadAt: null,
+        },
+      }),
+      prisma.friendship.findFirst({
+        where: { addresseeId: userId, status: "pending" },
+        orderBy: { id: "desc" },
+        select: { id: true },
+      }),
     ]);
-    const items = rows
-      .slice(0, 30)
-      .map((row) => ({
-        id: row.id,
-        showId: row.userShow.showId,
-        title: row.userShow.show.name,
-        posterUrl: formatPosterUrl(row.userShow.show.posterUrl),
-        season: row.episode.season,
-        episode: row.episode.episode,
-        date: row.episode.airDate!.toISOString().slice(0, 10),
-        read: !!row.readAt,
-      }));
+    const items = rows.slice(0, 30).map((row) => ({
+      id: row.id,
+      showId: row.userShow.showId,
+      title: row.userShow.show.name,
+      posterUrl: formatPosterUrl(row.userShow.show.posterUrl),
+      season: row.episode.season,
+      episode: row.episode.episode,
+      date: row.episode.airDate!.toISOString().slice(0, 10),
+      read: !!row.readAt,
+    }));
     return privateJson({
       items,
-      unreadCount,
+      unreadCount: unreadCount + friendUnreadCount,
+      friendRequests: friendRows
+        .slice(0, 100)
+        .map((row) => ({
+          id: row.id,
+          user: row.requester,
+          createdAt: row.createdAt.toISOString(),
+          read: !!row.notificationReadAt,
+        })),
+      friendRequestsTruncated: friendRows.length > 100,
+      latestFriendId: latestFriend?.id || 0,
       latestId: latest?.id || 0,
       nextCursor: rows.length > 30 ? items.at(-1)!.id : null,
       preferences,
@@ -122,6 +166,13 @@ export async function PATCH(request: NextRequest) {
           )
     )
       throw new CalendarError(400, "Некорректные уведомления");
+    if (
+      body.throughFriendId !== undefined &&
+      (!all ||
+        !Number.isSafeInteger(body.throughFriendId) ||
+        body.throughFriendId < 0)
+    )
+      throw new CalendarError(400, "Некорректные уведомления");
     const base = {
       userShow: { userId },
       episode: { airDate: { lte: dayDate(today) } },
@@ -133,13 +184,26 @@ export async function PATCH(request: NextRequest) {
       })) !== new Set(body.ids).size
     )
       throw new CalendarError(404, "Уведомление не найдено");
-    const result = await prisma.releaseNotification.updateMany({
-      where: {
-        ...base,
-        readAt: null,
-        id: all ? { lte: body.throughId } : { in: body.ids },
-      },
-      data: { readAt: new Date() },
+    const [result] = await prisma.$transaction(async (tx) => {
+      const result = await tx.releaseNotification.updateMany({
+        where: {
+          ...base,
+          readAt: null,
+          id: all ? { lte: body.throughId } : { in: body.ids },
+        },
+        data: { readAt: new Date() },
+      });
+      if (all && body.throughFriendId !== undefined)
+        await tx.friendship.updateMany({
+          where: {
+            addresseeId: userId,
+            status: "pending",
+            notificationReadAt: null,
+            id: { lte: body.throughFriendId },
+          },
+          data: { notificationReadAt: new Date() },
+        });
+      return [result];
     });
     return privateJson({ success: true, updated: result.count });
   } catch (error) {

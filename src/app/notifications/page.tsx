@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import useReleaseInbox from "@/components/useReleaseInbox";
+import FriendNoticeList from "@/components/FriendNoticeList";
 import ReleaseNoticeList from "@/components/ReleaseNoticeList";
 import ReleaseSettings from "@/components/ReleaseSettings";
 import "@/components/releases.css";
@@ -31,15 +32,28 @@ function Notifications() {
     </div>
   );
 }
-function Inbox({ mode, setMode }: { mode: "all" | "unread"; setMode: (mode: "all" | "unread") => void }) {
+function Inbox({
+  mode,
+  setMode,
+}: {
+  mode: "all" | "unread";
+  setMode: (mode: "all" | "unread") => void;
+}) {
   const inbox = useReleaseInbox(mode);
   return (
     <>
       <div className="rc-heading inbox-compact-heading">
         <h1>Уведомления</h1>
         <div className="rc-tabs compact-tabs" aria-label="Фильтр уведомлений">
-          <button aria-pressed={mode === "unread"} onClick={() => setMode("unread")}>Новые</button>
-          <button aria-pressed={mode === "all"} onClick={() => setMode("all")}>Все</button>
+          <button
+            aria-pressed={mode === "unread"}
+            onClick={() => setMode("unread")}
+          >
+            Новые
+          </button>
+          <button aria-pressed={mode === "all"} onClick={() => setMode("all")}>
+            Все
+          </button>
         </div>
         <button
           className="rc-text"
@@ -50,8 +64,14 @@ function Inbox({ mode, setMode }: { mode: "all" | "unread"; setMode: (mode: "all
         </button>
       </div>
       <div className="rc-heading">
-        <p className="rc-muted">{inbox.data ? `Непрочитанных: ${inbox.data.unreadCount}` : "Проверяем уведомления…"}</p>
-        <Link href="/calendar" className="rc-link">Календарь →</Link>
+        <p className="rc-muted">
+          {inbox.data
+            ? `Непрочитанных: ${inbox.data.unreadCount}`
+            : "Проверяем уведомления…"}
+        </p>
+        <Link href="/calendar" className="rc-link">
+          Календарь →
+        </Link>
       </div>
       {inbox.error && (
         <div className="rc-error" role="alert">
@@ -61,17 +81,27 @@ function Inbox({ mode, setMode }: { mode: "all" | "unread"; setMode: (mode: "all
           </button>
         </div>
       )}
+      {inbox.message && (
+        <p role="status" className="rc-muted">
+          {inbox.message}
+        </p>
+      )}
       {inbox.loading && !inbox.data && (
         <p role="status">Загрузка уведомлений…</p>
       )}
       {inbox.data && (
         <>
+          <FriendNoticeList
+            items={inbox.data.friendRequests || []}
+            saving={inbox.saving}
+            respond={inbox.respondFriend}
+          />
           <ReleaseNoticeList
             items={inbox.data.items}
             saving={inbox.saving}
             read={inbox.read}
           />
-          {!inbox.data.items.length && (
+          {!inbox.data.items.length && !inbox.data.friendRequests?.length && (
             <section className="rc-panel rc-empty">
               <h2>
                 {mode === "unread"
@@ -86,6 +116,11 @@ function Inbox({ mode, setMode }: { mode: "all" | "unread"; setMode: (mode: "all
                 Открыть календарь →
               </Link>
             </section>
+          )}
+          {inbox.data.friendRequestsTruncated && (
+            <Link className="rc-link" href="/friends">
+              Все заявки в друзья →
+            </Link>
           )}
           {inbox.data.nextCursor && (
             <button

@@ -116,11 +116,20 @@ export async function credit(
   if (existing) return { amount: existing.amount, duplicate: true };
   const day = economyDay(now);
   let amount = wanted;
-  if (category === "game" && wanted > 0 && await tx.premiumPeriod.findFirst({where:{userId,revokedAt:null,startsAt:{lte:now},endsAt:{gt:now}},select:{id:true}})) {
-    const user = await tx.user.findUniqueOrThrow({where:{id:userId},select:{premiumBonusTenths:true}});
-    const tenths=user.premiumBonusTenths+wanted;
-    amount+=Math.floor(tenths/10);
-    await tx.user.update({where:{id:userId},data:{premiumBonusTenths:tenths%10}});
+  if (
+    category === "game" &&
+    wanted > 0 &&
+    (await tx.premiumPeriod.findFirst({
+      where: {
+        userId,
+        revokedAt: null,
+        startsAt: { lte: now },
+        endsAt: { gt: now },
+      },
+      select: { id: true },
+    }))
+  ) {
+    amount = wanted * 2;
   }
   await tx.popcornEntry.create({
     data: { userId, eventKey, category, amount, reason, day },

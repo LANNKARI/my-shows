@@ -1,4 +1,5 @@
 "use client";
+import { useAccount } from "@/components/AccountAccess";
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { prepareImages } from "@/lib/prepare-images";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +23,7 @@ type Answer = Daily & {
   gameEarned?: number;
 };
 export default function QuizPage() {
+  const { account } = useAccount();
   const [question, setQuestion] = useState<Question | null>(null),
     [result, setResult] = useState<Answer | null>(null),
     [error, setError] = useState(""),
@@ -45,10 +47,14 @@ export default function QuizPage() {
     setBusy(true);
     setError("");
     try {
-      const r = await privateFetch("/api/popcorn?action=get-quiz", controller.signal);
+      const r = await privateFetch(
+        "/api/popcorn?action=get-quiz",
+        controller.signal,
+      );
       const data = await r.json();
       if (!r.ok) throw Error(data.error || "Не удалось загрузить кадр");
-      if (!data.limitReached) await prepareImages([data.backdropUrl], controller.signal);
+      if (!data.limitReached)
+        await prepareImages([data.backdropUrl], controller.signal);
       if (controller.signal.aborted) return;
       setDaily((previous) => ({ ...previous, ...data }));
       setLimitReached(!!data.limitReached);
@@ -106,8 +112,8 @@ export default function QuizPage() {
       </Link>
       <h1 className="text-2xl font-bold">Угадай фильм по кадру</h1>
       <p className="text-sm text-neutral-400">
-        10 кадров в сутки · +1 🍿 за верный ответ. Без аниме и повторов
-        загаданных фильмов в течение 7 дней.
+        10 кадров в сутки · +{account?.premium.active ? 2 : 1} 🍿 за верный
+        ответ. Без аниме и повторов загаданных фильмов в течение 7 дней.
       </p>
       <div className="flex flex-wrap gap-3 text-sm text-neutral-300">
         <span>

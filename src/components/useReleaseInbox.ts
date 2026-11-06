@@ -5,6 +5,7 @@ export default function useReleaseInbox(mode: "all" | "unread" = "all") {
   const instanceId = useId();
   const [data, setData] = useState<ReleaseInbox | null>(null),
     [error, setError] = useState(""),
+    [message, setMessage] = useState(""),
     [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false);
   const controller = useRef<AbortController | null>(null),
@@ -78,7 +79,13 @@ export default function useReleaseInbox(mode: "all" | "unread" = "all") {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
-            ids ? { ids } : { all: true, throughId: snapshot.current.latestId },
+            ids
+              ? { ids }
+              : {
+                  all: true,
+                  throughId: snapshot.current.latestId,
+                  throughFriendId: snapshot.current.latestFriendId || 0,
+                },
           ),
           signal: AbortSignal.timeout(15000),
         },
@@ -99,6 +106,43 @@ export default function useReleaseInbox(mode: "all" | "unread" = "all") {
           ? error.message
           : "Не удалось подтвердить сохранение. Обновите уведомления.",
       );
+      return false;
+    } finally {
+      lock.current = false;
+      setSaving(false);
+    }
+  }
+  async function respondFriend(id: number, action: "accept" | "decline") {
+    if (lock.current) return false;
+    lock.current = true;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const r = await fetch(`/api/notifications/friends/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const result = await r.json();
+      if (!r.ok)
+        throw new Error(result.error || "Не удалось обработать заявку");
+      await refresh();
+      window.dispatchEvent(
+        new CustomEvent("notifications-updated", {
+          detail: { source: instanceId },
+        }),
+      );
+      window.dispatchEvent(new Event("friends-updated"));
+      setMessage(
+        action === "accept"
+          ? "Заявка принята. Теперь вы друзья."
+          : "Заявка отклонена.",
+      );
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось обработать заявку");
       return false;
     } finally {
       lock.current = false;
@@ -137,5 +181,15 @@ export default function useReleaseInbox(mode: "all" | "unread" = "all") {
       setLoading(false);
     }
   }
-  return { data, loading, error, saving, refresh, read, more };
+  return {
+    data,
+    loading,
+    error,
+    saving,
+    refresh,
+    read,
+    more,
+    respondFriend,
+    message,
+  };
 }

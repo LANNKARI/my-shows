@@ -1,5 +1,6 @@
 "use client";
 
+import { useAccount } from "@/components/AccountAccess";
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { prepareImages } from "@/lib/prepare-images";
 import React, { useEffect, useState, useCallback, useRef } from "react";
@@ -40,15 +41,21 @@ async function fetchGameRound(signal?: AbortSignal): Promise<GameRoundData> {
 
 async function prepareRoundImages(json: GameRoundData, signal?: AbortSignal) {
   if (!json.limitReached && json.phase !== "paid") {
-    await prepareImages([json.leftMovie?.posterUrl, json.rightMovie?.posterUrl], signal);
+    await prepareImages(
+      [json.leftMovie?.posterUrl, json.rightMovie?.posterUrl],
+      signal,
+    );
   }
 }
 
 export default function HigherLowerPage() {
+  const { account } = useAccount();
   const [data, setData] = useState<GameRoundData | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentRound, setCurrentRound] = useState(1);
   const [accumulatedBank, setAccumulatedBank] = useState(0);
+  const rewardFactor = account?.premium.active && !data?.practice ? 2 : 1;
+  const displayedBank = accumulatedBank * rewardFactor;
 
   const [hasAnswered, setHasAnswered] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
@@ -236,7 +243,7 @@ export default function HigherLowerPage() {
                     : "bg-neutral-950 text-neutral-500 border-neutral-800"
               }`}
             >
-              Раунд {r} <span className="opacity-80">(+{1} 🍿)</span>
+              Раунд {r} <span className="opacity-80">(+{rewardFactor} 🍿)</span>
             </div>
           ))}
         </div>
@@ -244,10 +251,10 @@ export default function HigherLowerPage() {
         {/* Счётчики попыток и банка */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-neutral-300 bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded-xl whitespace-nowrap">
-            +1 🍿 · без лимита
+            +{rewardFactor} 🍿 · без лимита
           </span>
           <span className="text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-xl whitespace-nowrap">
-            Банк: <strong>{accumulatedBank} 🍿</strong>
+            Банк: <strong>{displayedBank} 🍿</strong>
           </span>
         </div>
       </div>
@@ -386,7 +393,7 @@ export default function HigherLowerPage() {
           <div>
             <h3 className="text-lg font-black">
               {isCorrect
-                ? `🎉 Точно! +1 🍿 в банк (Всего: ${accumulatedBank} 🍿)`
+                ? `🎉 Точно! +1 🍿 в банк (Всего: ${displayedBank} 🍿)`
                 : "💥 Ошибка! Накопленный банк сгорел."}
             </h3>
             <p className="text-xs text-neutral-400 mt-1">
@@ -416,7 +423,7 @@ export default function HigherLowerPage() {
                   disabled={submitting}
                   className="w-full sm:w-auto px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
                 >
-                  💰 Забрать {accumulatedBank} 🍿 и завершить
+                  💰 Забрать {displayedBank} 🍿 и завершить
                 </button>
               </>
             )}

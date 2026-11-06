@@ -6,6 +6,8 @@ import { credit, lockWallet } from "./popcorn-economy";
 export const PREMIUM_PRICE = 2000,
   PREMIUM_BONUS = 500,
   PREMIUM_PERIOD_MS = 30 * 86400000;
+import { PREMIUM_PLANS } from "./premium-plans";
+export { PREMIUM_PLANS } from "./premium-plans";
 export async function premiumActive(
   userId: string,
   db: Prisma.TransactionClient = prisma,
@@ -41,8 +43,8 @@ export async function settlePremiumBonus(
       userId,
       `premium-bonus:${period.id}`,
       "premium",
-      PREMIUM_BONUS,
-      "500 🍿 за период Premium",
+      period.activationBonus,
+      `${period.activationBonus} 🍿 за период Premium на ${period.durationDays} дней`,
       now,
     );
     await tx.premiumPeriod.update({
@@ -72,6 +74,7 @@ export async function premiumSnapshot(userId: string) {
       balance: user.popcorn,
       bonusTenths: user.premiumBonusTenths,
       price: PREMIUM_PRICE,
+      plans: PREMIUM_PLANS,
     };
   });
 }
@@ -79,11 +82,14 @@ export async function purchasePremium(userId: string, input: unknown) {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new CalendarError(400, "Некорректный запрос");
   const b = input as Record<string, unknown>;
+  const plan = PREMIUM_PLANS.find((p) => p.days === (b.days ?? 30));
   if (
     Object.keys(b).some(
-      (k) => !["requestKey", "expectedUntil", "expectedPrice"].includes(k),
+      (k) =>
+        !["requestKey", "expectedUntil", "expectedPrice", "days"].includes(k),
     ) ||
-    b.expectedPrice !== PREMIUM_PRICE ||
+    !plan ||
+    b.expectedPrice !== plan.price ||
     typeof b.requestKey !== "string" ||
     !/^\w[\w-]{15,79}$/.test(b.requestKey) ||
     !(
@@ -101,7 +107,14 @@ export async function purchasePremium(userId: string, input: unknown) {
           userId_requestKey: { userId, requestKey: b.requestKey as string },
         },
       });
-      if (old) return { success: true, duplicate: true };
+      if (old) {
+        if (old.durationDays !== plan.days)
+          throw new CalendarError(
+            409,
+            "Этот запрос уже использован для другого тарифа",
+          );
+        return { success: true, duplicate: true };
+      }
       await settlePremiumBonus(tx, userId);
       const last = await tx.premiumPeriod.findFirst({
         where: { userId, revokedAt: null },
@@ -116,7 +129,7 @@ export async function purchasePremium(userId: string, input: unknown) {
         where: { id: userId },
         select: { popcorn: true },
       });
-      if (user.popcorn < PREMIUM_PRICE)
+      if (user.popcorn < plan.price)
         throw new CalendarError(409, "Не хватает попкорнов");
       const now = new Date(),
         startsAt = new Date(
@@ -127,8 +140,8 @@ export async function purchasePremium(userId: string, input: unknown) {
         userId,
         `premium-purchase:${b.requestKey}`,
         "purchase",
-        -PREMIUM_PRICE,
-        "Premium на 30 дней",
+        -plan.price,
+        `Premium на ${plan.days} дней`,
         now,
       );
       await tx.premiumPeriod.create({
@@ -136,7 +149,9 @@ export async function purchasePremium(userId: string, input: unknown) {
           userId,
           requestKey: b.requestKey as string,
           startsAt,
-          endsAt: new Date(startsAt.getTime() + PREMIUM_PERIOD_MS),
+          endsAt: new Date(startsAt.getTime() + plan.days * 86400000),
+          durationDays: plan.days,
+          activationBonus: plan.bonus,
           source: "purchase",
         },
       });

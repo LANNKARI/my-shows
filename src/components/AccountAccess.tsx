@@ -28,6 +28,7 @@ export type AccountAccess = {
     balance: number;
     bonusTenths: number;
     price: number;
+    plans?: { days: number; price: number; bonus: number }[];
   };
 };
 const Context = createContext<{
