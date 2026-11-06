@@ -114,7 +114,7 @@ export default function TopPage() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 pb-24">
+    <div className="min-h-screen bg-transparent text-neutral-100 pb-24">
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         {/* Заголовок */}
         <div>
@@ -122,8 +122,8 @@ export default function TopPage() {
             <span>🥇</span>
             <span>Топ пользователей</span>
           </h1>
-          <p className="text-xs text-neutral-400 mt-1">
-            Самые активные участники episyhub
+          <p className="text-sm sm:text-base text-neutral-400 mt-1">
+            Самые активные участники EpisyHub
           </p>
         </div>
 
@@ -169,7 +169,6 @@ export default function TopPage() {
             {sortedUsers.map((user, index) => {
               const rank = index + 1;
               const { val, label } = getScoreDisplay(user);
-              const userBadges = user.badges || user.achievements || [];
 
               const rankBg =
                 rank === 1
@@ -212,7 +211,7 @@ export default function TopPage() {
                       )}
                     </Link>
 
-                    {/* Имя и значки достижений */}
+                    {/* Имя и значки ролей */}
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Link
@@ -222,40 +221,7 @@ export default function TopPage() {
                           <AccountName userId={user.id}>{user.name || user.username}</AccountName>
                         </Link>
 
-                        {/* Значки достижений */}
-                        {userBadges.length > 0 && (
-                          <div className="flex items-center gap-1">
-                            {userBadges.slice(0, 4).map((badge, bIdx) => {
-                              const bTitle =
-                                badge.name || badge.title || 'Достижение';
-                              const isImg =
-                                badge.icon.startsWith('/') ||
-                                badge.icon.includes('.') ||
-                                badge.icon.startsWith('http');
 
-                              return (
-                                <div
-                                  key={badge.id || bIdx}
-                                  title={bTitle}
-                                  className="w-5 h-5 rounded-full overflow-hidden bg-neutral-950 border border-amber-500/50 flex items-center justify-center flex-shrink-0 shadow-sm"
-                                >
-                                  {isImg ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={tmdbImageUrl(badge.icon)}
-                                      alt={bTitle}
-                                      className="w-full h-full object-cover"
-                                    />
-                                  ) : (
-                                    <span className="text-[10px] leading-none">
-                                      {badge.icon}
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
                       </div>
 
                       <p className="text-[11px] text-neutral-500 truncate">
@@ -279,10 +245,7 @@ export default function TopPage() {
           </div>
         )}
 
-        {/* Футер */}
-        <div className="text-center pt-8 text-xs text-neutral-600">
-          My Shows — личный трекер сериалов
-        </div>
+
       </div>
     </div>
   );
