@@ -1,4 +1,5 @@
 "use client";
+import PremiumBadge from "./PremiumBadge";
 import {
   createContext,
   useContext,
@@ -180,8 +181,8 @@ export function AccountName({
       className="account-name"
       style={list.length ? { color: list[0].color } : undefined}
     >
-      {children}
-      {list.map((b) => (
+      <span className="account-name-text">{children}</span>
+      {list.map((b) => b.roleId === "premium" || b.name === "Premium" ? <PremiumBadge key={b.name} /> : (
         <span
           className="account-badge"
           key={b.name}

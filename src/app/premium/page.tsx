@@ -1,4 +1,5 @@
 "use client";
+import PremiumBadge from "@/components/PremiumBadge";
 import { useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -81,7 +82,7 @@ export default function PremiumPage() {
       <p className="account-muted">Больше возможностей для ваших киноисторий</p>
       <section className="premium-hero">
         <div>
-          <span className="premium-chip">✦ PREMIUM</span>
+          <span className="premium-chip"><PremiumBadge decorative/> PREMIUM</span>
           <h2>Ваш профиль — с характером</h2>
           <p>
             Особый значок, расширенная статистика и эксклюзивное оформление.
@@ -174,7 +175,7 @@ export default function PremiumPage() {
       <div className="premium-benefits">
         {benefits.map(([icon, title, text]) => (
           <section className="account-panel" key={title}>
-            <span className="premium-icon">{icon}</span>
+            <span className="premium-icon">{icon === "✦" ? <PremiumBadge size={32} decorative/> : icon}</span>
             <h3>{title}</h3>
             <p className="account-muted">{text}</p>
           </section>

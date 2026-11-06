@@ -138,6 +138,8 @@
 }
 .premium-chip {
   display: inline-flex;
+  align-items:center;
+  gap:6px;
   padding: 6px 10px;
   border-radius: 8px;
   background: #84602726;
@@ -255,7 +257,8 @@
 :root[data-theme="dark"] .premium-chip {
   color: #f5d093;
 }
-:root[data-theme="light"] .account-name {
+:root[data-theme="light"] .account-name-text,
+:root[data-theme="light"] .account-badge {
   filter: brightness(0.7);
 }
 @media (max-width: 767px) {
@@ -355,3 +358,6 @@
   color: var(--text);
   min-height: 100px;
 }
+
+.premium-badge-icon{display:inline-block;flex-shrink:0;object-fit:contain;vertical-align:middle;user-select:none}
+.account-name-text{min-width:0;overflow:hidden;text-overflow:ellipsis}

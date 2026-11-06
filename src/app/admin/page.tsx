@@ -1,4 +1,5 @@
 "use client";
+import PremiumBadge from "@/components/PremiumBadge";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount } from "@/components/AccountAccess";
 import Link from "next/link";
@@ -526,7 +527,7 @@ export default function AdminPage() {
                   ))}
                   {row.premiumPeriods?.[0] && (
                     <span className="premium-chip">
-                      ✦ Premium до{" "}
+                      <PremiumBadge decorative/> Premium до{" "}
                       {new Date(
                         row.premiumPeriods[0].endsAt,
                       ).toLocaleDateString("ru-RU")}
