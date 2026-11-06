@@ -204,7 +204,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
   const selectedId = (kind: CosmeticKind) =>
     kind === "frame" ? user.avatarFrame : kind === "profile" ? user.profileStyle : user.siteTheme;
   const isOwned = (item: CosmeticItem) =>
-    item.price === 0 || owned.has(item.id);
+    item.premium || item.roleId ? !!data.entitlements?.includes(item.id) : item.price === 0 || owned.has(item.id);
   const shown = catalog.filter(
     (item) => item.kind === category && (item.kind !== "theme" || item.tone === themeTone) && (tab === "shop" || isOwned(item)),
   );
@@ -341,7 +341,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
                 <div>
                   <span>{isOwned(active) ? "В коллекции" : "Стоимость"}</span>
                   <strong>
-                    {active.price === 0
+                    {active.premium ? "Premium" : active.roleId ? "Первопроходец" : active.price === 0
                       ? "Бесплатно"
                       : isOwned(active)
                         ? "Куплено"
@@ -359,7 +359,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
                   </div>
                 )}
               </div>
-              {isOwned(active) ? (
+              {(active.premium||active.roleId)&&!isOwned(active)? <Link className="cx-button cx-primary" href={active.premium?"/premium":"/u/"+user.username}>{active.premium?"Подключить Premium":"Нужна роль «Первопроходец»"}</Link> : isOwned(active) ? (
                 <button
                   className="cx-button cx-primary"
                   disabled={busy || selectedId(active.kind) === active.id}
@@ -430,7 +430,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
               <div><h2>🍂 Примерка: {active.name}</h2><p className="cx-muted">Тема видна только вам. {isOwned(active) ? "Уже в вашей коллекции." : `Стоимость: ${active.price} 🍿. Покупка навсегда.`}</p></div>
               <div className="cx-theme-preview-actions">
                 <button className="cx-button" disabled={busy} onClick={stopPreview}>Отменить примерку</button>
-                {isOwned(active) ? <button className="cx-button cx-primary" disabled={busy} onClick={() => void mutate("equip", active)}>Применить тему</button> : <button className="cx-button cx-primary" disabled={busy || user.popcorn < active.price} onClick={() => { setError(""); setQuote(active); }}>Купить за {active.price} 🍿</button>}
+                {(active.premium||active.roleId)&&!isOwned(active)?<Link className="cx-button cx-primary" href="/premium">Подключить Premium</Link>:isOwned(active) ? <button className="cx-button cx-primary" disabled={busy} onClick={() => void mutate("equip", active)}>Применить тему</button> : <button className="cx-button cx-primary" disabled={busy || user.popcorn < active.price} onClick={() => { setError(""); setQuote(active); }}>Купить за {active.price} 🍿</button>}
               </div>
               {!isOwned(active) && user.popcorn < active.price && <p className="cx-muted">Не хватает {active.price - user.popcorn} попкорна. Примерка бесплатна.</p>}
             </section>
@@ -507,7 +507,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
                       selected ? "cx-selected" : isOwned(item) ? "cx-owned" : ""
                     }
                   >
-                    {item.price === 0
+                    {item.premium ? "✦ Premium" : item.roleId ? "Первопроходец" : item.price === 0
                       ? "Бесплатно"
                       : isOwned(item)
                         ? "Куплено"

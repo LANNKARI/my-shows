@@ -138,6 +138,14 @@ before(async () => {
   for(const table of ['PromoCode','PromoRedemption']) {
     const flags=await prisma.$queryRawUnsafe<{relrowsecurity:boolean}[]>('SELECT relrowsecurity FROM pg_class WHERE oid=$1::regclass',`"${table}"`);assert.equal(flags[0].relrowsecurity,true);
   }
+  // Verify the account access migration against an existing populated app schema.
+  for(const table of ['EditorialPick','AdminAudit','PremiumPeriod','UserRole','SiteRole','SiteOwner']) await prisma.$executeRawUnsafe(`DROP TABLE "${table}"`);
+  await prisma.$executeRawUnsafe('ALTER TABLE "User" DROP COLUMN "premiumBonusTenths"');
+  const accessMigration=await readFile('prisma/migrations/20261106000000_account_roles_premium/migration.sql','utf8');
+  await prisma.$transaction(async tx=>{for(const statement of accessMigration.replace(/^--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean))await tx.$executeRawUnsafe(statement);});
+  for(const table of ['SiteOwner','SiteRole','UserRole','PremiumPeriod','AdminAudit','EditorialPick']) {
+    const flags=await prisma.$queryRawUnsafe<{relrowsecurity:boolean}[]>('SELECT relrowsecurity FROM pg_class WHERE oid=$1::regclass',`"${table}"`);assert.equal(flags[0].relrowsecurity,true);
+  }
   const passwordHash = await bcrypt.hash(password, 10);
   alice = await prisma.user.create({ data: { username: 'security_alice', email: 'alice@example.test', passwordHash } });
   bob = await prisma.user.create({ data: { username: 'security_bob', email: 'bob@example.test', passwordHash } });
@@ -2270,4 +2278,152 @@ test('promo codes roll back all changes on failure, reject cross-origin requests
   assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,100);assert.equal((await prisma.promoCode.findUniqueOrThrow({where:{id:promo.id}})).redeemedCount,0);assert.equal(await prisma.promoRedemption.count({where:{promoCodeId:promo.id}}),0);
   const response=await fetch(base+'/api/promo-codes/redeem',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://untrusted.example',Cookie:[...owner.cookies].map(([k,v])=>`${k}=${v}`).join('; ')},body:JSON.stringify({code:promo.code})});assert.equal(response.status,403);
   let status=0;for(let i=0;i<21;i++)status=(await redeem(owner,'MISSING')).status;assert.equal(status,429);
+});
+
+
+test('account access: only the pinned owner can manage roles and privileges never come from profile input', async()=>{
+  assert.equal((await guest.request('/api/admin')).status,401);
+  assert.equal((await other.request('/api/admin')).status,403);
+  await prisma.siteOwner.create({data:{id:1,userId:alice.id}});
+  assert.equal((await owner.request('/api/admin')).status,200);
+  assert.equal((await owner.request('/api/account')).status,200);
+  await prisma.user.update({where:{id:alice.id},data:{username:'owner_renamed'}});
+  assert.equal((await owner.request('/api/admin')).status,200);
+  await prisma.user.update({where:{id:alice.id},data:{username:alice.username}});
+  await assert.rejects(prisma.siteOwner.create({data:{id:2,userId:bob.id}}));
+  assert.equal((await other.request('/api/users/me','PATCH',{role:'admin',isAdmin:true,premiumUntil:'2099-01-01'})).status,200);
+  assert.equal((await other.request('/api/admin')).status,403);
+  assert.equal((await prisma.premiumPeriod.count({where:{userId:bob.id}})),0);
+  const key=randomUUID();
+  const body={action:'roleSave',requestKey:key,name:'Trusted fixture',color:'#906d42',icon:'◆',permissions:['moderate_comments']};
+  assert.equal((await other.request('/api/admin','POST',body)).status,403);
+  assert.equal((await owner.request('/api/admin','POST',{...body,permissions:['manage_roles']})).status,400);
+  assert.equal((await owner.request('/api/admin','POST',body)).status,200);
+  assert.equal((await owner.request('/api/admin','POST',body)).status,200);
+  assert.equal(await prisma.siteRole.count({where:{name:'Trusted fixture'}}),1);
+  assert.equal(await prisma.adminAudit.count({where:{requestKey:key}}),1);
+  const role=await prisma.siteRole.findUniqueOrThrow({where:{name:'Trusted fixture'}});
+  assert.equal((await owner.request('/api/admin','POST',{action:'roleGrant',requestKey:randomUUID(),userId:bob.id,roleId:role.id,expiresAt:null})).status,200);
+  assert.equal((await other.request('/api/admin?tab=users')).status,403);
+  assert.equal((await other.request('/api/admin?tab=promos')).status,403);
+  assert.equal((await other.request('/api/admin?tab=comments')).status,200);
+  const foreign=await prisma.comment.create({data:{userId:alice.id,showId,text:'Moderation fixture'}});
+  assert.equal((await other.request(`/api/comments/${foreign.id}`,'DELETE')).status,200);
+  await prisma.userRole.update({where:{userId_roleId:{userId:bob.id,roleId:role.id}},data:{expiresAt:new Date(Date.now()-1000)}});
+  const protectedComment=await prisma.comment.create({data:{userId:alice.id,showId,text:'Expired role fixture'}});
+  assert.equal((await other.request(`/api/comments/${protectedComment.id}`,'DELETE')).status,403);
+  assert.equal((await owner.request(`/api/comments/${protectedComment.id}`,'DELETE')).status,200);
+  const account=await (await other.request('/api/account')).json();assert.equal(account.moderate,false);assert.equal(account.owner,false);
+  assert.equal((await owner.request('/api/admin','POST',{action:'roleGrant',requestKey:randomUUID(),userId:bob.id,roleId:'owner',expiresAt:null})).status,400);
+  const csrf=await fetch(base+'/api/admin',{method:'POST',headers:{cookie:[...owner.cookies].map(([k,v])=>`${k}=${v}`).join('; '),'content-type':'application/json',origin:'https://evil.example'},body:JSON.stringify(body)});assert.equal(csrf.status,403);
+});
+
+test('account access: Premium purchase is atomic, idempotent, wallet scoped and extends the existing term', async()=>{
+  await prisma.user.update({where:{id:bob.id},data:{popcorn:5000}});
+  assert.equal((await guest.request('/api/premium','POST',{})).status,401);
+  const body={requestKey:randomUUID(),expectedUntil:null,expectedPrice:2000};
+  assert.equal((await other.request('/api/premium','POST',{...body,price:1})).status,400);
+  assert.equal((await other.request('/api/premium','POST',{...body,expectedPrice:1})).status,400);
+  const responses=await Promise.all([other.request('/api/premium','POST',body),other.request('/api/premium','POST',body)]);
+  for(const r of responses)assert.equal(r.status,200,await r.text());
+  assert.equal(await prisma.premiumPeriod.count({where:{userId:bob.id}}),1);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).popcorn,3500);
+  assert.equal(await prisma.popcornEntry.count({where:{userId:bob.id,category:'premium'}}),1);
+  const first=await prisma.premiumPeriod.findFirstOrThrow({where:{userId:bob.id}});
+  assert.equal(first.endsAt.getTime()-first.startsAt.getTime(),30*86400000);
+  const early={requestKey:randomUUID(),expectedUntil:first.endsAt.toISOString(),expectedPrice:2000};
+  assert.equal((await other.request('/api/premium','POST',early)).status,200);
+  const second=await prisma.premiumPeriod.findFirstOrThrow({where:{userId:bob.id},orderBy:{endsAt:'desc'}});
+  assert.equal(second.startsAt.getTime(),first.endsAt.getTime());
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).popcorn,1500,'future monthly bonus is not paid early');
+  assert.equal((await other.request('/api/premium','POST',{...early,requestKey:randomUUID()})).status,409,'stale quote rejected');
+  assert.equal((await other.request('/api/premium','POST',{requestKey:randomUUID(),expectedUntil:second.endsAt.toISOString(),expectedPrice:2000})).status,409,'insufficient funds');
+  assert.equal(await prisma.premiumPeriod.count({where:{userId:bob.id}}),2);
+  assert.equal((await other.request('/api/statistics?days=30')).status,200);
+  assert.equal((await owner.request('/api/statistics?days=30')).status,403,'administrator is not automatically Premium');
+  assert.equal((await other.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-premium-orbit'})).status,200);
+  assert.equal((await other.request('/api/cosmetics','POST',{action:'equip',itemId:'theme-obsidian'})).status,200);
+  assert.equal((await (await other.request('/api/site-theme')).json()).theme,'theme-obsidian');
+  assert.equal((await owner.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-premium-orbit'})).status,403);
+});
+
+test('account access: fractional game bonus is exact across games and duplicate rewards never advance it twice', async()=>{
+  const {credit}=await import('../src/lib/popcorn-economy');
+  const before=(await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).popcorn;
+  for(let i=0;i<9;i++)assert.equal((await prisma.$transaction(tx=>credit(tx,bob.id,`premium-game-${i}`,'game',1,'Fixture'))).amount,1);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).premiumBonusTenths,9);
+  const duplicate=await prisma.$transaction(tx=>credit(tx,bob.id,'premium-game-0','game',1,'Fixture'));assert.equal(duplicate.duplicate,true);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).premiumBonusTenths,9);
+  assert.equal((await prisma.$transaction(tx=>credit(tx,bob.id,'premium-game-10','game',1,'Fixture'))).amount,2);
+  const after=await prisma.user.findUniqueOrThrow({where:{id:bob.id}});assert.equal(after.popcorn,before+11);assert.equal(after.premiumBonusTenths,0);
+  const ordinary=await prisma.$transaction(tx=>credit(tx,bob.id,'premium-not-game','daily',10,'Fixture'));assert.equal(ordinary.amount,10);
+  await prisma.premiumPeriod.updateMany({where:{userId:bob.id},data:{revokedAt:new Date()}});
+  assert.equal((await prisma.$transaction(tx=>credit(tx,bob.id,'premium-expired-game','game',1,'Fixture'))).amount,1);
+});
+
+test('account access: revocation removes Premium access but keeps earned achievements and ordinary purchases', async()=>{
+  assert.equal((await other.request('/api/statistics')).status,403);
+  assert.equal((await other.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-premium-orbit'})).status,403);
+  assert.equal((await (await other.request('/api/site-theme')).json()).theme,null);
+  const cosmetics=await (await other.request('/api/cosmetics')).json();assert.equal(cosmetics.user.avatarFrame,'frame-standard');assert.equal(cosmetics.entitlements.includes('frame-premium-orbit'),false);
+  const achievements=await (await guest.request(`/api/users/${bob.username}/achievements`)).json();assert.equal(achievements.find((a:{id:string})=>a.id==='premium_first').unlocked,true);
+  const badges=await (await guest.request('/api/account-badges?ids='+bob.id)).json();assert.equal(badges[bob.id].some((b:{name:string})=>b.name==='Premium'),false);
+});
+
+test('account access: owner grants and future monthly bonuses are idempotent', async()=>{
+  const body={action:'premiumGrant',requestKey:randomUUID(),userId:bob.id,periods:2};
+  const before=(await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).popcorn;
+  for(const r of await Promise.all([owner.request('/api/admin','POST',body),owner.request('/api/admin','POST',body)]))assert.equal(r.status,200,await r.text());
+  assert.equal(await prisma.premiumPeriod.count({where:{userId:bob.id,source:'gift'}}),2);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).popcorn,before+500);
+  const future=await prisma.premiumPeriod.findFirstOrThrow({where:{userId:bob.id,source:'gift',bonusPaidAt:null}});
+  await prisma.premiumPeriod.update({where:{id:future.id},data:{startsAt:new Date(Date.now()-1000)}});
+  for(const r of await Promise.all([other.request('/api/account'),other.request('/api/account')]))assert.equal(r.status,200);
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:bob.id}})).popcorn,before+1000);
+  assert.equal(await prisma.popcornEntry.count({where:{userId:bob.id,eventKey:`premium-bonus:${future.id}`}}),1);
+  assert.equal((await owner.request('/api/admin','POST',{action:'premiumRevoke',requestKey:randomUUID(),userId:bob.id})).status,200);
+  assert.equal((await (await other.request('/api/account')).json()).premium.active,false);
+});
+
+test('account access: administrator-created promo activates through the existing redemption flow', async()=>{
+  const code='ACCESS_'+randomBytes(6).toString('hex').toUpperCase();
+  const body={action:'promoCreate',requestKey:randomUUID(),code,reward:55,startsAt:null,expiresAt:new Date(Date.now()+86400000).toISOString(),maxActivations:1};
+  assert.equal((await other.request('/api/admin','POST',body)).status,403);
+  assert.equal((await owner.request('/api/admin','POST',body)).status,200);
+  const row=await prisma.promoCode.findUniqueOrThrow({where:{code}});assert.equal(row.active,true);
+  assert.equal((await other.request('/api/promo-codes/redeem','POST',{code})).status,200);
+  assert.equal((await owner.request('/api/promo-codes/redeem','POST',{code})).status,409);
+  assert.equal((await owner.request('/api/admin','POST',{action:'promoToggle',requestKey:randomUUID(),promoId:row.id,active:false})).status,200);
+  assert.equal((await prisma.promoCode.findUniqueOrThrow({where:{id:row.id}})).active,false);
+});
+
+test('account access: curators can publish only public catalog data and cannot edit another curator draft', async()=>{
+ const grant={action:'roleGrant',requestKey:randomUUID(),userId:bob.id,roleId:'curator',expiresAt:null};
+ assert.equal((await other.request('/api/picks?manage=1')).status,403);
+ assert.equal((await owner.request('/api/admin','POST',grant)).status,200);
+ const body={id:null,name:'Public curator fixture',description:'A public recommendation',showIds:[showId],published:true};
+ assert.equal((await other.request('/api/picks','POST',body)).status,200);
+ const publicList=await (await guest.request('/api/picks')).json();assert.equal(publicList.items[0].name,body.name);assert.equal(publicList.items[0].shows[0].id,showId);
+ const own=await prisma.editorialPick.findFirstOrThrow({where:{userId:bob.id}});
+ assert.equal((await owner.request('/api/picks','POST',{...body,id:own.id,published:false})).status,200);
+ assert.equal((await (await guest.request('/api/picks')).json()).items.length,0);
+ const foreign=await prisma.editorialPick.create({data:{userId:alice.id,name:'Private draft',description:'Hidden',showIds:[showId],published:false}});
+ assert.equal((await other.request('/api/picks','POST',{...body,id:foreign.id})).status,403);
+ assert.equal((await guest.request('/api/picks?manage=1')).status,401);
+ assert.equal((await other.request('/api/admin','POST',{action:'promoCreate',requestKey:randomUUID(),code:'FORGED',reward:1000000})).status,403);
+});
+
+test('account access: statistics stay private, validate the range and ignore foreign or undated episode progress',async()=>{
+ const key=randomUUID();assert.equal((await owner.request('/api/admin','POST',{action:'premiumGrant',requestKey:key,userId:bob.id,periods:1})).status,200);
+ const b=await prisma.userShow.findUniqueOrThrow({where:{userId_showId:{userId:bob.id,showId}},include:{show:{include:{episodes:true}}}});
+ await prisma.episodeProgress.update({where:{id:foreignProgressId},data:{watched:true,watchedAt:new Date()}});
+ await prisma.episodeProgress.create({data:{userShowId:b.id,episodeId:otherEpisodeId,watched:true,watchedAt:new Date()}});
+ await prisma.episodeProgress.create({data:{userShowId:b.id,episodeId:b.show.episodes[1].id,watched:true,watchedAt:null}});
+ assert.equal((await guest.request('/api/statistics')).status,401);
+ assert.equal((await other.request('/api/statistics?days=999')).status,400);
+ const stats=await (await other.request('/api/statistics?days=30&userId='+alice.id)).json();assert.equal(stats.episodes,1);assert.equal(stats.undated,1);assert.equal(stats.minutes,45);assert.equal(stats.daily.length,30);
+ const future=await prisma.premiumPeriod.create({data:{userId:bob.id,requestKey:randomUUID(),source:'gift',startsAt:new Date(Date.now()-1000),endsAt:new Date(Date.now()+86400000),revokedAt:new Date(Date.now()-2000)}});
+ const before=await (await guest.request(`/api/users/${bob.username}/achievements`)).json();
+ await prisma.premiumPeriod.delete({where:{id:future.id}});
+ const after=await (await guest.request(`/api/users/${bob.username}/achievements`)).json();assert.deepEqual(before,after,'never-started cancelled periods cannot unlock achievements later');
 });

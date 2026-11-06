@@ -14,6 +14,11 @@ datasource db {
 // ==================== ПОЛЬЗОВАТЕЛИ ====================
 
 model User {
+  premiumBonusTenths Int @default(0)
+  roles UserRole[]
+  premiumPeriods PremiumPeriod[]
+  siteOwner SiteOwner?
+  editorialPicks EditorialPick[]
   promoRedemptions PromoRedemption[]
   personalNotes PersonalNote[]
   importJobs LibraryImportJob[]
@@ -448,4 +453,65 @@ model PromoRedemption {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([promoCodeId, userId])
   @@index([userId, createdAt])
+}
+
+
+model SiteOwner {
+  id Int @id @default(1)
+  userId String @unique
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+model SiteRole {
+  id String @id
+  name String @unique @db.VarChar(40)
+  color String @default("#c1a4ff") @db.VarChar(7)
+  icon String @default("✦") @db.VarChar(8)
+  permissions String[] @default([])
+  assignments UserRole[]
+}
+model UserRole {
+  userId String
+  roleId String
+  expiresAt DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role SiteRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+model PremiumPeriod {
+  id String @id @default(cuid())
+  userId String
+  requestKey String
+  startsAt DateTime
+  endsAt DateTime
+  source String
+  bonusPaidAt DateTime?
+  revokedAt DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, requestKey])
+  @@index([userId, revokedAt, startsAt, endsAt])
+}
+model AdminAudit {
+  requestKey String? @unique
+  id Int @id @default(autoincrement())
+  actorId String
+  action String
+  target String
+  details Json
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+
+model EditorialPick {
+  id String @id @default(cuid())
+  userId String
+  name String @db.VarChar(100)
+  description String @db.VarChar(1000)
+  showIds Int[]
+  published Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([published, updatedAt])
 }

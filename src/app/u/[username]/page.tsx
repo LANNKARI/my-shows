@@ -1,5 +1,7 @@
 "use client";
 
+import { AccountName } from "@/components/AccountAccess";
+
 import FavoriteGrid from "@/components/FavoriteGrid";
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useEffect, useState, use } from "react";
@@ -277,6 +279,7 @@ export default function UserProfilePage({
               name={user.name || user.username}
               src={user.avatarUrl}
               frame={user.avatarFrame}
+              userId={user.id}
               size={112}
             />
 
@@ -284,7 +287,7 @@ export default function UserProfilePage({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight drop-shadow-sm">
-                    {user.name || user.username}
+                    <AccountName userId={user.id}>{user.name || user.username}</AccountName>
                   </h1>
                   <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
                     @{user.username}

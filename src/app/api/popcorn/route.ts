@@ -1,3 +1,4 @@
+import { premiumSnapshot } from "@/lib/premium";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -20,6 +21,7 @@ export async function GET(request: NextRequest) {
     const userId = await calendarUser(request);
     if (request.nextUrl.searchParams.get("action") === "get-quiz")
       return privateJson(await getQuiz(userId));
+    await premiumSnapshot(userId);
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { popcorn: true, lastDailyClaim: true, dailyStreak: true },

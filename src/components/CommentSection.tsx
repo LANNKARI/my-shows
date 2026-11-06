@@ -1,4 +1,5 @@
 "use client";
+import { AccountName, useAccount } from "./AccountAccess";
 import { useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import CosmeticAvatar from "./CosmeticAvatar";
@@ -25,6 +26,8 @@ export default function CommentSection({
   initialComments = [],
 }: CommentSectionProps) {
   const { data: session } = useSession();
+  const {account}=useAccount();
+  const [deleting,setDeleting]=useState<number|null>(null);
   const [comments, setComments] = useState(initialComments),
     [text, setText] = useState(""),
     [submitting, setSubmitting] = useState(false),
@@ -64,6 +67,10 @@ export default function CommentSection({
       lock.current = false;
       setSubmitting(false);
     }
+  }
+  async function remove(id:number){
+    if(deleting!==null||!window.confirm('Удалить комментарий?'))return;
+    setDeleting(id);setError('');try{const r=await fetch(`/api/comments/${id}`,{method:'DELETE'});const d=await r.json();if(!r.ok)throw Error(d.error||'Не удалось удалить');setComments(previous=>previous.filter(c=>c.id!==id));}catch(e){setError(e instanceof Error?e.message:'Ошибка соединения')}finally{setDeleting(null)}
   }
   return (
     <div className="space-y-6">
@@ -125,9 +132,10 @@ export default function CommentSection({
                       name={name}
                       src={author.avatarUrl}
                       frame={author.avatarFrame}
+                      userId={author.id}
                       size={28}
                     />
-                    <span className="text-xs font-semibold">{name}</span>
+                    <span className="text-xs font-semibold"><AccountName userId={author.id}>{name}</AccountName></span>
                   </div>
                   <time className="text-neutral-500 text-xs">
                     {comment.createdAt
@@ -138,6 +146,7 @@ export default function CommentSection({
                       : ""}
                   </time>
                 </div>
+                {(account?.moderate||(session?.user?.id&&session.user.id===author.id))&&<button className="action-button" disabled={deleting!==null} onClick={()=>void remove(comment.id)}>{deleting===comment.id?"Удаление…":"Удалить комментарий"}</button>}
                 <p className="text-sm text-neutral-300 leading-relaxed whitespace-pre-line break-words">
                   {comment.text}
                 </p>

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
+import "./account-ui.css";
 import Providers from "./providers";
 import { themeInitScript } from "@/lib/theme";
 import VkLink from "@/components/VkLink";

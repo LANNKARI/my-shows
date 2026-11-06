@@ -1,5 +1,7 @@
 'use client';
 
+import { AccountName } from "@/components/AccountAccess";
+
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -217,7 +219,7 @@ export default function TopPage() {
                           href={`/u/${user.username}`}
                           className="font-bold text-sm text-white hover:text-rose-400 transition-colors truncate"
                         >
-                          {user.name || user.username}
+                          <AccountName userId={user.id}>{user.name || user.username}</AccountName>
                         </Link>
 
                         {/* Значки достижений */}

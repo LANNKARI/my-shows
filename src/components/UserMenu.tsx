@@ -3,11 +3,13 @@
 import React, { useState, useEffect, useRef, useId } from "react";
 import Link from "next/link";
 import CosmeticAvatar from "./CosmeticAvatar";
+import { useAccount, AccountName } from "./AccountAccess";
 import ThemeToggle from "./ThemeToggle";
 import { useSession, signOut } from "next-auth/react";
 
 export default function UserMenu() {
   const { data: session } = useSession();
+  const {account}=useAccount();
   const [isOpen, setIsOpen] = useState(false);
   const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -59,12 +61,13 @@ export default function UserMenu() {
         {session?.user ? <>
         <CosmeticAvatar
           name={username}
+          userId={session.user.id}
           src={session.user.image}
-          frame={session.user.avatarFrame}
+          frame={session.user.avatarFrame === "frame-premium-orbit"&&!account?.premium.active?"frame-standard":session.user.avatarFrame}
           size={28}
         />
         <span className="text-xs font-semibold text-neutral-200 hidden sm:inline max-w-[120px] truncate">
-          {username}
+          <AccountName userId={session.user.id}>{username}</AccountName>
         </span>
         <span className="text-[10px] text-neutral-500 hidden sm:inline">▾</span>
         </> : <span className="flex h-7 w-7 items-center justify-center text-lg" aria-hidden="true">☾</span>}
@@ -93,6 +96,11 @@ export default function UserMenu() {
             <span>Мой профиль</span>
           </Link>
 
+          <Link href="/picks" onClick={()=>setIsOpen(false)} className="profile-menu-link">◈ Подборки кураторов</Link>
+          {account?.curate&&<Link href="/curation" onClick={()=>setIsOpen(false)} className="profile-menu-link">◈ Мои подборки куратора</Link>}
+          <Link href="/premium" onClick={()=>setIsOpen(false)} className="profile-menu-link">✦ EpisyHub Premium</Link>
+          <Link href="/statistics" onClick={()=>setIsOpen(false)} className="profile-menu-link">▥ Статистика просмотров</Link>
+          {(account?.owner||account?.moderate)&&<Link href="/admin" onClick={()=>setIsOpen(false)} className="profile-menu-link">⚑ Управление сайтом</Link>}
           <Link
             href="/cosmetics"
             onClick={() => setIsOpen(false)}

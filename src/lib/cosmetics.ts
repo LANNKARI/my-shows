@@ -6,10 +6,15 @@ export type CosmeticItem = {
   price: number;
   description: string;
   tone?: "light" | "dark";
+  premium?: boolean;
+  roleId?: string;
 };
 export const STANDARD_FRAME = "frame-standard",
   STANDARD_PROFILE = "profile-standard";
 export const COSMETICS: readonly CosmeticItem[] = [
+  { id: "theme-obsidian", kind: "theme", name: "Обсидиан", price: 0, tone: "dark", premium: true, description: "Глубокий графит и золотые акценты. Эксклюзив Premium." },
+  { id: "frame-premium-orbit", kind: "frame", name: "Золотая орбита", price: 0, premium: true, description: "Двойная золотая орбита со звездой. Доступна с Premium." },
+  { id: "frame-pioneer", kind: "frame", name: "Первопроходец", price: 0, roleId: "pioneer", description: "Памятная рамка для роли «Первопроходец»." },
   { id: "theme-cosmos", kind: "theme", name: "Космос", price: 0, tone: "dark", description: "Знакомая тёмная тема с космическим фоном." },
   { id: "theme-mint", kind: "theme", name: "Мята", price: 0, tone: "light", description: "Свежая светлая тема в зелёных оттенках." },
   { id: "theme-autumn-2026", kind: "theme", name: "Осень 2026", price: 500, tone: "light", description: "Тёплый свет, уютный камин и золотая осень за окном." },
@@ -97,6 +102,7 @@ export type CosmeticUser = {
 };
 export type CosmeticsData = {
   user: CosmeticUser;
+  entitlements?: string[];
   catalog: CosmeticItem[];
   purchases: { itemId: string; pricePaid: number; purchasedAt: string }[];
   stats: {

@@ -26,6 +26,7 @@ export async function achievementStats(userId: string) {
   const summary = summarizeLibrary(entries);
   return {
     ...summary,
+    premiumPeriods: await prisma.premiumPeriod.count({where:{userId,startsAt:{lte:new Date()},OR:[{revokedAt:null},{revokedAt:{gte:prisma.premiumPeriod.fields.startsAt}}]}}),
     addedShowsCount: summary.addedSeriesCount,
     commentsCount,
     friendsCount,

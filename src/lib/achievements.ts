@@ -27,6 +27,9 @@ export interface AchievementItem extends AchievementDef {
 }
 
 export const ACHIEVEMENTS_CONFIG: AchievementDef[] = [
+  {id:'premium_first',name:'Первый ряд',title:'Первый ряд',description:'Активирован первый период EpisyHub Premium',icon:'/branding/episyhub-icon.webp',tier:'silver',tierLabel:'СЕРЕБРО',maxProgress:1,target:1},
+  {id:'premium_patron',name:'Друг EpisyHub',title:'Друг EpisyHub',description:'Начались 3 периода EpisyHub Premium',icon:'/branding/episyhub-icon.webp',tier:'gold',tierLabel:'ЗОЛОТО',maxProgress:3,target:3},
+  {id:'premium_legend',name:'Кино — это любовь',title:'Кино — это любовь',description:'Начались 12 периодов EpisyHub Premium',icon:'/branding/episyhub-icon.webp',tier:'legend',tierLabel:'ЛЕГЕНДА',maxProgress:12,target:12},
   // 1. Добавленные сериалы
   {
     id: 'first_step',
@@ -254,6 +257,11 @@ export function calculateAchievements(stats: AchievementStats): AchievementItem[
     let currentVal = 0;
 
     switch (ach.id) {
+      case 'premium_first':
+      case 'premium_patron':
+      case 'premium_legend':
+        currentVal = stats.premiumPeriods ?? 0;
+        break;
       case 'first_step':
       case 'collector':
       case 'bibliophile':

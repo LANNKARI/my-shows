@@ -63,6 +63,7 @@ export async function GET(
     );
 
     const achievements = calculateAchievements({
+      premiumPeriods: await prisma.premiumPeriod.count({where:{userId:user.id,startsAt:{lte:new Date()},OR:[{revokedAt:null},{revokedAt:{gte:prisma.premiumPeriod.fields.startsAt}}]}}),
       totalTitles,
       addedShowsCount: addedSeriesCount, // Передаем честное число сериалов (16)
       totalEpisodes: watchedEpisodesCount,

@@ -1,5 +1,7 @@
 'use client';
 
+import { AccountName } from "@/components/AccountAccess";
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
@@ -204,7 +206,7 @@ export default function FriendsPage() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors truncate">
-                          {u.name || u.username}
+                          <AccountName userId={u.id}>{u.name || u.username}</AccountName>
                         </p>
                         <p className="text-[11px] text-neutral-500 truncate">@{u.username}</p>
                       </div>
@@ -277,7 +279,7 @@ export default function FriendsPage() {
                       )}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-white truncate">{req.user.name || req.user.username}</p>
+                      <p className="text-xs font-bold text-white truncate"><AccountName userId={req.user.id}>{req.user.name || req.user.username}</AccountName></p>
                       <p className="text-[10px] text-neutral-500 truncate">@{req.user.username}</p>
                     </div>
                   </Link>
@@ -343,7 +345,7 @@ export default function FriendsPage() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors truncate">
-                        {f.name || f.username}
+                        <AccountName userId={f.id}>{f.name || f.username}</AccountName>
                       </p>
                       <p className="text-[11px] text-neutral-500 truncate">@{f.username}</p>
                     </div>

@@ -1,4 +1,5 @@
 "use client";
+import { useAccount } from "./AccountAccess";
 import { useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { applyTheme, currentTheme, themeForItem, validTheme, THEME_STORAGE_KEY } from "@/lib/theme";
@@ -6,6 +7,7 @@ import { applyTheme, currentTheme, themeForItem, validTheme, THEME_STORAGE_KEY }
 export default function ThemeSync() {
   const { data: session, status } = useSession();
   const userId = session?.user?.id;
+  const {account}=useAccount();
   const previousUser = useRef<string | undefined>(undefined);
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -19,7 +21,7 @@ export default function ThemeSync() {
   useEffect(() => {
     if (status === "loading") return;
     if (!userId) {
-      if (previousUser.current && currentTheme() === "autumn-2026") applyTheme("dark");
+      if (previousUser.current && ["autumn-2026","obsidian"].includes(currentTheme())) applyTheme("dark");
       previousUser.current = undefined;
       return;
     }
@@ -32,9 +34,9 @@ export default function ThemeSync() {
         if (!result || abort.signal.aborted || document.documentElement.dataset.themePreview || currentTheme() !== initial) return;
         const theme = themeForItem(result.theme);
         if (theme) applyTheme(theme);
-        else if (result.ownsAutumn === false && currentTheme() === "autumn-2026") applyTheme("dark");
+        else if (currentTheme() === "obsidian" || result.ownsAutumn === false && currentTheme() === "autumn-2026") applyTheme("dark");
       }).catch(() => { /* Keep the locally selected theme when offline. */ });
     return () => abort.abort();
-  }, [userId, status]);
+  }, [userId, status, account?.premium.active]);
   return null;
 }

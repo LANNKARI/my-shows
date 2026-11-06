@@ -565,3 +565,7 @@
 
 .cx-theme-card .cx-card-preview {padding:0;}
 @media(max-width:767px){.cx-theme-grid {grid-template-columns:1fr;}.cx-theme-card {padding:16px;}.cx-theme-card h2{font-size:17px;}.cx-theme-card .cx-card-actions {min-height:34px;}.cx-theme-card .cx-card-actions>button{flex:1 0 auto;}}
+.cosmetic-avatar[data-frame="frame-premium-orbit"]{border-color:#f6dd9b;outline:2px solid #ad7e38;outline-offset:3px;box-shadow:0 0 16px #d2a94b40}
+.cosmetic-avatar[data-frame="frame-premium-orbit"]:after{content:'✦';position:absolute;right:-8%;top:-14%;color:#edc96d;font-size:.6em;text-shadow:0 1px 3px #3d2b0b}
+.cosmetic-avatar[data-frame="frame-pioneer"]{border-color:#8bd6c1;outline:1px dashed #bc985a;outline-offset:3px;box-shadow:0 0 9px #64bca322}
+.cx-theme-obsidian{background:radial-gradient(ellipse at 30% 20%,#b58d3630,transparent 65%),#19191d;color:#e9ca7e;font-size:80px;display:flex;align-items:center;justify-content:center}
