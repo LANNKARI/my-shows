@@ -1,10 +1,11 @@
-'use client';
+"use client";
 
-import { AccountName } from "@/components/AccountAccess";
+import styles from "./top.module.css";
+import { AccountName, useAccountBadges } from "@/components/AccountAccess";
 
 import { tmdbImageUrl } from "@/lib/tmdb-image";
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
 
 interface TopUser {
   id: string;
@@ -31,10 +32,10 @@ interface TopUser {
   }[];
 }
 
-type TabType = 'active' | 'collectors' | 'critics' | 'commentators';
+type TabType = "active" | "collectors" | "critics" | "commentators";
 
 export default function TopPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('active');
+  const [activeTab, setActiveTab] = useState<TabType>("active");
   const [users, setUsers] = useState<TopUser[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -42,13 +43,13 @@ export default function TopPage() {
     const fetchTopUsers = async () => {
       setLoading(true);
       try {
-        const res = await fetch('/api/top');
+        const res = await fetch("/api/top");
         if (res.ok) {
           const data = await res.json();
           setUsers(Array.isArray(data) ? data : data.users || []);
         }
       } catch (err) {
-        console.error('Ошибка загрузки топа:', err);
+        console.error("Ошибка загрузки топа:", err);
       } finally {
         setLoading(false);
       }
@@ -62,25 +63,24 @@ export default function TopPage() {
     const list = [...users];
 
     switch (activeTab) {
-      case 'collectors':
+      case "collectors":
         return list.sort(
           (a, b) =>
             (b.showsCount ?? b.completedCount ?? 0) -
-            (a.showsCount ?? a.completedCount ?? 0)
+            (a.showsCount ?? a.completedCount ?? 0),
         );
-      case 'critics':
+      case "critics":
         return list.sort(
-          (a, b) => (b.ratingsCount ?? 0) - (a.ratingsCount ?? 0)
+          (a, b) => (b.ratingsCount ?? 0) - (a.ratingsCount ?? 0),
         );
-      case 'commentators':
+      case "commentators":
         return list.sort(
-          (a, b) => (b.commentsCount ?? 0) - (a.commentsCount ?? 0)
+          (a, b) => (b.commentsCount ?? 0) - (a.commentsCount ?? 0),
         );
-      case 'active':
+      case "active":
       default:
         return list.sort(
-          (a, b) =>
-            (b.score ?? b.points ?? 0) - (a.score ?? a.points ?? 0)
+          (a, b) => (b.score ?? b.points ?? 0) - (a.score ?? a.points ?? 0),
         );
     }
   };
@@ -89,26 +89,26 @@ export default function TopPage() {
 
   const getScoreDisplay = (user: TopUser) => {
     switch (activeTab) {
-      case 'collectors':
+      case "collectors":
         return {
           val: user.showsCount ?? user.completedCount ?? 0,
-          label: 'тайтлов',
+          label: "тайтлов",
         };
-      case 'critics':
+      case "critics":
         return {
           val: user.ratingsCount ?? 0,
-          label: 'оценок',
+          label: "оценок",
         };
-      case 'commentators':
+      case "commentators":
         return {
           val: user.commentsCount ?? 0,
-          label: 'коммент.',
+          label: "коммент.",
         };
-      case 'active':
+      case "active":
       default:
         return {
           val: user.score ?? user.points ?? 0,
-          label: 'очков',
+          label: "очков",
         };
     }
   };
@@ -130,10 +130,10 @@ export default function TopPage() {
         {/* Вкладки */}
         <div className="compact-tabs flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
           {[
-            { key: 'active', label: '🏆 Активные' },
-            { key: 'collectors', label: '📚 Коллекционеры' },
-            { key: 'critics', label: '⭐ Критики' },
-            { key: 'commentators', label: '💬 Комментаторы' },
+            { key: "active", label: "🏆 Активные" },
+            { key: "collectors", label: "📚 Коллекционеры" },
+            { key: "critics", label: "⭐ Критики" },
+            { key: "commentators", label: "💬 Комментаторы" },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -141,8 +141,8 @@ export default function TopPage() {
               onClick={() => setActiveTab(tab.key as TabType)}
               className={`px-4 py-2 rounded-2xl font-semibold transition-all border whitespace-nowrap cursor-pointer ${
                 activeTab === tab.key
-                  ? 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-600/20'
-                  : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+                  ? "bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-600/20"
+                  : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700"
               }`}
             >
               {tab.label}
@@ -172,18 +172,15 @@ export default function TopPage() {
 
               const rankBg =
                 rank === 1
-                  ? 'bg-amber-400 text-black'
+                  ? "bg-amber-400 text-black"
                   : rank === 2
-                  ? 'bg-neutral-300 text-black'
-                  : rank === 3
-                  ? 'bg-amber-600 text-white'
-                  : 'bg-neutral-800 text-neutral-400';
+                    ? "bg-neutral-300 text-black"
+                    : rank === 3
+                      ? "bg-amber-600 text-white"
+                      : "bg-neutral-800 text-neutral-400";
 
               return (
-                <div
-                  key={user.id || index}
-                  className="p-4 bg-neutral-900/70 border border-neutral-800/90 hover:border-neutral-700 rounded-3xl flex items-center justify-between gap-4 transition-all shadow-md"
-                >
+                <LeaderboardRow key={user.id || index} userId={user.id}>
                   <div className="flex items-center gap-3.5 min-w-0">
                     {/* Ранг */}
                     <div
@@ -205,7 +202,7 @@ export default function TopPage() {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        (user.name || user.username || 'U')
+                        (user.name || user.username || "U")
                           .charAt(0)
                           .toUpperCase()
                       )}
@@ -218,10 +215,10 @@ export default function TopPage() {
                           href={`/u/${user.username}`}
                           className="font-bold text-sm text-white hover:text-rose-400 transition-colors truncate"
                         >
-                          <AccountName userId={user.id}>{user.name || user.username}</AccountName>
+                          <AccountName userId={user.id} highlight={false}>
+                            {user.name || user.username}
+                          </AccountName>
                         </Link>
-
-
                       </div>
 
                       <p className="text-[11px] text-neutral-500 truncate">
@@ -232,21 +229,38 @@ export default function TopPage() {
 
                   {/* Очки / Показатели */}
                   <div className="text-right flex-shrink-0 pl-2">
-                    <span className="text-lg font-black text-white block tracking-tight leading-tight">
+                    <span className={`${styles.score} text-lg font-black block tracking-tight leading-tight`}>
                       {val}
                     </span>
                     <span className="text-[11px] text-neutral-500 block">
                       {label}
                     </span>
                   </div>
-                </div>
+                </LeaderboardRow>
               );
             })}
           </div>
         )}
-
-
       </div>
+    </div>
+  );
+}
+function LeaderboardRow({
+  userId,
+  children,
+}: {
+  userId: string;
+  children: React.ReactNode;
+}) {
+  const badges = useAccountBadges(userId);
+  const premium = badges?.some((badge) => badge.roleId === "premium") ?? false;
+  return (
+    <div
+      data-user-id={userId}
+      data-premium={premium}
+      className={`${styles.row} ${premium ? styles.premium : ""} p-4 border rounded-3xl flex items-center justify-between gap-4 shadow-md`}
+    >
+      {children}
     </div>
   );
 }

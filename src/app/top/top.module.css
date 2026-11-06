@@ -1,0 +1,80 @@
+.row {
+  --row-one: #b39afc;
+  --row-two: #db9ac7;
+  --row-three: #eac679;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-2) 90%, transparent);
+  border-color: var(--border);
+  color: var(--text);
+}
+.row:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.premium {
+  border-color: color-mix(in srgb, var(--row-one) 55%, var(--border));
+  box-shadow: 0 3px 23px color-mix(in srgb, var(--row-one) 7%, transparent);
+}
+.premium::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  width: 230%;
+  pointer-events: none;
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--row-one) 20%, transparent),
+    color-mix(in srgb, var(--row-two) 10%, transparent) 35%,
+    color-mix(in srgb, var(--row-three) 15%, transparent) 65%,
+    color-mix(in srgb, var(--row-one) 19%, transparent)
+  );
+  animation: premium-flow 9s ease-in-out infinite alternate;
+}
+.premium::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 24px;
+  bottom: 24px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(var(--row-one), var(--row-three));
+  opacity: 0.8;
+  pointer-events: none;
+}
+.row :global(.account-name[data-highlight="false"] .account-name-text) {
+  filter: none;
+}
+:global([data-theme="light"]) .row {
+  --row-one: #328950;
+  --row-two: #63b6a2;
+  --row-three: #c7b66e;
+}
+:global([data-site-theme="autumn-2026"]) .row {
+  --row-one: #d27c37;
+  --row-two: #bb6e56;
+  --row-three: #d5ad5e;
+}
+:global([data-site-theme="obsidian"]) .row {
+  --row-one: #d0b270;
+  --row-two: #a295b9;
+  --row-three: #e6ca8b;
+}
+@keyframes premium-flow {
+  from {
+    transform: translateX(-45%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .premium::before {
+    animation: none;
+    transform: translateX(-20%);
+  }
+}
+
+.score {color:var(--text);}

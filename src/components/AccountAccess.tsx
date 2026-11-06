@@ -167,9 +167,11 @@ export default function AccountAccessProvider({
 export function AccountName({
   userId,
   children,
+  highlight = true,
 }: {
   userId?: string;
   children: ReactNode;
+  highlight?: boolean;
 }) {
   const { badges, request } = useContext(BadgeContext);
   useEffect(() => {
@@ -179,7 +181,14 @@ export function AccountName({
   return (
     <span
       className="account-name"
-      style={list.length ? { color: list[0].color } : undefined}
+      data-highlight={highlight}
+      style={
+        !highlight
+          ? { color: "var(--text)" }
+          : list.length
+            ? { color: list[0].color }
+            : undefined
+      }
     >
       <span className="account-name-text">{children}</span>
       {list.map((b) => (
