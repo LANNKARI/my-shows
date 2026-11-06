@@ -1,5 +1,6 @@
 "use client";
 import { tmdbImageUrl } from "@/lib/tmdb-image";
+import { prepareImages } from "@/lib/prepare-images";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { privateFetch } from "@/lib/private-fetch";
@@ -27,6 +28,8 @@ export default function QuizPage() {
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState("");
   const pending = useRef(false);
+  const imageLoad = useRef<AbortController | null>(null);
+  useEffect(() => () => imageLoad.current?.abort(), []);
   const [daily, setDaily] = useState<Daily>({ dailyLimit: 10 });
   const [limitReached, setLimitReached] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
@@ -37,22 +40,27 @@ export default function QuizPage() {
   async function load() {
     if (pending.current) return;
     pending.current = true;
+    const controller = new AbortController();
+    imageLoad.current = controller;
     setBusy(true);
     setError("");
     try {
-      const r = await privateFetch("/api/popcorn?action=get-quiz");
+      const r = await privateFetch("/api/popcorn?action=get-quiz", controller.signal);
       const data = await r.json();
       if (!r.ok) throw Error(data.error || "Не удалось загрузить кадр");
+      if (!data.limitReached) await prepareImages([data.backdropUrl], controller.signal);
+      if (controller.signal.aborted) return;
       setDaily((previous) => ({ ...previous, ...data }));
       setLimitReached(!!data.limitReached);
       setQuestion(data.limitReached ? null : data);
       setResult(null);
       setSelected("");
     } catch (e) {
+      if (controller.signal.aborted) return;
       setError(e instanceof Error ? e.message : "Ошибка соединения");
     } finally {
       pending.current = false;
-      setBusy(false);
+      if (!controller.signal.aborted) setBusy(false);
     }
   }
   useEffect(() => {
@@ -146,6 +154,7 @@ export default function QuizPage() {
         <section className="card overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
+            key={question.backdropUrl}
             src={tmdbImageUrl(question.backdropUrl)}
             alt="Кадр из фильма"
             className="w-full aspect-video object-cover"

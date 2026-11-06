@@ -1,7 +1,8 @@
 "use client";
 
 import { tmdbImageUrl } from "@/lib/tmdb-image";
-import React, { useEffect, useState, useCallback } from "react";
+import { prepareImages } from "@/lib/prepare-images";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 
 interface MovieData {
@@ -33,7 +34,14 @@ async function fetchGameRound(signal?: AbortSignal): Promise<GameRoundData> {
   const res = await fetch("/api/higher-lower", { signal });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || "Не удалось загрузить игру");
+  await prepareRoundImages(json, signal);
   return json;
+}
+
+async function prepareRoundImages(json: GameRoundData, signal?: AbortSignal) {
+  if (!json.limitReached && json.phase !== "paid") {
+    await prepareImages([json.leftMovie?.posterUrl, json.rightMovie?.posterUrl], signal);
+  }
 }
 
 export default function HigherLowerPage() {
@@ -48,6 +56,7 @@ export default function HigherLowerPage() {
   const [cashoutDone, setCashoutDone] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+  const actionPending = useRef(false);
 
   const applyRound = useCallback((json: GameRoundData) => {
     setData(json);
@@ -89,7 +98,8 @@ export default function HigherLowerPage() {
   }, [applyRound]);
 
   const requestAction = async (action: string, choice?: "higher" | "lower") => {
-    if (submitting || !data) return;
+    if (actionPending.current || !data) return;
+    actionPending.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -101,12 +111,14 @@ export default function HigherLowerPage() {
       const json = await res.json();
       if (!res.ok)
         throw new Error(json.error || "Не удалось выполнить действие");
+      await prepareRoundImages(json);
       applyRound(json);
       if (json.phase === "paid")
         window.dispatchEvent(new Event("popcorn-updated"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка сети");
     } finally {
+      actionPending.current = false;
       setSubmitting(false);
     }
   };
@@ -262,6 +274,7 @@ export default function HigherLowerPage() {
           <div className="aspect-[2/3] w-52 rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 mb-4 bg-neutral-950">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
+              key={leftMovie.posterUrl}
               src={tmdbImageUrl(leftMovie.posterUrl)}
               alt={leftMovie.title}
               className="w-full h-full object-cover"
@@ -291,6 +304,7 @@ export default function HigherLowerPage() {
           <div className="aspect-[2/3] w-52 rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 mb-4 bg-neutral-950 relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
+              key={rightMovie.posterUrl}
               src={tmdbImageUrl(rightMovie.posterUrl)}
               alt={rightMovie.title}
               className="w-full h-full object-cover"
@@ -390,6 +404,7 @@ export default function HigherLowerPage() {
                 <button
                   type="button"
                   onClick={handleNextRound}
+                  disabled={submitting}
                   className="w-full sm:w-auto px-6 py-3 rounded-xl bg-white text-black font-black text-xs hover:bg-neutral-200 transition-all shadow-lg cursor-pointer"
                 >
                   Продолжить → Раунд {currentRound + 1}
@@ -410,6 +425,7 @@ export default function HigherLowerPage() {
               <button
                 type="button"
                 onClick={handleRestart}
+                disabled={submitting}
                 className="w-full sm:w-auto px-6 py-3 rounded-xl bg-white text-black font-bold text-xs hover:bg-neutral-200 transition-all cursor-pointer shadow-lg"
               >
                 🔄 Попробовать снова

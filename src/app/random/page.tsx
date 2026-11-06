@@ -1,7 +1,8 @@
 'use client';
 
 import { tmdbImageUrl } from "@/lib/tmdb-image";
-import React, { useState, useEffect, useCallback } from 'react';
+import { prepareImages } from "@/lib/prepare-images";
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { UNIFIED_GENRES } from '@/lib/genres';
 
@@ -60,6 +61,8 @@ export default function WhatToWatchPage() {
   const [wishlistedMap, setWishlistedMap] = useState<Record<number, boolean>>({});
   const [wishlistLoadingId, setWishlistLoadingId] = useState<number | null>(null);
   const [navigatingId, setNavigatingId] = useState<number | null>(null);
+  const spinRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => spinRequest.current?.abort(), []);
 
   const toggleGenre = (key: string) => {
     setSelectedGenres((prev) =>
@@ -73,6 +76,9 @@ export default function WhatToWatchPage() {
 
   // Запрос случайного тайтла (Рулетка)
   const spinRoulette = useCallback(async () => {
+    spinRequest.current?.abort();
+    const controller = new AbortController();
+    spinRequest.current = controller;
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -88,7 +94,7 @@ export default function WhatToWatchPage() {
         params.set('genres', selectedGenres.join('|'));
       }
 
-      const res = await fetch(`/api/random?${params.toString()}`);
+      const res = await fetch(`/api/random?${params.toString()}`, { signal: controller.signal });
       const data = await res.json();
 
       if (!res.ok) {
@@ -96,6 +102,8 @@ export default function WhatToWatchPage() {
       }
 
       if (data.randomItem) {
+        await prepareImages([data.randomItem.posterUrl, data.randomItem.backdropUrl], controller.signal);
+        if (controller.signal.aborted) return;
         setRandomItem(data.randomItem);
       } else {
         setRandomItem(null);
@@ -105,10 +113,11 @@ export default function WhatToWatchPage() {
         );
       }
     } catch (err: unknown) {
+      if (controller.signal.aborted) return;
       const msg = err instanceof Error ? err.message : 'Неизвестная ошибка';
       setErrorMsg(msg);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [contentType, minRating, yearFrom, selectedGenres, excludeAnimation]);
 
@@ -206,7 +215,8 @@ export default function WhatToWatchPage() {
   };
 
   useEffect(() => {
-    spinRoulette();
+    const timer = setTimeout(() => void spinRoulette(), 0);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -512,6 +522,7 @@ export default function WhatToWatchPage() {
                     {randomItem.posterUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
+                        key={randomItem.posterUrl}
                         src={tmdbImageUrl(randomItem.posterUrl)}
                         alt={randomItem.title}
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
