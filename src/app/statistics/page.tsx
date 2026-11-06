@@ -66,7 +66,6 @@ export default function StatisticsPage() {
     const timer = setTimeout(() => {
       setFetching(true);
       setError("");
-      setStats(null);
       fetch(
         `/api/statistics?days=${days}&timeZone=${encodeURIComponent(zone)}`,
         { cache: "no-store", signal: controller.signal },
@@ -78,7 +77,24 @@ export default function StatisticsPage() {
           return d;
         })
         .then((d) => {
-          if (!controller.signal.aborted) setStats(d);
+          if (!controller.signal.aborted)
+            setStats((previous) =>
+              previous && previous.timeZone === d.timeZone
+                ? {
+                    ...previous,
+                    days: d.days,
+                    from: d.from,
+                    today: d.today,
+                    daily: d.daily,
+                    activity: {
+                      ...d.activity,
+                      currentStreak: previous.activity.currentStreak,
+                      longestStreak: previous.activity.longestStreak,
+                      firstDate: previous.activity.firstDate,
+                    },
+                  }
+                : d,
+            );
         })
         .catch((e) => {
           if (!controller.signal.aborted) setError(e.message);
@@ -114,6 +130,7 @@ export default function StatisticsPage() {
       </section>
     );
   const totals = stats?.totals;
+  const updating = fetching || (!error && !!stats && stats.days !== days);
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -147,13 +164,13 @@ export default function StatisticsPage() {
           </aside>
         )}
       </header>
-      {error && (
+      {error && !stats && (
         <p role="alert" className={styles.notice}>
           {error}{" "}
           <button onClick={() => setAttempt((v) => v + 1)}>Повторить</button>
         </p>
       )}
-      {(fetching || (!stats && !error)) && (
+      {!stats && !error && (
         <div className={styles.loading} role="status">
           Собираем вашу киноисторию…
         </div>
@@ -359,95 +376,122 @@ export default function StatisticsPage() {
               />
             </section>
           </div>
-          <div className={styles.sectionTitle}>
-            <div>
-              <h2>Ваш ритм просмотра</h2>
-              <p>Активность за выбранный период · {stats.timeZone}</p>
-            </div>
-            <div
-              className={styles.tabs}
-              role="group"
-              aria-label="Период статистики"
-            >
-              {[30, 90, 365].map((n) => (
-                <button
-                  key={n}
-                  aria-pressed={days === n}
-                  onClick={() => setDays(n)}
-                >
-                  {n} дней
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className={styles.metrics}>
-            {[
-              [
-                time(stats.activity.averageDay),
-                "В среднем в день",
-                "С учётом дней без просмотра",
-              ],
-              [
-                time(stats.activity.averageWeek),
-                "В среднем за неделю",
-                "Дневное среднее × 7",
-              ],
-              [
-                `${stats.activity.currentStreak} дн.`,
-                "Текущий стрик",
-                `Лучший — ${stats.activity.longestStreak} дн. за всё время`,
-              ],
-              [
-                stats.activity.favoriteDay
-                  ? `${stats.activity.favoriteDay} · ${stats.activity.favoritePart?.toLowerCase()}`
-                  : "Пока нет данных",
-                "Ваше любимое время",
-                "По объёму ручных отметок",
-              ],
-            ].map(([value, label, hint]) => (
-              <section className={styles.card} key={label}>
-                <span>{label}</span>
-                <strong>{value}</strong>
-                <small>{hint}</small>
-              </section>
-            ))}
-          </div>
-          <Heatmap days={stats.heatmap} />
-          <section className={styles.card}>
-            <div className={styles.cardTitle}>
-              <h2>Активность за выбранный период</h2>
+          <section
+            className={styles.rhythm}
+            aria-label="Ваш ритм просмотра"
+            aria-busy={updating}
+          >
+            <div className={styles.sectionTitle}>
+              <div>
+                <h2>Ваш ритм просмотра</h2>
+                <p>Активность за выбранный период · {stats.timeZone}</p>
+              </div>
               <div
                 className={styles.tabs}
                 role="group"
-                aria-label="Группировка активности"
+                aria-label="Период статистики"
               >
-                {(["days", "weeks"] as const).map((scale) => (
+                {[30, 90, 365].map((n) => (
                   <button
-                    key={scale}
-                    aria-pressed={activityScale === scale}
-                    onClick={() => setActivityScale(scale)}
+                    key={n}
+                    aria-pressed={days === n}
+                    onClick={() => setDays(n)}
                   >
-                    {scale === "days" ? "Дни" : "Недели"}
+                    {n} дней
                   </button>
                 ))}
               </div>
             </div>
-            <p className={styles.hint}>
-              {dateLabel(stats.from)} — {dateLabel(stats.today)} ·{" "}
-              {hours(stats.activity.minutes)} в отметках
-            </p>
-            <ActivityChart days={stats.daily} scale={activityScale} />
-            <div className={styles.notice}>
-              Дней с объёмом свыше 15 часов: <b>{stats.activity.bulkDays}</b>.
-              Они остаются в общих итогах, графиках, heatmap и стрике, но
-              исключены из средних и любимого времени. В расчёте средних:{" "}
-              {stats.activity.eligibleDays} дней из {days}.
+            <div
+              className={styles.periodStatus}
+              role={error ? "alert" : "status"}
+              aria-live="polite"
+            >
+              {error ? (
+                <>
+                  {error}{" "}
+                  <button
+                    type="button"
+                    onClick={() => setAttempt((v) => v + 1)}
+                  >
+                    Повторить
+                  </button>
+                </>
+              ) : updating ? (
+                "Обновляем активность…"
+              ) : (
+                ""
+              )}
             </div>
-            <p className={styles.hint}>
-              Импорт не создаёт активность. Время суток определяется по моменту
-              отметки, а не по фактическому воспроизведению: ночь 00–06, утро
-              06–12, день 12–18, вечер 18–24.
-            </p>
+            <div className={styles.metrics}>
+              {[
+                [
+                  time(stats.activity.averageDay),
+                  "В среднем в день",
+                  "С учётом дней без просмотра",
+                ],
+                [
+                  time(stats.activity.averageWeek),
+                  "В среднем за неделю",
+                  "Дневное среднее × 7",
+                ],
+                [
+                  `${stats.activity.currentStreak} дн.`,
+                  "Текущий стрик",
+                  `Лучший — ${stats.activity.longestStreak} дн. за всё время`,
+                ],
+                [
+                  stats.activity.favoriteDay
+                    ? `${stats.activity.favoriteDay} · ${stats.activity.favoritePart?.toLowerCase()}`
+                    : "Пока нет данных",
+                  "Ваше любимое время",
+                  "По объёму ручных отметок",
+                ],
+              ].map(([value, label, hint]) => (
+                <section className={styles.card} key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                  <small>{hint}</small>
+                </section>
+              ))}
+            </div>
+            <Heatmap days={stats.heatmap} />
+            <section className={styles.card}>
+              <div className={styles.cardTitle}>
+                <h2>Активность за выбранный период</h2>
+                <div
+                  className={styles.tabs}
+                  role="group"
+                  aria-label="Группировка активности"
+                >
+                  {(["days", "weeks"] as const).map((scale) => (
+                    <button
+                      key={scale}
+                      aria-pressed={activityScale === scale}
+                      onClick={() => setActivityScale(scale)}
+                    >
+                      {scale === "days" ? "Дни" : "Недели"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className={styles.hint}>
+                {dateLabel(stats.from)} — {dateLabel(stats.today)} ·{" "}
+                {hours(stats.activity.minutes)} в отметках
+              </p>
+              <ActivityChart days={stats.daily} scale={activityScale} />
+              <div className={styles.notice}>
+                Дней с объёмом свыше 15 часов: <b>{stats.activity.bulkDays}</b>.
+                Они остаются в общих итогах, графиках, heatmap и стрике, но
+                исключены из средних и любимого времени. В расчёте средних:{" "}
+                {stats.activity.eligibleDays} дней из {stats.days}.
+              </div>
+              <p className={styles.hint}>
+                Импорт не создаёт активность. Время суток определяется по
+                моменту отметки, а не по фактическому воспроизведению: ночь
+                00–06, утро 06–12, день 12–18, вечер 18–24.
+              </p>
+            </section>
           </section>
           <footer className={styles.footer}>
             <p>

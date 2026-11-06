@@ -168,3 +168,129 @@ test("failed statistics can be retried", async ({ page }) => {
     page.getByRole("heading", { name: "Календарь активности" }),
   ).toBeVisible();
 });
+
+for (const width of [390, 1440])
+  test(`changing the period preserves scroll and the library while only rhythm is loading at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await setup(page);
+    let release: () => void = () => {};
+    let requested = false;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/statistics?**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("days") !== "90") return route.fallback();
+      requested = true;
+      await gate;
+      const report = statisticsFixture(90);
+      report.totals.minutes = 999999;
+      await route.fulfill({ json: report }).catch(() => {});
+    });
+    await page.goto("/statistics");
+    const rhythm = page.getByRole("region", {
+      name: "Ваш ритм просмотра",
+      exact: true,
+    });
+    await expect(rhythm).toBeVisible();
+    const library = await page
+      .getByRole("heading", { name: "Вся ваша библиотека" })
+      .elementHandle();
+    const heat = await page
+      .getByRole("heading", { name: "Календарь активности" })
+      .elementHandle();
+    const button = page.getByRole("button", { name: "90 дней", exact: true });
+    await button.scrollIntoViewIfNeeded();
+    const position = await page.evaluate(() => scrollY);
+    await button.click();
+    await expect.poll(() => requested).toBe(true);
+    await expect(rhythm).toHaveAttribute("aria-busy", "true");
+    await expect(rhythm.getByRole("status")).toHaveText(
+      "Обновляем активность…",
+    );
+    expect(await library!.evaluate((e) => e.isConnected)).toBe(true);
+    expect(await heat!.evaluate((e) => e.isConnected)).toBe(true);
+    expect(
+      Math.abs((await page.evaluate(() => scrollY)) - position),
+    ).toBeLessThan(3);
+    await expect(page.getByText("Собираем вашу киноисторию…")).toHaveCount(0);
+    release();
+    await expect(rhythm).toHaveAttribute("aria-busy", "false");
+    await expect(rhythm).toContainText("дней из 90");
+    expect(await library!.evaluate((e) => e.isConnected)).toBe(true);
+    expect(await heat!.evaluate((e) => e.isConnected)).toBe(true);
+    await expect(page.getByText("16 666,7", { exact: true })).toHaveCount(0);
+    expect(
+      Math.abs((await page.evaluate(() => scrollY)) - position),
+    ).toBeLessThan(3);
+  });
+
+test("a failed period request leaves the report in place and retries within rhythm", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/statistics");
+  const rhythm = page.getByRole("region", {
+    name: "Ваш ритм просмотра",
+    exact: true,
+  });
+  await expect(rhythm).toBeVisible();
+  let fail = true;
+  await page.route("**/api/statistics?**", (route) =>
+    new URL(route.request().url()).searchParams.get("days") === "90"
+      ? route.fulfill(
+          fail
+            ? { status: 503, json: { error: "Не удалось обновить период" } }
+            : { json: statisticsFixture(90) },
+        )
+      : route.fallback(),
+  );
+  await page.getByRole("button", { name: "90 дней", exact: true }).click();
+  await expect(rhythm.getByRole("alert")).toContainText(
+    "Не удалось обновить период",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Вся ваша библиотека" }),
+  ).toBeAttached();
+  fail = false;
+  await rhythm.getByRole("button", { name: "Повторить", exact: true }).click();
+  await expect(rhythm).toHaveAttribute("aria-busy", "false");
+  await expect(rhythm.getByRole("alert")).toHaveCount(0);
+  await expect(rhythm).toContainText("дней из 90");
+});
+
+test("a slower earlier period response cannot replace the latest selected range", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/statistics");
+  const rhythm = page.getByRole("region", {
+    name: "Ваш ритм просмотра",
+    exact: true,
+  });
+  await expect(rhythm).toBeVisible();
+  let release: () => void = () => {};
+  let requested = false;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/statistics?**", async (route) => {
+    const days = Number(
+      new URL(route.request().url()).searchParams.get("days"),
+    );
+    if (days !== 90) return route.fallback();
+    requested = true;
+    await gate;
+    await route.fulfill({ json: statisticsFixture(90) }).catch(() => {});
+  });
+  await page.getByRole("button", { name: "90 дней", exact: true }).click();
+  await expect.poll(() => requested).toBe(true);
+  await page.getByRole("button", { name: "365 дней", exact: true }).click();
+  await expect(rhythm).toHaveAttribute("aria-busy", "false");
+  await expect(rhythm).toContainText("дней из 365");
+  release();
+  await expect(
+    page.getByRole("button", { name: "365 дней", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(rhythm).toContainText("дней из 365");
+});
