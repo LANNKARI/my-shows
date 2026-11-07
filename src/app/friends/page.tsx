@@ -1,4 +1,5 @@
 "use client";
+import CosmeticAvatar from "@/components/CosmeticAvatar";
 
 import { AccountName } from "@/components/AccountAccess";
 
@@ -220,18 +221,12 @@ export default function FriendsPage() {
                       href={`/u/${u.username}`}
                       className="flex items-center gap-3 group min-w-0"
                     >
-                      <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0 overflow-hidden">
-                        {u.avatarUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={u.avatarUrl}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          u.username.charAt(0).toUpperCase()
-                        )}
-                      </div>
+                      <CosmeticAvatar
+                        userId={u.id}
+                        name={u.name || u.username}
+                        src={u.avatarUrl}
+                        size={32}
+                      />
                       <div className="min-w-0">
                         <p className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors truncate">
                           <AccountName userId={u.id}>
@@ -305,18 +300,12 @@ export default function FriendsPage() {
                     href={`/u/${req.user.username}`}
                     className="flex items-center gap-3 min-w-0"
                   >
-                    <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0 overflow-hidden">
-                      {req.user.avatarUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={req.user.avatarUrl}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        req.user.username.charAt(0).toUpperCase()
-                      )}
-                    </div>
+                    <CosmeticAvatar
+                      userId={req.user.id}
+                      name={req.user.name || req.user.username}
+                      src={req.user.avatarUrl}
+                      size={36}
+                    />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-white truncate">
                         <AccountName userId={req.user.id}>
@@ -391,18 +380,12 @@ export default function FriendsPage() {
                     href={`/u/${f.username}`}
                     className="flex items-center gap-3 min-w-0 group"
                   >
-                    <div className="w-10 h-10 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center font-bold text-xs text-neutral-300 flex-shrink-0 overflow-hidden">
-                      {f.avatarUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={f.avatarUrl}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        f.username.charAt(0).toUpperCase()
-                      )}
-                    </div>
+                    <CosmeticAvatar
+                      userId={f.id}
+                      name={f.name || f.username}
+                      src={f.avatarUrl}
+                      size={40}
+                    />
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-white group-hover:text-blue-400 transition-colors truncate">
                         <AccountName userId={f.id}>

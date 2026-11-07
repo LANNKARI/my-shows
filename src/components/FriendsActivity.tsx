@@ -1,4 +1,5 @@
 "use client";
+import CosmeticAvatar from "./CosmeticAvatar";
 
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { useEffect, useState } from "react";
@@ -30,9 +31,7 @@ type Activity = {
 };
 
 function timeAgo(iso: string): string {
-  const diff = Math.floor(
-    (Date.now() - new Date(iso).getTime()) / 1000
-  );
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (diff < 60) return "только что";
   if (diff < 3600) return `${Math.floor(diff / 60)} мин назад`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} ч назад`;
@@ -107,18 +106,12 @@ export default function FriendsActivity() {
                   onClick={(e) => e.stopPropagation()}
                   className="block"
                 >
-                  {a.user.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={tmdbImageUrl(a.user.avatarUrl)}
-                      alt=""
-                      className="w-7 h-7 rounded-full object-cover border-2 border-black/60"
-                    />
-                  ) : (
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white text-[10px] font-bold border-2 border-black/60">
-                      {(a.user.name || a.user.username)[0].toUpperCase()}
-                    </div>
-                  )}
+                  <CosmeticAvatar
+                    userId={a.user.id}
+                    name={a.user.name || a.user.username}
+                    src={a.user.avatarUrl}
+                    size={28}
+                  />
                 </Link>
               </div>
 
@@ -145,7 +138,7 @@ export default function FriendsActivity() {
               <div className="text-[10px] text-neutral-500 line-clamp-1">
                 {a.title.kind === "series"
                   ? `S${String(a.episode.season).padStart(2, "0")}E${String(
-                      a.episode.episode
+                      a.episode.episode,
                     ).padStart(2, "0")}`
                   : "🎬 Фильм"}{" "}
                 · {timeAgo(a.episode.watchedAt)}

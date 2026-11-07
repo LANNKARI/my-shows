@@ -1,5 +1,5 @@
 "use client";
-import { useAccountBadges } from "./AccountAccess";
+import { useAccountBadges, useAccountFrame } from "./AccountAccess";
 /* eslint-disable @next/next/no-img-element -- Reuses existing uploaded or remote profile photos. */
 import { frameId } from "@/lib/cosmetics";
 import "./cosmetics.css";
@@ -17,6 +17,8 @@ export default function CosmeticAvatar({
   size?: number;
 }) {
   const badges = useAccountBadges(userId);
+  const currentFrame = useAccountFrame(userId);
+  frame = currentFrame === undefined ? frame : currentFrame;
   const allowedFrame =
     userId &&
     ((frame === "frame-premium-orbit" &&

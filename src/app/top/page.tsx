@@ -3,7 +3,7 @@
 import styles from "./top.module.css";
 import { AccountName, useAccountBadges } from "@/components/AccountAccess";
 
-import { tmdbImageUrl } from "@/lib/tmdb-image";
+import CosmeticAvatar from "@/components/CosmeticAvatar";
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 
@@ -192,20 +192,14 @@ export default function TopPage() {
                     {/* Аватар */}
                     <Link
                       href={`/u/${user.username}`}
-                      className="w-11 h-11 rounded-full bg-rose-600 flex items-center justify-center font-extrabold text-sm text-white flex-shrink-0 overflow-hidden shadow-inner"
+                      className="flex-shrink-0"
                     >
-                      {user.avatarUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={tmdbImageUrl(user.avatarUrl)}
-                          alt={user.name || user.username}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        (user.name || user.username || "U")
-                          .charAt(0)
-                          .toUpperCase()
-                      )}
+                      <CosmeticAvatar
+                        userId={user.id}
+                        name={user.name || user.username}
+                        src={user.avatarUrl}
+                        size={44}
+                      />
                     </Link>
 
                     {/* Имя и значки ролей */}
@@ -229,7 +223,9 @@ export default function TopPage() {
 
                   {/* Очки / Показатели */}
                   <div className="text-right flex-shrink-0 pl-2">
-                    <span className={`${styles.score} text-lg font-black block tracking-tight leading-tight`}>
+                    <span
+                      className={`${styles.score} text-lg font-black block tracking-tight leading-tight`}
+                    >
                       {val}
                     </span>
                     <span className="text-[11px] text-neutral-500 block">

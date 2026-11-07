@@ -1,4 +1,5 @@
 "use client";
+import CosmeticAvatar from "@/components/CosmeticAvatar";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -10,7 +11,7 @@ import { privateFetch } from "@/lib/private-fetch";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { status } = useSession();
+  const { status, data: session } = useSession();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -129,18 +130,7 @@ export default function SettingsPage() {
         <div className="card p-5">
           <label className="label">Аватарка</label>
           <div className="flex items-center gap-4 mt-2">
-            {avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={avatarUrl}
-                alt=""
-                className="w-20 h-20 rounded-2xl object-cover border border-white/5"
-              />
-            ) : (
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-2xl font-bold text-white">
-                {(name || username || "?")[0].toUpperCase()}
-              </div>
-            )}
+            <CosmeticAvatar userId={session?.user?.id} name={name || username || "?"} src={avatarUrl} size={80} />
             <div className="flex-1">
               <FilePicker accept="image/*" label="Выбрать изображение" disabled={uploading} onFile={uploadAvatar} />
               {uploading && (

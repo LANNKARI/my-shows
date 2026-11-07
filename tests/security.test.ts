@@ -2540,3 +2540,16 @@ test('animated frames: golden light is charged once, persists without Premium, a
  const period=await prisma.premiumPeriod.create({data:{userId:record.id,requestKey:randomUUID(),source:'gift',startsAt:new Date(Date.now()-1000),endsAt:new Date(Date.now()+86400000)}});assert.equal((await client.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-premium-orbit'})).status,200);
  await prisma.premiumPeriod.update({where:{id:period.id},data:{revokedAt:new Date()}});assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.avatarFrame,'frame-standard');assert.equal((await client.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-gold-light'})).status,200);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).popcorn,120);
 });
+
+test('avatar appearance: public batch returns current frames, preserves badge API and bounds input',async()=>{
+ const {record}=await featureAccount();
+ await prisma.user.update({where:{id:record.id},data:{avatarFrame:'frame-gold-light'}});
+ const path='/api/account-badges?ids='+record.id;
+ const original=await(await guest.request(path)).json();assert.ok(Array.isArray(original[record.id]));assert.equal(original.frames,undefined);
+ const response=await guest.request(path+'&appearance=1');assert.equal(response.status,200);
+ const data=await response.json();assert.equal(data.frames[record.id],'frame-gold-light');assert.ok(Array.isArray(data.badges[record.id]));assert.deepEqual(Object.keys(data).sort(),['badges','frames']);
+ await prisma.user.update({where:{id:record.id},data:{avatarFrame:'frame-stars'}});
+ assert.equal((await(await guest.request(path+'&appearance=1')).json()).frames[record.id],'frame-stars');
+ assert.equal((await guest.request('/api/account-badges?appearance=1&ids='+Array.from({length:51},(_,i)=>'u'+i).join(','))).status,400);
+ assert.equal((await guest.request('/api/account-badges?appearance=1&ids=%3Cscript%3E')).status,400);
+});

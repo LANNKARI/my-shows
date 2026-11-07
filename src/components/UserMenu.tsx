@@ -76,12 +76,7 @@ export default function UserMenu() {
               name={username}
               userId={session.user.id}
               src={session.user.image}
-              frame={
-                session.user.avatarFrame === "frame-premium-orbit" &&
-                !account?.premium.active
-                  ? "frame-standard"
-                  : session.user.avatarFrame
-              }
+              frame={session.user.avatarFrame}
               size={28}
             />
             <span className="text-xs font-semibold text-neutral-200 hidden sm:inline max-w-[120px] truncate">
