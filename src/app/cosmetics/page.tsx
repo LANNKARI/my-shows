@@ -337,6 +337,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
               </p>
               <h2>{active.name}</h2>
               <p className="cx-muted">{active.description}</p>
+              {active.animated&&<p className="cx-muted">При уменьшении движения в настройках устройства рамка остаётся статичной.</p>}
               <div className="cx-price-rows">
                 <div>
                   <span>{isOwned(active) ? "В коллекции" : "Стоимость"}</span>
@@ -477,7 +478,7 @@ function Shop({ refreshSession }: { refreshSession: () => Promise<void> }) {
                   key={item.id}
                   aria-label={item.name}
                 >
-                  <h2>{item.name}</h2>
+                  <h2>{item.name}{item.animated&&<span className="cx-animated-label">Анимация</span>}</h2>
                   <div className="cx-card-preview">
                     {item.kind === "theme" ? <ThemeSwatch item={item} /> : item.kind === "frame" ? (
                       <CosmeticAvatar

@@ -569,3 +569,16 @@
 .cosmetic-avatar[data-frame="frame-premium-orbit"]:after{content:'✦';position:absolute;right:-8%;top:-14%;color:#edc96d;font-size:.6em;text-shadow:0 1px 3px #3d2b0b}
 .cosmetic-avatar[data-frame="frame-pioneer"]{border-color:#8bd6c1;outline:1px dashed #bc985a;outline-offset:3px;box-shadow:0 0 9px #64bca322}
 .cx-theme-obsidian{background:radial-gradient(ellipse at 30% 20%,#b58d3630,transparent 65%),#19191d;color:#e9ca7e;font-size:80px;display:flex;align-items:center;justify-content:center}
+/* Transform-only motion leaves the profile photo and surrounding layout still. */
+.cosmetic-avatar[data-frame="frame-gold-light"]{border-color:#e7c66f;outline:1px solid #b28a3e;outline-offset:3px;box-shadow:0 0 10px #d2a94b26}
+.cosmetic-frame-motion{position:absolute;inset:-12%;width:124%;height:124%;overflow:visible;pointer-events:none;z-index:1;animation:cosmetic-orbit-turn 12s linear infinite;transform-origin:center}
+.cosmetic-frame-trail{fill:none;stroke:#e7bd60;stroke-width:1.6;stroke-linecap:round;opacity:.65}
+.cosmetic-frame-spark{fill:#fff1bc;stroke:#d6a747;stroke-width:.7}
+.cosmetic-frame-secondary{fill:#e1b65d;opacity:.65}
+.cosmetic-avatar[data-frame="frame-gold-light"] .cosmetic-frame-motion{animation-duration:9s}
+.cosmetic-avatar[data-frame="frame-gold-light"] .cosmetic-frame-trail{stroke:#fff1bd;stroke-width:2.8;opacity:.85}
+.cosmetic-avatar[data-small="true"] .cosmetic-frame-secondary,.cosmetic-avatar[data-small="true"] .cosmetic-frame-trail{display:none}
+.cosmetic-avatar[data-small="true"][data-frame="frame-gold-light"] .cosmetic-frame-trail{display:initial;stroke-width:2}
+.cx-animated-label{display:inline-block;vertical-align:middle;font-size:9px;line-height:1.4;font-weight:500;letter-spacing:.2px;padding:3px 5px;margin-left:6px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--border));border-radius:6px;color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+@keyframes cosmetic-orbit-turn{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.cosmetic-frame-motion{animation:none!important;transform:rotate(25deg)}}

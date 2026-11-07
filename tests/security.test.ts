@@ -2531,3 +2531,12 @@ test('premium social: personal covers enforce ownership, decode images, survive 
  assert.equal((await(await client.request('/api/site-theme')).json()).theme,'theme-obsidian');assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.avatarFrame,'frame-premium-orbit');
  assert.equal((await client.request(path,'POST',{action:'reset'})).status,200);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).bannerUrl,null);
 });
+
+test('animated frames: golden light is charged once, persists without Premium, and orbit still needs active Premium',async()=>{
+ const {record,client}=await featureAccount();await prisma.user.update({where:{id:record.id},data:{popcorn:240}});
+ const purchase={action:'purchase',itemId:'frame-gold-light',expectedPrice:120};assert.equal((await client.request('/api/cosmetics','POST',{...purchase,expectedPrice:0})).status,409);
+ const responses=await Promise.all([client.request('/api/cosmetics','POST',purchase),client.request('/api/cosmetics','POST',purchase)]);assert.ok(responses.every(r=>r.status===200||r.status===201));assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).popcorn,120);assert.equal(await prisma.cosmeticPurchase.count({where:{userId:record.id,itemId:'frame-gold-light'}}),1);
+ assert.equal((await client.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-gold-light'})).status,200);assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.avatarFrame,'frame-gold-light');assert.equal((await client.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-premium-orbit'})).status,403);
+ const period=await prisma.premiumPeriod.create({data:{userId:record.id,requestKey:randomUUID(),source:'gift',startsAt:new Date(Date.now()-1000),endsAt:new Date(Date.now()+86400000)}});assert.equal((await client.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-premium-orbit'})).status,200);
+ await prisma.premiumPeriod.update({where:{id:period.id},data:{revokedAt:new Date()}});assert.equal((await(await guest.request(`/api/users/${record.username}`)).json()).user.avatarFrame,'frame-standard');assert.equal((await client.request('/api/cosmetics','POST',{action:'equip',itemId:'frame-gold-light'})).status,200);assert.equal((await prisma.user.findUniqueOrThrow({where:{id:record.id}})).popcorn,120);
+});

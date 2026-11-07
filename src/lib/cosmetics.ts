@@ -8,12 +8,13 @@ export type CosmeticItem = {
   tone?: "light" | "dark";
   premium?: boolean;
   roleId?: string;
+  animated?: boolean;
 };
 export const STANDARD_FRAME = "frame-standard",
   STANDARD_PROFILE = "profile-standard";
 export const COSMETICS: readonly CosmeticItem[] = [
   { id: "theme-obsidian", kind: "theme", name: "Обсидиан", price: 0, tone: "dark", premium: true, description: "Глубокий графит и золотые акценты. Эксклюзив Premium." },
-  { id: "frame-premium-orbit", kind: "frame", name: "Золотая орбита", price: 0, premium: true, description: "Двойная золотая орбита со звездой. Доступна с Premium." },
+  { id: "frame-premium-orbit", kind: "frame", name: "Золотая орбита", price: 0, premium: true, animated: true, description: "Светящаяся точка плавно движется по золотому кольцу. Доступна с активным Premium." },
   { id: "frame-pioneer", kind: "frame", name: "Первопроходец", price: 0, roleId: "pioneer", description: "Памятная рамка для роли «Первопроходец»." },
   { id: "theme-cosmos", kind: "theme", name: "Космос", price: 0, tone: "dark", description: "Знакомая тёмная тема с космическим фоном." },
   { id: "theme-mint", kind: "theme", name: "Мята", price: 0, tone: "light", description: "Свежая светлая тема в зелёных оттенках." },
@@ -38,6 +39,10 @@ export const COSMETICS: readonly CosmeticItem[] = [
     name: "Золотая",
     price: 120,
     description: "Тёплое золотое двойное кольцо.",
+  },
+  {
+    id: "frame-gold-light", kind: "frame", name: "Золотой свет", price: 120, animated: true,
+    description: "Тёплый блик плавно проходит по золотому кольцу. Покупка навсегда, без подписки.",
   },
   {
     id: "frame-film",
