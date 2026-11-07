@@ -324,9 +324,12 @@
   --shadow: 0 16px 45px #0003;
 }
 :root[data-site-theme="obsidian"] body::before {
-  background:
-    radial-gradient(ellipse at 10% 20%, #8d642323, transparent 50%),
-    radial-gradient(ellipse at 95% 80%, #b89a3730, transparent 50%), #121214;
+  background: #121214 url("/backgrounds/obsidian-gold.webp") center / cover no-repeat;
+}
+@media (max-width: 640px) {
+  :root[data-site-theme="obsidian"] body::before {
+    background-position: 18% center;
+  }
 }
 :root[data-site-theme="obsidian"] .site-header {
   background: #161518ef;

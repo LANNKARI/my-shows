@@ -2,7 +2,7 @@ import { useId } from "react";
 import type { CosmeticItem } from "@/lib/cosmetics";
 
 const previews: Record<string, { tone: string; background?: string; colors: string[] }> = {
-  "theme-obsidian": { tone: "obsidian", colors: ["#d9ba73", "#8d784b", "#eee5d0"] },
+  "theme-obsidian": { tone: "obsidian", background: "obsidian-gold-preview.webp", colors: ["#d9ba73", "#8d784b", "#eee5d0"] },
   "theme-cosmos": { tone: "cosmos", background: "cosmos-nebula.webp", colors: ["#bda2ff", "#7760bb", "#ede5ff"] },
   "theme-mint": { tone: "mint", background: "mint-nebula.webp", colors: ["#367c53", "#a8cfb1", "#f2f8ed"] },
   "theme-autumn-2026": { tone: "autumn", background: "autumn-2026-soft.webp", colors: ["#c16b30", "#dfb566", "#fff0d5"] },
