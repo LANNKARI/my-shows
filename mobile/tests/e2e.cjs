@@ -51,9 +51,12 @@ async function run() {
   const errors=browserErrors;page.on('pageerror',e=>errors.push(e.message));
   let networkDown=false;let libraryLoads=0;let holdMark=false;let dropMarkReply=false;let markPosts=0;let holdReadAll=false;let releaseReadAll;let signalReadAll;const readAllWaiting=new Promise(resolve=>{signalReadAll=resolve;});let releaseMark;
   let signalMark;const markWaiting=new Promise(resolve=>{signalMark=resolve;});
+  let holdOldInbox=false,oldInboxCaptured=false,releaseOldInbox,oldResponseStatus;let signalOldInbox,signalOldDone;const oldInboxWaiting=new Promise(resolve=>{signalOldInbox=resolve;});const oldInboxDone=new Promise(resolve=>{signalOldDone=resolve;});
   await page.route('https://episyhub.space/api/**',async route=>{
     if(networkDown){await route.abort('internetdisconnected');return;}
     const req=route.request();const url=new URL(req.url());
+    let oldRequest=false;
+    if(holdOldInbox&&!oldInboxCaptured&&url.pathname==='/api/notifications'&&req.method()==='GET'){oldInboxCaptured=true;oldRequest=true;await new Promise(resolve=>{releaseOldInbox=resolve;signalOldInbox();});}
     if(url.pathname==='/api/user-shows'&&req.method()==='GET')libraryLoads++;
     if(url.pathname.endsWith('/quick-progress')&&req.method()==='POST'&&JSON.parse(req.postData()).action==='mark')markPosts++;
     if(holdMark&&url.pathname.endsWith('/quick-progress')&&req.method()==='POST'&&JSON.parse(req.postData()).action==='mark')await new Promise(resolve=>{releaseMark=resolve;signalMark();});
@@ -65,6 +68,7 @@ async function run() {
     const response=await page.request.fetch(base+new URL(req.url()).pathname+new URL(req.url()).search,{method:req.method(),headers,data:req.postData()||undefined,timeout:30000});
     if(dropMarkReply&&url.pathname.endsWith('/quick-progress')&&req.method()==='POST'&&JSON.parse(req.postData()).action==='mark'){dropMarkReply=false;await route.abort('connectionclosed');return;}
     await route.fulfill({response,headers:{...response.headers(),...cors}});
+    if(oldRequest){oldResponseStatus=response.status();signalOldDone();}
   });
   await page.goto(`http://127.0.0.1:${web.address().port}`);
   await page.getByLabel('Почта',{exact:true}).fill(user.email);
@@ -181,8 +185,11 @@ async function run() {
   await readAllWaiting;
   await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
   await page.getByRole('button',{name:'Открыть профиль: Новая заявка',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Непрочитанные уведомления',exact:true}).click();
+  await page.getByRole('button',{name:'Открыть профиль: Новая заявка',exact:true}).waitFor();
   holdReadAll=false;releaseReadAll();
   await page.getByText('Уведомления прочитаны',{exact:true}).waitFor();
+  await page.getByText('Непрочитанные · 1',{exact:true}).waitFor();
   assert.match(await page.getByRole('button',{name:'Непрочитанные уведомления',exact:true}).innerText(),/· 1$/,'newer arrivals remain unread in the UI after a delayed bulk-read response');
   assert.equal((await prisma.friendship.findUniqueOrThrow({where:{id:newRequest.id}})).notificationReadAt,null,'bulk read preserves incoming requests newer than displayed snapshot');
   await page.getByRole('switch',{name:'Уведомления о новых сериях',exact:true}).click();
@@ -199,7 +206,21 @@ async function run() {
   await page.getByRole('button',{name:'Выйти из аккаунта',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'Не удалось связаться с сервером'}).waitFor();
   assert.equal(await prisma.session.count({where:{userId:user.id}}),1,'offline logout does not claim revocation');
-  networkDown=false;
+  networkDown=false;holdOldInbox=true;
+  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  await oldInboxWaiting;
+  await page.getByRole('button',{name:'Выйти из аккаунта',exact:true}).click();
+  await page.getByRole('button',{name:'Войти',exact:true}).waitFor();
+  assert.equal(await prisma.session.count({where:{userId:user.id}}),0);
+  await page.getByLabel('Почта',{exact:true}).fill(user.email);
+  await page.getByLabel('Пароль',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Войти',exact:true}).click();
+  await page.getByText('Что посмотрим?',{exact:true}).waitFor();
+  holdOldInbox=false;releaseOldInbox();await oldInboxDone;
+  assert.equal(oldResponseStatus,401);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
+  assert.equal(await page.getByText('Что посмотрим?',{exact:true}).isVisible(),true,'late 401 from an old unmounted session does not log out the new session');
+  await page.getByRole('tab',{name:'Профиль',exact:true}).click();
   await page.getByRole('button',{name:'Выйти из аккаунта',exact:true}).click();
   await page.getByRole('button',{name:'Войти',exact:true}).waitFor();
   assert.equal(await prisma.session.count({where:{userId:user.id}}),0);

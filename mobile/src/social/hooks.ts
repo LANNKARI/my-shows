@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { AppState } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { ApiError, request } from "../api";
@@ -24,17 +30,18 @@ export function useAlive() {
 }
 export function useSocialApi() {
   const { session, onExpired } = useSessionActions();
+  const alive = useAlive();
   return useCallback(
     async <T>(path: string, init?: RequestInit): Promise<T> => {
       try {
         return await request<T>(path, session.token, init);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 401)
+        if (alive.current && error instanceof ApiError && error.status === 401)
           await onExpired();
         throw error;
       }
     },
-    [session.token, onExpired],
+    [session.token, onExpired, alive],
   );
 }
 type State<T> = {
@@ -47,6 +54,11 @@ export function useResource<T>(path: string | null) {
   const api = useSocialApi();
   const alive = useAlive();
   const sequence = useRef(0);
+  const activePath = useRef(path);
+  useLayoutEffect(() => {
+    activePath.current = path;
+    sequence.current++;
+  }, [path]);
   const [state, setState] = useState<State<T>>({
     path,
     data: null,
@@ -54,30 +66,39 @@ export function useResource<T>(path: string | null) {
     error: "",
   });
   const refresh = useCallback(async () => {
-    if (!path) return;
+    const endpoint = activePath.current;
+    if (!endpoint || !alive.current) return;
     const version = ++sequence.current;
     setState((current) => ({
-      path,
-      data: current.path === path ? current.data : null,
+      path: endpoint,
+      data: current.path === endpoint ? current.data : null,
       loading: true,
       error: "",
     }));
     try {
-      const data = await api<T>(path);
-      if (alive.current && version === sequence.current)
-        setState({ path, data, loading: false, error: "" });
+      const data = await api<T>(endpoint);
+      if (
+        alive.current &&
+        endpoint === activePath.current &&
+        version === sequence.current
+      )
+        setState({ path: endpoint, data, loading: false, error: "" });
     } catch (error) {
-      if (alive.current && version === sequence.current)
+      if (
+        alive.current &&
+        endpoint === activePath.current &&
+        version === sequence.current
+      )
         setState((current) => ({
           ...current,
           loading: false,
           error: errorMessage(error),
         }));
     }
-  }, [path, api, alive]);
+  }, [api, alive]);
   useFocusEffect(
     useCallback(() => {
-      void refresh();
+      if (path) void refresh();
       const listener = AppState.addEventListener("change", (value) => {
         if (value === "active") void refresh();
       });
@@ -85,14 +106,15 @@ export function useResource<T>(path: string | null) {
         sequence.current++;
         listener.remove();
       };
-    }, [refresh]),
+    }, [refresh, path]),
   );
   const update = useCallback(
     (change: (value: T) => T) => {
+      if (!alive.current || activePath.current !== path) return;
       sequence.current++;
       if (alive.current)
         setState((current) =>
-          current.path === path && current.data
+          current.path === path && current.data !== null
             ? { ...current, data: change(current.data), loading: false }
             : current,
         );
@@ -100,9 +122,10 @@ export function useResource<T>(path: string | null) {
     [path, alive],
   );
   const invalidate = useCallback(() => {
+    if (!alive.current || activePath.current !== path) return;
     sequence.current++;
     if (alive.current) setState((current) => ({ ...current, loading: false }));
-  }, [alive]);
+  }, [alive, path]);
   return {
     data: state.path === path ? state.data : null,
     loading: !!path && (state.path !== path || state.loading),
