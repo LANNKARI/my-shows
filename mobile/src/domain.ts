@@ -18,7 +18,13 @@ export const statuses = [
   { value: "completed", label: "Просмотрено" },
   { value: "dropped", label: "Брошено" },
 ];
+const summaries = new WeakMap<
+  LibraryItem,
+  { watched: number; total: number; next: Episode | undefined; percent: number }
+>();
 export function progress(item: LibraryItem) {
+  const cached = summaries.get(item);
+  if (cached) return cached;
   const episodes = [...item.show.episodes].sort(
     (a, b) => a.season - b.season || a.episode - b.episode || a.id - b.id,
   );
@@ -34,7 +40,7 @@ export function progress(item: LibraryItem) {
     item.kind === "movie" && item.status === "completed"
       ? 1
       : Math.min(watched.size, 1);
-  return {
+  const summary = {
     watched: item.kind === "movie" ? movieWatched : watched.size,
     total,
     next: episodes.find((e) => !watched.has(e.id)),
@@ -45,6 +51,8 @@ export function progress(item: LibraryItem) {
         )
       : 0,
   };
+  summaries.set(item, summary);
+  return summary;
 }
 export function canMark(item: LibraryItem) {
   return (

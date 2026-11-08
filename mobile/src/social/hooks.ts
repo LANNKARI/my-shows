@@ -7,7 +7,8 @@ import {
 } from "react";
 import { AppState } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { ApiError, request } from "../api";
+import { useDataCache } from "../data-context";
+import { ApiError } from "../api";
 import { useSessionActions } from "../session-context";
 export const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "Не удалось выполнить действие";
@@ -29,19 +30,20 @@ export function useAlive() {
   return alive;
 }
 export function useSocialApi() {
-  const { session, onExpired } = useSessionActions();
+  const { onExpired } = useSessionActions();
+  const cache = useDataCache();
   const alive = useAlive();
   return useCallback(
     async <T>(path: string, init?: RequestInit): Promise<T> => {
       try {
-        return await request<T>(path, session.token, init);
+        return await cache.request<T>(path, init);
       } catch (error) {
         if (alive.current && error instanceof ApiError && error.status === 401)
           await onExpired();
         throw error;
       }
     },
-    [session.token, onExpired, alive],
+    [cache, onExpired, alive],
   );
 }
 type State<T> = {
@@ -51,7 +53,8 @@ type State<T> = {
   error: string;
 };
 export function useResource<T>(path: string | null) {
-  const api = useSocialApi();
+  const cache = useDataCache();
+  const { onExpired } = useSessionActions();
   const alive = useAlive();
   const sequence = useRef(0);
   const activePath = useRef(path);
@@ -61,44 +64,54 @@ export function useResource<T>(path: string | null) {
   }, [path]);
   const [state, setState] = useState<State<T>>({
     path,
-    data: null,
-    loading: !!path,
+    data: path ? cache.get<T>(path) : null,
+    loading: !!path && !cache.get(path),
     error: "",
   });
-  const refresh = useCallback(async () => {
-    const endpoint = activePath.current;
-    if (!endpoint || !alive.current) return;
-    const version = ++sequence.current;
-    setState((current) => ({
-      path: endpoint,
-      data: current.path === endpoint ? current.data : null,
-      loading: true,
-      error: "",
-    }));
-    try {
-      const data = await api<T>(endpoint);
-      if (
-        alive.current &&
-        endpoint === activePath.current &&
-        version === sequence.current
-      )
-        setState({ path: endpoint, data, loading: false, error: "" });
-    } catch (error) {
-      if (
-        alive.current &&
-        endpoint === activePath.current &&
-        version === sequence.current
-      )
-        setState((current) => ({
-          ...current,
-          loading: false,
-          error: errorMessage(error),
-        }));
-    }
-  }, [api, alive]);
+  const refresh = useCallback(
+    async (force = true) => {
+      const endpoint = activePath.current;
+      if (!endpoint || !alive.current) return;
+      const version = ++sequence.current;
+      const cached = cache.get<T>(endpoint);
+      if (!force && cached !== null && cache.fresh(endpoint)) {
+        setState({ path: endpoint, data: cached, loading: false, error: "" });
+        return;
+      }
+      setState((current) => ({
+        path: endpoint,
+        data: cached ?? (current.path === endpoint ? current.data : null),
+        loading: true,
+        error: "",
+      }));
+      try {
+        const data = await cache.load<T>(endpoint, force);
+        if (
+          alive.current &&
+          endpoint === activePath.current &&
+          version === sequence.current
+        )
+          setState({ path: endpoint, data, loading: false, error: "" });
+      } catch (error) {
+        if (alive.current && error instanceof ApiError && error.status === 401)
+          await onExpired();
+        if (
+          alive.current &&
+          endpoint === activePath.current &&
+          version === sequence.current
+        )
+          setState((current) => ({
+            ...current,
+            loading: false,
+            error: errorMessage(error),
+          }));
+      }
+    },
+    [cache, onExpired, alive],
+  );
   useFocusEffect(
     useCallback(() => {
-      if (path) void refresh();
+      if (path) void refresh(false);
       const listener = AppState.addEventListener("change", (value) => {
         if (value === "active") void refresh();
       });
@@ -112,20 +125,22 @@ export function useResource<T>(path: string | null) {
     (change: (value: T) => T) => {
       if (!alive.current || activePath.current !== path) return;
       sequence.current++;
-      if (alive.current)
-        setState((current) =>
-          current.path === path && current.data !== null
-            ? { ...current, data: change(current.data), loading: false }
-            : current,
-        );
+      cache.invalidate((key) => key === path);
+      const current = path ? cache.get<T>(path) : null;
+      if (path && current !== null) {
+        const data = change(current);
+        cache.set(path, data, false);
+        setState({ path, data, loading: false, error: "" });
+      }
     },
-    [path, alive],
+    [path, alive, cache],
   );
   const invalidate = useCallback(() => {
     if (!alive.current || activePath.current !== path) return;
     sequence.current++;
+    cache.invalidate((key) => key === path);
     if (alive.current) setState((current) => ({ ...current, loading: false }));
-  }, [alive, path]);
+  }, [alive, path, cache]);
   return {
     data: state.path === path ? state.data : null,
     loading: !!path && (state.path !== path || state.loading),

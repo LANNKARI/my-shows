@@ -108,10 +108,15 @@ export const storage = {
     else await SecureStore.deleteItemAsync(key);
   },
 };
-export function imageUrl(value?: string | null) {
+export function imageUrl(value?: string | null, size?: "w185") {
   if (!value) return undefined;
   try {
     const url = new URL(value, apiUrl);
+    if (size && url.origin === "https://image.tmdb.org")
+      url.pathname = url.pathname.replace(
+        /^\/t\/p\/(?:w\d+|original)\//,
+        `/t/p/${size}/`,
+      );
     return ["http:", "https:"].includes(url.protocol)
       ? url.toString()
       : undefined;

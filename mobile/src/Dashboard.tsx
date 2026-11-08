@@ -4,7 +4,14 @@ import {
   useLocalSearchParams,
   useFocusEffect,
 } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useMemo,
+} from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -17,7 +24,8 @@ import {
   View,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { ApiError, request, Session } from "./api";
+import { ApiError, Session } from "./api";
+import { useDataCache } from "./data-context";
 import { Button, Cover, LibraryRow, ProgressBar } from "./components";
 import {
   canMark,
@@ -31,6 +39,8 @@ import {
 import { colors, styles as s } from "./theme";
 
 import { BottomNavigation, tabs, Tab } from "./navigation";
+const libraryPath = "/api/user-shows?status=library";
+const emptyLibrary: LibraryItem[] = [];
 type Undo = { token: string; expiresAt: number; id: number };
 type CalendarData = {
   events: {
@@ -49,7 +59,6 @@ const message = (error: unknown) =>
   error instanceof Error ? error.message : "Не удалось выполнить действие";
 
 export default function Dashboard({
-  session,
   onExpired,
 }: {
   session: Session;
@@ -69,16 +78,23 @@ export default function Dashboard({
     if (router.canGoBack()) router.back();
     else router.replace("/library");
   }
-  const [items, setItems] = useState<LibraryItem[]>([]);
+  const cache = useDataCache();
+  useSyncExternalStore(cache.subscribe, cache.getVersion);
+  const items = cache.get<LibraryItem[]>(libraryPath) || emptyLibrary;
+  const setItems = (change: (items: LibraryItem[]) => LibraryItem[]) =>
+    cache.set(
+      libraryPath,
+      change(cache.get<LibraryItem[]>(libraryPath) || emptyLibrary),
+    );
   const [status, setStatus] = useState("watching");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(!cache.get(libraryPath));
+  const loaded = cache.get(libraryPath) !== null;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
-  const [needsRefresh, setNeedsRefresh] = useState(false);
-  const lock = useRef(false);
+  const needsRefresh = cache.libraryWrite.needsRefresh;
+  const lock = cache.libraryWrite;
   const mounted = useRef(true);
   const loadId = useRef(0);
   const [undo, setUndo] = useState<Undo | null>(null);
@@ -87,9 +103,8 @@ export default function Dashboard({
   const [calendarError, setCalendarError] = useState("");
   const [calendarLoading, setCalendarLoading] = useState(false);
   const api = useCallback(
-    <T,>(path: string, init?: RequestInit) =>
-      request<T>(path, session.token, init),
-    [session.token],
+    <T,>(path: string, init?: RequestInit) => cache.request<T>(path, init),
+    [cache],
   );
   const handleError = useCallback(
     async (e: unknown) => {
@@ -107,17 +122,24 @@ export default function Dashboard({
     [onExpired],
   );
   const reload = useCallback(
-    async (clearError = true, reconcile = false) => {
-      if (lock.current && !reconcile) return;
+    async (clearError = true, reconcile = false, force = true) => {
+      if (cache.libraryWrite.busy && !reconcile) return;
       const version = ++loadId.current;
-      setLoading(true);
+      const fresh = !force && cache.fresh(libraryPath);
+      setLoading(!fresh);
       if (clearError) setError("");
       try {
-        const data = await api<LibraryItem[]>("/api/user-shows?status=library");
-        if (mounted.current && version === loadId.current) {
-          setItems(data);
-          setLoaded(true);
-          setNeedsRefresh(false);
+        const data = await cache.load<LibraryItem[]>(
+          libraryPath,
+          force || cache.libraryWrite.needsRefresh,
+        );
+        if (
+          version === loadId.current &&
+          cache.get(libraryPath) === data &&
+          cache.fresh(libraryPath)
+        ) {
+          cache.libraryWrite.needsRefresh = false;
+          cache.notify();
         }
       } catch (e) {
         if (version === loadId.current) await handleError(e);
@@ -125,7 +147,7 @@ export default function Dashboard({
         if (mounted.current && version === loadId.current) setLoading(false);
       }
     },
-    [api, handleError],
+    [cache, handleError],
   );
   useEffect(() => {
     mounted.current = true;
@@ -135,7 +157,7 @@ export default function Dashboard({
   }, []);
   useFocusEffect(
     useCallback(() => {
-      void reload();
+      void reload(true, false, false);
       const listener = AppState.addEventListener("change", (state) => {
         if (state === "active") void reload();
       });
@@ -152,32 +174,43 @@ export default function Dashboard({
     );
     return () => clearTimeout(timer);
   }, [undo]);
-  const loadCalendar = useCallback(async () => {
-    setCalendarLoading(true);
-    setCalendarError("");
-    const now = new Date();
-    const localDay = (date: Date) =>
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    const end = new Date(now);
-    end.setDate(end.getDate() + 30);
-    try {
-      const data = await api<CalendarData>(
-        `/api/calendar?from=${localDay(now)}&to=${localDay(end)}&status=all`,
-      );
-      if (mounted.current) setCalendar(data);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) await handleError(e);
-      else if (mounted.current) setCalendarError(message(e));
-    } finally {
-      if (mounted.current) setCalendarLoading(false);
-    }
-  }, [api, handleError]);
-  useEffect(() => {
-    if (tab === "calendar") void loadCalendar();
-  }, [tab, loadCalendar]);
+  const loadCalendar = useCallback(
+    async (force = true) => {
+      setCalendarLoading(true);
+      setCalendarError("");
+      const now = new Date();
+      const localDay = (date: Date) =>
+        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      const end = new Date(now);
+      end.setDate(end.getDate() + 30);
+      try {
+        const path = `/api/calendar?from=${localDay(now)}&to=${localDay(end)}&status=all`;
+        const cached = cache.get<CalendarData>(path);
+        if (cached && mounted.current) setCalendar(cached);
+        const data = await cache.load<CalendarData>(path, force);
+        if (mounted.current) setCalendar(data);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) await handleError(e);
+        else if (mounted.current) setCalendarError(message(e));
+      } finally {
+        if (mounted.current) setCalendarLoading(false);
+      }
+    },
+    [cache, handleError],
+  );
+  useFocusEffect(
+    useCallback(() => {
+      if (tab !== "calendar" || selected !== null) return;
+      void loadCalendar(false);
+      const listener = AppState.addEventListener("change", (state) => {
+        if (state === "active") void loadCalendar();
+      });
+      return () => listener.remove();
+    }, [tab, selected, loadCalendar]),
+  );
   async function mutate(item: LibraryItem, action: "mark" | "undo") {
-    if (lock.current || needsRefresh) return;
-    lock.current = true;
+    if (lock.busy || needsRefresh) return;
+    lock.busy = true;
     setBusy(true);
     setPendingId(item.userShowId);
     setError("");
@@ -210,9 +243,9 @@ export default function Dashboard({
               },
         ),
       });
-      if (!mounted.current) return;
       // The mutation already returns authoritative progress: no second full-library GET.
       setItems((current) => applyProgressPatch(current, data.item));
+      if (!mounted.current) return;
       setNotice(data.message);
       setUndo(
         data.undoToken && data.undoExpiresAt
@@ -224,20 +257,86 @@ export default function Dashboard({
           : null,
       );
     } catch (e) {
-      if (!mounted.current) return;
       setItems((current) =>
         current.map((value) =>
           value.userShowId === item.userShowId ? item : value,
         ),
       );
-      setNotice("");
-      setNeedsRefresh(true);
+      cache.libraryWrite.needsRefresh = true;
+      cache.invalidate((path) => path === libraryPath);
+      if (mounted.current) setNotice("");
       await handleError(e);
       // A lost response may mean the server committed. Reconcile before another mark.
       if (!(e instanceof ApiError && e.status === 401))
         await reload(false, true);
     } finally {
-      lock.current = false;
+      lock.busy = false;
+      cache.notify();
+      if (mounted.current) {
+        setBusy(false);
+        setPendingId(null);
+      }
+    }
+  }
+  async function toggleEpisode(item: LibraryItem, episodeId: number) {
+    if (lock.busy || lock.needsRefresh) return;
+    const watched = !item.progress.some(
+      (p) => p.episodeId === episodeId && p.watched,
+    );
+    lock.busy = true;
+    setBusy(true);
+    setPendingId(item.userShowId);
+    setError("");
+    setUndo(null);
+    setNotice(watched ? "Сохраняем отметку…" : "Снимаем отметку…");
+    loadId.current++;
+    setLoading(false);
+    setItems((current) =>
+      current.map((value) =>
+        value.userShowId === item.userShowId
+          ? {
+              ...value,
+              progress: [
+                ...value.progress.filter((p) => p.episodeId !== episodeId),
+                { episodeId, watched, stoppedAt: null },
+              ],
+            }
+          : value,
+      ),
+    );
+    try {
+      const data = await api<{
+        item: Omit<ProgressPatch, "userShowId"> & { id: number };
+      }>(`/api/user-shows/${item.showId}`, {
+        method: "POST",
+        body: JSON.stringify({ episodeId, watched }),
+      });
+      const { status, updatedAt, progress: savedProgress } = data.item;
+      setItems((current) =>
+        applyProgressPatch(current, {
+          userShowId: item.userShowId,
+          status,
+          updatedAt,
+          progress: savedProgress,
+        }),
+      );
+      if (mounted.current)
+        setNotice(watched ? "Серия отмечена" : "Отметка снята");
+    } catch (e) {
+      setItems((current) =>
+        current.map((value) =>
+          value.userShowId === item.userShowId ? item : value,
+        ),
+      );
+      lock.needsRefresh = true;
+      cache.invalidate((path) => path === libraryPath);
+      if (mounted.current) setNotice("");
+      await handleError(e);
+      if (!(e instanceof ApiError && e.status === 401))
+        await reload(false, true);
+    } finally {
+      lock.busy = false;
+      cache.notify();
       if (mounted.current) {
         setBusy(false);
         setPendingId(null);
@@ -245,6 +344,20 @@ export default function Dashboard({
     }
   }
   const current = items.find((item) => item.userShowId === selected);
+  const episodes = useMemo(
+    () =>
+      [...(current?.show.episodes || [])].sort(
+        (a, b) => a.season - b.season || a.episode - b.episode,
+      ),
+    [current?.show.episodes],
+  );
+  const watchedIds = useMemo(
+    () =>
+      new Set(
+        current?.progress.filter((p) => p.watched).map((p) => p.episodeId),
+      ),
+    [current?.progress],
+  );
   const watching = items.filter((item) => item.status === "watching");
   const filtered = items.filter((item) =>
     tab === "search"
@@ -307,77 +420,94 @@ export default function Dashboard({
         </View>
       )}
       {selected !== null ? (
-        <ScrollView contentContainerStyle={s.content} refreshControl={refresh}>
-          <Button title="Назад" secondary onPress={back} />
-          {loading && !loaded ? (
-            <ActivityIndicator color={colors.accent} />
-          ) : current ? (
-            <>
-              <Cover url={current.posterUrl} title={current.title} />
-              <View>
-                <Text style={s.title}>{current.title}</Text>
-                <Text style={s.muted}>
-                  {current.kind === "movie" ? "Фильм" : "Сериал"}
-                  {current.year ? ` · ${current.year}` : ""}
-                </Text>
-                <Text style={s.badge}>
-                  {statuses.find((v) => v.value === current.status)?.label}
-                </Text>
-              </View>
-              <View style={s.panel}>
-                <Text style={s.heading}>Твой прогресс</Text>
-                <ProgressBar item={current} />
-                {(canMark(current) || pendingId === current.userShowId) && (
-                  <Button
-                    title={
-                      current.kind === "movie"
-                        ? "Отметить фильм"
-                        : "Отметить следующую серию"
-                    }
-                    busy={busy}
-                    disabled={loading || needsRefresh}
-                    onPress={() => void mutate(current, "mark")}
-                  />
-                )}
-              </View>
-              {current.kind !== "movie" && (
-                <>
-                  <Text style={s.heading}>Серии</Text>
-                  {[...current.show.episodes]
-                    .sort(
-                      (a, b) => a.season - b.season || a.episode - b.episode,
-                    )
-                    .map((episode) => (
-                      <View key={episode.id} style={[s.between, s.divider]}>
-                        <Text style={s.text}>
-                          Сезон {episode.season} · серия {episode.episode}
-                        </Text>
-                        <Ionicons
-                          name={
-                            current.progress.some(
-                              (p) => p.episodeId === episode.id && p.watched,
-                            )
-                              ? "checkmark-circle"
-                              : "ellipse-outline"
-                          }
-                          size={22}
-                          color={colors.accent}
-                        />
-                      </View>
-                    ))}
-                  {!current.show.episodes.length && (
-                    <Text style={s.muted}>Список серий пока не загружен.</Text>
+        <FlatList
+          data={current?.kind === "movie" ? [] : episodes}
+          keyExtractor={(episode) => String(episode.id)}
+          contentContainerStyle={s.content}
+          refreshControl={refresh}
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={7}
+          ListHeaderComponent={
+            <View style={{ gap: 20 }}>
+              <Button title="Назад" secondary onPress={back} />
+              {loading && !loaded ? (
+                <ActivityIndicator color={colors.accent} />
+              ) : current ? (
+                <View style={{ gap: 20 }}>
+                  <Cover url={current.posterUrl} title={current.title} />
+                  <View>
+                    <Text style={s.title}>{current.title}</Text>
+                    <Text style={s.muted}>
+                      {current.kind === "movie" ? "Фильм" : "Сериал"}
+                      {current.year ? ` · ${current.year}` : ""}
+                    </Text>
+                    <Text style={s.badge}>
+                      {statuses.find((v) => v.value === current.status)?.label}
+                    </Text>
+                  </View>
+                  <View style={s.panel}>
+                    <Text style={s.heading}>Твой прогресс</Text>
+                    <ProgressBar item={current} />
+                    {(canMark(current) || pendingId === current.userShowId) && (
+                      <Button
+                        title={
+                          current.kind === "movie"
+                            ? "Отметить фильм"
+                            : "Отметить следующую серию"
+                        }
+                        busy={busy}
+                        disabled={
+                          (!loaded && loading) || needsRefresh || lock.busy
+                        }
+                        onPress={() => void mutate(current, "mark")}
+                      />
+                    )}
+                  </View>
+                  {current.kind !== "movie" && (
+                    <Text style={s.heading}>Серии</Text>
                   )}
-                </>
+                </View>
+              ) : (
+                <Text style={s.muted}>
+                  Запись больше не найдена в библиотеке. Обнови список.
+                </Text>
               )}
-            </>
-          ) : (
-            <Text style={s.muted}>
-              Запись больше не найдена в библиотеке. Вернись к списку и обнови
-              его.
-            </Text>
-          )}
-        </ScrollView>
+            </View>
+          }
+          renderItem={({ item: episode }) => {
+            const watched = watchedIds.has(episode.id);
+            const label = `Сезон ${episode.season} · серия ${episode.episode}`;
+            return (
+              <Pressable
+                aria-checked={watched}
+                accessibilityRole="checkbox"
+                accessibilityLabel={label}
+                accessibilityState={{
+                  checked: watched,
+                  disabled: busy || lock.busy || needsRefresh,
+                }}
+                disabled={busy || lock.busy || needsRefresh}
+                onPress={() =>
+                  current && void toggleEpisode(current, episode.id)
+                }
+                style={[s.between, s.divider, { minHeight: 52 }]}
+              >
+                <Text style={s.text}>{label}</Text>
+                <Ionicons
+                  name={watched ? "checkmark-circle" : "ellipse-outline"}
+                  size={24}
+                  color={colors.accent}
+                />
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
+            current?.kind !== "movie" && !loading ? (
+              <Text style={s.muted}>Список серий пока не загружен.</Text>
+            ) : undefined
+          }
+        />
       ) : tab === "library" || tab === "search" ? (
         <FlatList
           data={loaded ? filtered : []}
@@ -566,7 +696,7 @@ export default function Dashboard({
                       : "Отметить серию"
                   }
                   busy={busy}
-                  disabled={loading || needsRefresh}
+                  disabled={(!loaded && loading) || needsRefresh || lock.busy}
                   onPress={() => void mutate(watching[0], "mark")}
                 />
               )}
