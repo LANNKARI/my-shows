@@ -69,3 +69,16 @@ URL сервера задайте также в окружении соотве�
 - Проверки на реальном Android, финальные adaptive / monochrome assets, тестовые APK, затем AAB.
 
 Нативная сборка и устройство необходимы для проверки SecureStore, Android Back и поведения после перезапуска. Браузерная проверка их не заменяет.
+
+## Перед первым APK
+
+Профили EAS явно используют `https://episyhub.space` и соответствующее окружение `preview` / `production`. До запуска компиляции `eas-build-pre-install` проверяет публичный `/api/mobile/session`: ожидается JSON-ответ 401 без авторизации. Если на рабочем сайте API ещё не развёрнут или адрес закрыт Vercel Authentication, сборка останавливается с понятной причиной. Никакие пароли или тестовые записи для проверки не нужны.
+
+```bash
+EXPO_PUBLIC_API_URL=https://episyhub.space npm run check:api
+npx eas-cli@latest login --device
+npx eas-cli@latest init
+npx eas-cli@latest build --platform android --profile preview
+```
+
+Вход `--device` подтверждается в личном браузере; пароль не передаётся в чат. Для продолжения удалённого входа может понадобиться число, показанное Expo. EAS project ID и владелец будут добавлены после успешной авторизации. Временные `_vercel_share`-ссылки и секреты обхода защиты в APK не встраиваются.

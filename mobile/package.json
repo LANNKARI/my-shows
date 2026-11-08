@@ -34,7 +34,9 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test:ui": "node tests/e2e.cjs"
+    "test:ui": "node tests/e2e.cjs",
+    "check:api": "node scripts/check-api.mjs",
+    "eas-build-pre-install": "node scripts/check-api.mjs"
   },
   "private": true
 }
