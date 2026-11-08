@@ -1,4 +1,6 @@
 import { auth } from '@/lib/auth';
+import { headers } from 'next/headers';
+import { mobileSession } from './mobile-session';
 import { prisma } from '@/lib/prisma';
 
 // Глобальный патч: автоматическая сериализация BigInt в обычное число
@@ -20,6 +22,15 @@ export function safeJson<T>(data: T): T {
 // Отсутствующая или недействительная сессия никогда не даёт чужую личность.
 export async function getCurrentUser() {
   try {
+    const authorization = (await headers()).get('authorization');
+    if (authorization !== null) {
+      const mobile = await mobileSession(authorization);
+      if (!mobile) return null;
+      return prisma.user.findUnique({
+        where: { id: mobile.userId },
+        select: { id: true, email: true, username: true, name: true, bio: true, avatarUrl: true, bannerUrl: true, createdAt: true },
+      });
+    }
     const session = await auth();
     let user = null;
 
@@ -48,6 +59,9 @@ export async function getCurrentUser() {
 }
 
 export async function getCurrentUserId(): Promise<string | null> {
+  const authorization = (await headers()).get('authorization');
+  // An invalid explicit token must never fall back to a browser's identity.
+  if (authorization !== null) return (await mobileSession(authorization))?.userId || null;
   const session = await auth();
   if (!session?.user) return null;
   // Verify account existence with a minimal query; database failures must propagate.
