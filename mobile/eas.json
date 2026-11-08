@@ -11,7 +11,8 @@
       "environment": "preview",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://episyhub.space"
-      }
+      },
+      "autoIncrement": true
     },
     "production": {
       "autoIncrement": true,

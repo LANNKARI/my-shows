@@ -30,11 +30,20 @@ export function progress(item: LibraryItem) {
   );
   const total =
     item.kind === "movie" ? 1 : Math.max(item.totalEpisodes, episodes.length);
+  const movieWatched =
+    item.kind === "movie" && item.status === "completed"
+      ? 1
+      : Math.min(watched.size, 1);
   return {
-    watched: item.kind === "movie" ? Math.min(watched.size, 1) : watched.size,
+    watched: item.kind === "movie" ? movieWatched : watched.size,
     total,
     next: episodes.find((e) => !watched.has(e.id)),
-    percent: total ? Math.min(100, (watched.size / total) * 100) : 0,
+    percent: total
+      ? Math.min(
+          100,
+          ((item.kind === "movie" ? movieWatched : watched.size) / total) * 100,
+        )
+      : 0,
   };
 }
 export function canMark(item: LibraryItem) {
@@ -43,4 +52,32 @@ export function canMark(item: LibraryItem) {
       (item.kind === "movie" && item.status === "planned")) &&
     (item.kind === "movie" || !!progress(item).next)
   );
+}
+
+export type ProgressPatch = Pick<
+  LibraryItem,
+  "userShowId" | "status" | "updatedAt" | "progress"
+>;
+export function applyProgressPatch(items: LibraryItem[], patch: ProgressPatch) {
+  return items.map((item) =>
+    item.userShowId === patch.userShowId ? { ...item, ...patch } : item,
+  );
+}
+// Preview only the next episode; keep the server revision and status until confirmed.
+export function previewMark(item: LibraryItem): LibraryItem {
+  const next = progress(item).next;
+  const affected =
+    item.kind === "movie" ? item.show.episodes : next ? [next] : [];
+  const ids = new Set(affected.map((episode) => episode.id));
+  return {
+    ...item,
+    progress: [
+      ...item.progress.filter((value) => !ids.has(value.episodeId)),
+      ...affected.map((episode) => ({
+        episodeId: episode.id,
+        watched: true,
+        stoppedAt: null,
+      })),
+    ],
+  };
 }
