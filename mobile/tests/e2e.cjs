@@ -1,0 +1,110 @@
+// Browser exercises the real React Native Web UI against isolated Next.js + PostgreSQL.
+// The route bridge models native HTTP (no browser CORS); it does not mock API data.
+const { chromium } = require('../../node_modules/@playwright/test');
+const { PrismaClient } = require('../../node_modules/@prisma/client');
+const bcrypt = require('../../node_modules/bcryptjs');
+const { randomBytes } = require('node:crypto');
+const { spawn, spawnSync } = require('node:child_process');
+const { createServer } = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+require('../../node_modules/dotenv').config({ path: path.resolve(__dirname, '../../.env.local'), quiet: true });
+const root = path.resolve(__dirname, '../..');
+const mobile = path.resolve(__dirname, '..');
+const db = new URL(process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || '');
+if (!['127.0.0.1', 'localhost'].includes(db.hostname)) throw Error('UI test requires local PostgreSQL');
+const schema = `test_mobile_ui_${process.pid}_${Date.now()}`;
+db.searchParams.set('schema', schema);
+const databaseUrl = db.toString();
+const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
+const base = `http://127.0.0.1:${process.env.MOBILE_UI_API_PORT || '3318'}`;
+let next, web, browser, page, schemaCreated = false;
+const browserErrors=[];
+let serverOutput = '';
+const password = randomBytes(24).toString('hex');
+async function run() {
+  const exported = spawnSync(process.execPath, ['node_modules/expo/bin/cli', 'export', '--platform', 'web'], { cwd: mobile, stdio: 'inherit', env: { ...process.env, EXPO_PUBLIC_API_URL: 'https://episyhub.space', CI: '1' } });
+  assert.equal(exported.status, 0, 'Expo web export');
+  await prisma.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);schemaCreated = true;
+  const pushed = spawnSync(process.execPath, ['node_modules/prisma/build/index.js', 'db', 'push', '--skip-generate'], {cwd:root,env:{...process.env,DATABASE_URL:databaseUrl},encoding:'utf8'});
+  assert.equal(pushed.status,0,pushed.stderr);
+  const user = await prisma.user.create({data:{email:'mobile-ui@example.test',username:'mobile_ui',name:'Mobile UI',passwordHash:await bcrypt.hash(password,10)}});
+  const today = new Date();today.setUTCHours(0,0,0,0);
+  const show = await prisma.show.create({data:{name:'Проверка мобильного приложения',kind:'series',episodes:{create:[{season:1,episode:1,airDate:today},{season:1,episode:2,airDate:today}]}},include:{episodes:true}});
+  const entry = await prisma.userShow.create({data:{userId:user.id,showId:show.id,kind:'series',status:'watching',totalEpisodes:2}});
+  next = spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--webpack','--hostname','127.0.0.1','--port',new URL(base).port],{cwd:root,detached:true,env:{...process.env,DATABASE_URL:databaseUrl,AUTH_SECRET:randomBytes(32).toString('hex'),TMDB_API_KEY:'',TMDB_READ_ACCESS_TOKEN:'',NEXT_PUBLIC_TMDB_API_KEY:'',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
+  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Next startup timeout')),45000);const capture=data=>{serverOutput+=data.toString();if(serverOutput.includes('Ready in')){clearTimeout(timer);resolve();}};next.stdout.on('data',capture);next.stderr.on('data',capture);next.once('exit',()=>{clearTimeout(timer);reject(Error('Next exited before ready'));});});
+  const mime={'.html':'text/html','.js':'application/javascript','.ttf':'font/ttf','.png':'image/png','.ico':'image/x-icon'};
+  web=createServer(async(req,res)=>{try{const pathname=new URL(req.url,'http://localhost').pathname;const file=path.resolve(mobile,'dist','.'+(pathname==='/'?'/index.html':pathname));if(!file.startsWith(path.resolve(mobile,'dist')+path.sep))throw Error('Invalid path');const data=await fs.readFile(file);res.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');res.end(data);}catch{res.statusCode=404;res.end();}});
+  await new Promise(resolve=>web.listen(0,'127.0.0.1',resolve));
+  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
+  page=await browser.newPage({viewport:{width:390,height:844}});
+  const errors=browserErrors;page.on('pageerror',e=>errors.push(e.message));
+  let networkDown=false;
+  await page.route('https://episyhub.space/api/**',async route=>{
+    if(networkDown){await route.abort('internetdisconnected');return;}
+    const req=route.request();const headers={};
+    for(const key of ['authorization','content-type'])if(req.headers()[key])headers[key]=req.headers()[key];
+    const cors={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,DELETE,PATCH,OPTIONS'};
+    if(req.method()==='OPTIONS'){await route.fulfill({status:204,headers:cors});return;}
+    const response=await page.request.fetch(base+new URL(req.url()).pathname+new URL(req.url()).search,{method:req.method(),headers,data:req.postData()||undefined,timeout:30000});
+    await route.fulfill({response,headers:{...response.headers(),...cors}});
+  });
+  await page.goto(`http://127.0.0.1:${web.address().port}`);
+  await page.getByLabel('Почта',{exact:true}).fill(user.email);
+  await page.getByLabel('Пароль',{exact:true}).fill('incorrect');
+  await page.getByRole('button',{name:'Войти',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Неверная почта'}).waitFor();
+  await page.getByLabel('Пароль',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Войти',exact:true}).click();
+  await page.getByText('Что посмотрим?',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Отметить серию',exact:true}).waitFor();
+  await fs.mkdir(path.join(root,'test-results'),{recursive:true});
+  await page.screenshot({path:path.join(root,'test-results/mobile-home.png'),fullPage:true});
+  await page.getByRole('button',{name:'Отметить серию',exact:true}).click();
+  await page.getByText('Серия отмечена',{exact:true}).waitFor();
+  assert.equal(await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}}),1);
+  await page.getByRole('button',{name:'Отменить отметку',exact:true}).click();
+  await page.getByText('Отметка отменена',{exact:true}).waitFor();
+  assert.equal(await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}}),0);
+  await page.getByRole('tab',{name:'Библиотека',exact:true}).click();
+  await page.getByRole('button',{name:`Открыть ${show.name}`,exact:true}).click();
+  await page.getByText('Твой прогресс',{exact:true}).waitFor();
+  await page.screenshot({path:path.join(root,'test-results/mobile-detail.png'),fullPage:true});
+  // Simulate a website write after the mobile read, then confirm the UI preserves 409.
+  await prisma.userShow.update({where:{id:entry.id},data:{updatedAt:new Date(Date.now()+1000)}});
+  await page.getByRole('button',{name:'Отметить следующую серию',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Прогресс уже изменился'}).waitFor();
+  assert.equal(await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}}),0);
+  await page.getByRole('button',{name:'Обновить библиотеку',exact:true}).click();
+  await page.getByRole('button',{name:'Отметить следующую серию',exact:true}).click();
+  await page.getByText('Серия отмечена',{exact:true}).waitFor();
+  assert.equal(await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}}),1);
+  await page.getByRole('button',{name:'Назад',exact:true}).click();
+  await page.getByRole('tab',{name:'Поиск',exact:true}).click();
+  await page.getByLabel('Название в библиотеке').fill('несуществующий тайтл');
+  await page.getByText('Ничего не найдено',{exact:true}).waitFor();
+  await page.getByLabel('Название в библиотеке').fill('Проверка');
+  await page.getByRole('button',{name:`Открыть ${show.name}`,exact:true}).waitFor();
+  await page.getByRole('tab',{name:'Календарь',exact:true}).click();
+  await page.getByText('Сезон 1 · серия 2',{exact:true}).waitFor();
+  await page.getByRole('tab',{name:'Профиль',exact:true}).click();
+  networkDown=true;
+  await page.getByRole('button',{name:'Выйти из аккаунта',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Не удалось связаться с сервером'}).waitFor();
+  assert.equal(await prisma.session.count({where:{userId:user.id}}),1,'offline logout does not claim revocation');
+  networkDown=false;
+  await page.getByRole('button',{name:'Выйти из аккаунта',exact:true}).click();
+  await page.getByRole('button',{name:'Войти',exact:true}).waitFor();
+  assert.equal(await prisma.session.count({where:{userId:user.id}}),0);
+  assert.deepEqual(errors,[],'no unhandled browser errors');
+  console.log('PASS: real UI → login → library → mark/undo → 409 recovery → search → calendar → offline error → logout → PostgreSQL');
+}
+run().catch(async error=>{console.error(error);console.error(browserErrors);console.error(serverOutput.slice(-6000));if(page){await fs.mkdir(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/mobile-failure.png'),fullPage:true}).catch(()=>{});}process.exitCode=1;}).finally(async()=>{
+  await browser?.close();
+  if(web)await new Promise(resolve=>web.close(resolve));
+  if(next?.pid&&next.exitCode===null){const exited=new Promise(resolve=>next.once('exit',resolve));process.kill(-next.pid,'SIGTERM');await exited;}
+  if(schemaCreated)await prisma.$executeRawUnsafe(`DROP SCHEMA "${schema}" CASCADE`);
+  await prisma.$disconnect();
+});

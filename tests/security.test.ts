@@ -173,7 +173,7 @@ before(async () => {
   mailServer=createServer((req,res)=>{let data="";req.on("data",chunk=>data+=chunk);req.on("end",()=>{res.setHeader("Content-Type","application/json");if(req.headers["x-api-key"]!=="fixture-email-key"){res.statusCode=401;res.end(JSON.stringify({status:"error"}));return;}mailRequests.push(JSON.parse(data));res.end(JSON.stringify(mailFails?{status:"error",code:mailFailureCode||undefined,message:"Sensitive provider details fixture"}:{status:"success",job_id:"fixture"}));});});
   await new Promise<void>(resolve=>mailServer.listen(0,"127.0.0.1",resolve));
   const mailPort=(mailServer.address() as {port:number}).port;
-  server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', new URL(base).port], {
+  server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', ...(process.env.TEST_NEXT_WEBPACK === '1' ? ['--webpack'] : []), '--hostname', '127.0.0.1', '--port', new URL(base).port], {
     detached: true,
     env: { ...process.env, DATABASE_URL: databaseUrl, AUTH_SECRET: randomBytes(32).toString('hex'), APP_URL:base, UNISENDER_GO_API_KEY:'fixture-email-key', EMAIL_FROM:'noreply@episyhub.space', EMAIL_FROM_NAME:'EpisyHub', UNISENDER_GO_API_URL:`http://127.0.0.1:${mailPort}/send`, TMDB_API_KEY: '', TMDB_READ_ACCESS_TOKEN: '', NEXT_PUBLIC_TMDB_API_KEY: '', NEXT_TELEMETRY_DISABLED: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -896,9 +896,13 @@ test('quiz attempt settlement cannot be replayed concurrently or exceed the dail
 test('invalid sessions and sessions of deleted users never fall back to an existing account', async () => {
   const invalid = new Client(); invalid.cookies.set('authjs.session-token', 'invalid-session');
   assert.equal((await invalid.request('/api/users/me')).status, 401);
-  await prisma.user.delete({ where: { id: bob.id } });
-  assert.equal((await other.request('/api/users/me')).status, 401);
-  assert.equal((await other.request('/api/shows')).status, 401);
+  // Keep the shared bob fixture alive for later ownership tests.
+  const deleted = await prisma.user.create({ data: { email: 'deleted-session@example.test', username: 'deleted_session', passwordHash: await bcrypt.hash(password, 10) } });
+  const deletedClient = new Client();
+  await deletedClient.login(deleted);
+  await prisma.user.delete({ where: { id: deleted.id } });
+  assert.equal((await deletedClient.request('/api/users/me')).status, 401);
+  assert.equal((await deletedClient.request('/api/shows')).status, 401);
 });
 
 test('TMDB round generation uses authorization, deduplicates movies and hides the new answer', async () => {
@@ -2289,7 +2293,9 @@ test('promo codes roll back all changes on failure, reject cross-origin requests
   assert.equal((await redeem(owner,promo.code)).status,503);
   assert.equal((await prisma.user.findUniqueOrThrow({where:{id:alice.id}})).popcorn,100);assert.equal((await prisma.promoCode.findUniqueOrThrow({where:{id:promo.id}})).redeemedCount,0);assert.equal(await prisma.promoRedemption.count({where:{promoCodeId:promo.id}}),0);
   const response=await fetch(base+'/api/promo-codes/redeem',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://untrusted.example',Cookie:[...owner.cookies].map(([k,v])=>`${k}=${v}`).join('; ')},body:JSON.stringify({code:promo.code})});assert.equal(response.status,403);
-  let status=0;for(let i=0;i<21;i++)status=(await redeem(owner,'MISSING')).status;assert.equal(status,429);
+  // Exhaust a dedicated account's quota, not the owner used by later tests.
+  const {client: limitedClient} = await featureAccount();
+  let status=0;for(let i=0;i<21;i++)status=(await redeem(limitedClient,'MISSING')).status;assert.equal(status,429);
 });
 
 
@@ -2552,4 +2558,63 @@ test('avatar appearance: public batch returns current frames, preserves badge AP
  assert.equal((await(await guest.request(path+'&appearance=1')).json()).frames[record.id],'frame-stars');
  assert.equal((await guest.request('/api/account-badges?appearance=1&ids='+Array.from({length:51},(_,i)=>'u'+i).join(','))).status,400);
  assert.equal((await guest.request('/api/account-badges?appearance=1&ids=%3Cscript%3E')).status,400);
+});
+
+test('mobile bearer sessions: login, shared progress, identity isolation, revocation and password changes', async () => {
+  const mobilePassword = randomBytes(20).toString('hex');
+  const mobileUser = await prisma.user.create({ data: {
+    email: `${randomUUID()}@example.test`, username: `mobile_${randomBytes(4).toString('hex')}`,
+    passwordHash: await bcrypt.hash(mobilePassword, 10), name: 'Mobile fixture',
+  } });
+  const login = (password = mobilePassword, extraHeaders: Record<string,string> = {}) => fetch(`${base}/api/mobile/session`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...extraHeaders },
+    body: JSON.stringify({ email: ` ${mobileUser.email.toUpperCase()} `, password }),
+  });
+  assert.equal((await login('incorrect')).status, 401);
+  assert.equal((await login(mobilePassword, { origin: 'https://foreign.example' })).status, 403);
+  const response = await login();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('cache-control') || '', /no-store/);
+  const { token, expiresAt, user } = await response.json();
+  assert.equal(user.id, mobileUser.id);
+  assert.equal(user.passwordHash, undefined);
+  assert.match(token, /^ehm_[A-Za-z0-9_-]{43}$/);
+  assert.ok(Date.parse(expiresAt) > Date.now());
+  const stored = await prisma.session.findFirstOrThrow({ where: { userId: mobileUser.id } });
+  assert.notEqual(stored.sessionToken, token, 'database only stores a token hash');
+  assert.match(stored.sessionToken, /^mobile:[a-f0-9]{64}$/);
+  const headers = { authorization: `Bearer ${token}` };
+  const mobileRequest = (path:string, method='GET', body?:object, extraHeaders:Record<string,string>={}) => fetch(base+path, {
+    method, headers: {...headers,...extraHeaders,...(body?{'Content-Type':'application/json'}:{})}, body:body?JSON.stringify(body):undefined,
+  });
+  assert.equal((await fetch(`${base}/api/mobile/session`)).status, 401);
+  assert.equal((await mobileRequest('/api/mobile/session')).status, 200);
+  assert.equal((await (await mobileRequest('/api/users/me')).json()).id, mobileUser.id);
+  const browserCookies = [...owner.cookies].map(([key,value])=>`${key}=${value}`).join('; ');
+  assert.equal((await (await mobileRequest('/api/users/me','GET',undefined,{cookie:browserCookies})).json()).id,mobileUser.id,'explicit bearer determines identity');
+  assert.equal((await mobileRequest('/api/user-shows','GET',undefined,{cookie:browserCookies,authorization:'Bearer invalid'})).status,401,'invalid bearer cannot fall back to web session');
+  const mobileShow = await prisma.show.create({ data: {name:'Mobile sync fixture',kind:'series',episodes:{create:[{season:1,episode:1},{season:1,episode:2}]}},include:{episodes:true} });
+  const entry = await prisma.userShow.create({data:{userId:mobileUser.id,showId:mobileShow.id,kind:'series',status:'watching',totalEpisodes:2}});
+  const foreignEntry = await prisma.userShow.create({data:{userId:bob.id,showId:mobileShow.id,kind:'series',status:'watching',totalEpisodes:2}});
+  const listResponse = await mobileRequest('/api/user-shows?status=library');
+  assert.equal(listResponse.status,200);
+  const list = await listResponse.json();
+  assert.equal(list.length,1);assert.equal(list[0].userShowId,entry.id);
+  const markBody={action:'mark',expectedUpdatedAt:list[0].updatedAt,expectedEpisodeId:mobileShow.episodes[0].id};
+  const marked = await mobileRequest(`/api/user-shows/${entry.id}/quick-progress`,'POST',markBody);
+  assert.equal(marked.status,200);
+  const markData=await marked.json();
+  assert.equal((await prisma.episodeProgress.findFirstOrThrow({where:{userShowId:entry.id,episodeId:mobileShow.episodes[0].id}})).watched,true,'same server data as website');
+  assert.equal((await mobileRequest(`/api/user-shows/${entry.id}/quick-progress`,'POST',markBody)).status,409,'stale write rejected');
+  assert.equal((await mobileRequest(`/api/user-shows/${foreignEntry.id}/quick-progress`,'POST',{...markBody,expectedUpdatedAt:foreignEntry.updatedAt.toISOString()})).status,404,'other user progress protected');
+  assert.equal((await mobileRequest(`/api/user-shows/${entry.id}/quick-progress`,'POST',{action:'undo',token:markData.undoToken})).status,200);
+  assert.equal((await prisma.episodeProgress.findFirst({where:{userShowId:entry.id,watched:true}})),null);
+  assert.equal((await mobileRequest('/api/mobile/session','DELETE')).status,200);
+  assert.equal((await mobileRequest('/api/user-shows?status=library')).status,401);
+  const second=await (await login()).json();
+  await prisma.session.updateMany({where:{userId:mobileUser.id},data:{expires:new Date(Date.now()-1000)}});
+  assert.equal((await fetch(`${base}/api/mobile/session`,{headers:{authorization:`Bearer ${second.token}`}})).status,401,'expired session rejected');
+  const third=await (await login()).json();
+  await prisma.user.update({where:{id:mobileUser.id},data:{passwordHash:await bcrypt.hash(randomBytes(20).toString('hex'),10)}});
+  assert.equal((await fetch(`${base}/api/user-shows?status=library`,{headers:{authorization:`Bearer ${third.token}`}})).status,401,'password change invalidates mobile sessions');
 });

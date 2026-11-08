@@ -207,7 +207,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json(safeJson(normalized));
+    return NextResponse.json(safeJson(normalized), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error: unknown) {
     console.error("Library unavailable", error);
     return NextResponse.json({ error: "База данных временно недоступна. Повторите загрузку." }, { status: 503, headers: { "Cache-Control": "private, no-store" } });

@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "EpisyHub",
+    "slug": "episyhub",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0b0c23",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "package": "space.episyhub.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      "expo-router"
+    ],
+    "scheme": "episyhub"
+  }
+}
