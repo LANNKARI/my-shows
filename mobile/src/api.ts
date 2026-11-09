@@ -1,3 +1,5 @@
+import { ApiError } from "./api-error";
+export { ApiError } from "./api-error";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
@@ -24,14 +26,6 @@ export type User = {
   avatarUrl: string | null;
 };
 export type Session = { token: string; expiresAt: string; user: User };
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-  ) {
-    super(message);
-  }
-}
 export async function request<T>(
   path: string,
   token?: string,

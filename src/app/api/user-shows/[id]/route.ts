@@ -1,3 +1,4 @@
+import { progressTiming } from "@/lib/progress-timing";
 import { releaseDefaults } from "@/lib/release-defaults";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -343,7 +344,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const timing = progressTiming("episode");
   const userId = await getCurrentUserId();
+  timing.authenticated();
   if (!userId)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
@@ -355,6 +358,7 @@ export async function POST(
           await request.json().catch(() => null),
         ),
       ),
+      { headers: timing.headers() },
     );
   } catch (error) {
     return mutationErrorResponse(error);

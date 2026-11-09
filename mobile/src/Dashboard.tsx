@@ -25,7 +25,7 @@ import {
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ApiError, Session } from "./api";
-import { useDataCache } from "./data-context";
+import { useDataCache, useProgressQueue } from "./data-context";
 import { Button, Cover, LibraryRow, ProgressBar } from "./components";
 import {
   canMark,
@@ -79,6 +79,7 @@ export default function Dashboard({
     else router.replace("/library");
   }
   const cache = useDataCache();
+  const queue = useProgressQueue();
   useSyncExternalStore(cache.subscribe, cache.getVersion);
   const items = cache.get<LibraryItem[]>(libraryPath) || emptyLibrary;
   const setItems = (change: (items: LibraryItem[]) => LibraryItem[]) =>
@@ -97,8 +98,10 @@ export default function Dashboard({
   const lock = cache.libraryWrite;
   const mounted = useRef(true);
   const loadId = useRef(0);
-  const [undo, setUndo] = useState<Undo | null>(null);
-  const [notice, setNotice] = useState("");
+  const [movieUndo, setUndo] = useState<Undo | null>(null);
+  const undo = movieUndo || queue.undo;
+  const [localNotice, setNotice] = useState("");
+  const notice = queue.notice || localNotice;
   const [calendar, setCalendar] = useState<CalendarData | null>(null);
   const [calendarError, setCalendarError] = useState("");
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -127,7 +130,10 @@ export default function Dashboard({
       const version = ++loadId.current;
       const fresh = !force && cache.fresh(libraryPath);
       setLoading(!fresh);
-      if (clearError) setError("");
+      if (clearError) {
+        setError("");
+        queue.error = null;
+      }
       try {
         const data = await cache.load<LibraryItem[]>(
           libraryPath,
@@ -147,7 +153,7 @@ export default function Dashboard({
         if (mounted.current && version === loadId.current) setLoading(false);
       }
     },
-    [cache, handleError],
+    [cache, handleError, queue],
   );
   useEffect(() => {
     mounted.current = true;
@@ -167,13 +173,20 @@ export default function Dashboard({
     }, [reload]),
   );
   useEffect(() => {
+    if (queue.error) void handleError(queue.error);
+  }, [queue.error, handleError]);
+  useEffect(() => {
     if (!undo) return;
     const timer = setTimeout(
-      () => setUndo(null),
+      () => {
+        setUndo(null);
+        queue.undo = null;
+        cache.notify();
+      },
       Math.max(0, undo.expiresAt - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [undo]);
+  }, [undo, queue, cache]);
   const loadCalendar = useCallback(
     async (force = true) => {
       setCalendarLoading(true);
@@ -209,6 +222,23 @@ export default function Dashboard({
     }, [tab, selected, loadCalendar]),
   );
   async function mutate(item: LibraryItem, action: "mark" | "undo") {
+    if (action === "mark" && item.kind !== "movie") {
+      const latest =
+        cache
+          .get<LibraryItem[]>(libraryPath)
+          ?.find((value) => value.userShowId === item.userShowId) || item;
+      const next = progress(latest).next;
+      if (next && !needsRefresh) {
+        setError("");
+        setUndo(null);
+        setNotice("");
+        loadId.current++;
+        queue.enqueue(latest, next.id, true, true);
+      }
+      return;
+    }
+    queue.notice = "";
+    queue.undo = null;
     if (lock.busy || needsRefresh) return;
     lock.busy = true;
     setBusy(true);
@@ -278,70 +308,20 @@ export default function Dashboard({
       }
     }
   }
-  async function toggleEpisode(item: LibraryItem, episodeId: number) {
-    if (lock.busy || lock.needsRefresh) return;
-    const watched = !item.progress.some(
+  function toggleEpisode(item: LibraryItem, episodeId: number) {
+    if (needsRefresh || busy) return;
+    const latest =
+      cache
+        .get<LibraryItem[]>(libraryPath)
+        ?.find((value) => value.userShowId === item.userShowId) || item;
+    const watched = !latest.progress.some(
       (p) => p.episodeId === episodeId && p.watched,
     );
-    lock.busy = true;
-    setBusy(true);
-    setPendingId(item.userShowId);
     setError("");
     setUndo(null);
-    setNotice(watched ? "Сохраняем отметку…" : "Снимаем отметку…");
+    setNotice("");
     loadId.current++;
-    setLoading(false);
-    setItems((current) =>
-      current.map((value) =>
-        value.userShowId === item.userShowId
-          ? {
-              ...value,
-              progress: [
-                ...value.progress.filter((p) => p.episodeId !== episodeId),
-                { episodeId, watched, stoppedAt: null },
-              ],
-            }
-          : value,
-      ),
-    );
-    try {
-      const data = await api<{
-        item: Omit<ProgressPatch, "userShowId"> & { id: number };
-      }>(`/api/user-shows/${item.showId}`, {
-        method: "POST",
-        body: JSON.stringify({ episodeId, watched }),
-      });
-      const { status, updatedAt, progress: savedProgress } = data.item;
-      setItems((current) =>
-        applyProgressPatch(current, {
-          userShowId: item.userShowId,
-          status,
-          updatedAt,
-          progress: savedProgress,
-        }),
-      );
-      if (mounted.current)
-        setNotice(watched ? "Серия отмечена" : "Отметка снята");
-    } catch (e) {
-      setItems((current) =>
-        current.map((value) =>
-          value.userShowId === item.userShowId ? item : value,
-        ),
-      );
-      lock.needsRefresh = true;
-      cache.invalidate((path) => path === libraryPath);
-      if (mounted.current) setNotice("");
-      await handleError(e);
-      if (!(e instanceof ApiError && e.status === 401))
-        await reload(false, true);
-    } finally {
-      lock.busy = false;
-      cache.notify();
-      if (mounted.current) {
-        setBusy(false);
-        setPendingId(null);
-      }
-    }
+    queue.enqueue(latest, episodeId, watched);
   }
   const current = items.find((item) => item.userShowId === selected);
   const episodes = useMemo(
@@ -405,11 +385,11 @@ export default function Dashboard({
         <View style={{ paddingHorizontal: 20, paddingVertical: 8, gap: 8 }}>
           <Text
             accessibilityLiveRegion="polite"
-            style={pendingId === null ? s.badge : s.muted}
+            style={pendingId === null && !lock.busy ? s.badge : s.muted}
           >
             {notice}
           </Text>
-          {undoItem && (
+          {undoItem && !lock.busy && (
             <Button
               title="Отменить отметку"
               secondary
@@ -456,9 +436,11 @@ export default function Dashboard({
                             ? "Отметить фильм"
                             : "Отметить следующую серию"
                         }
-                        busy={busy}
+                        busy={current.kind === "movie" && busy}
                         disabled={
-                          (!loaded && loading) || needsRefresh || lock.busy
+                          (!loaded && loading) ||
+                          needsRefresh ||
+                          (current.kind === "movie" && lock.busy)
                         }
                         onPress={() => void mutate(current, "mark")}
                       />
@@ -485,9 +467,10 @@ export default function Dashboard({
                 accessibilityLabel={label}
                 accessibilityState={{
                   checked: watched,
-                  disabled: busy || lock.busy || needsRefresh,
+                  busy: queue.pending(current?.userShowId || 0, episode.id),
+                  disabled: busy || needsRefresh,
                 }}
-                disabled={busy || lock.busy || needsRefresh}
+                disabled={busy || needsRefresh}
                 onPress={() =>
                   current && void toggleEpisode(current, episode.id)
                 }
@@ -695,8 +678,12 @@ export default function Dashboard({
                       ? "Отметить фильм"
                       : "Отметить серию"
                   }
-                  busy={busy}
-                  disabled={(!loaded && loading) || needsRefresh || lock.busy}
+                  busy={watching[0].kind === "movie" && busy}
+                  disabled={
+                    (!loaded && loading) ||
+                    needsRefresh ||
+                    (watching[0].kind === "movie" && lock.busy)
+                  }
                   onPress={() => void mutate(watching[0], "mark")}
                 />
               )}

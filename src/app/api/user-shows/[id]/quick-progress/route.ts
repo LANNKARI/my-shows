@@ -1,3 +1,4 @@
+import { progressTiming } from "@/lib/progress-timing";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -59,6 +60,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const timing = progressTiming("quick-progress");
   const origin = request.headers.get("origin");
   const requestOrigin = new URL(request.url);
   // Next может нормализовать 127.0.0.1 в localhost; Host сохраняет адрес браузера.
@@ -69,6 +71,7 @@ export async function POST(
       { status: 403 },
     );
   const userId = await getCurrentUserId();
+  timing.authenticated();
   if (!userId)
     return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
   const userShowId = Number((await params).id);
@@ -155,14 +158,18 @@ export async function POST(
               });
             }
           }
-          await tx.userShow.update({
+          const restoredRow = await tx.userShow.update({
             where: { id: userShowId },
             data: { ...undo.before, updatedAt: revision },
           });
-          const restored = await tx.userShow.findUniqueOrThrow({
-            where: { id: userShowId },
-            include,
-          });
+          const restored = {
+            ...entry,
+            ...restoredRow,
+            progress: await tx.episodeProgress.findMany({
+              where: { userShowId },
+              orderBy: { episodeId: "asc" },
+            }),
+          };
           return { item: resultItem(restored), message: "Отметка отменена" };
         }
 
@@ -243,7 +250,7 @@ export async function POST(
             entry.show.episodes.every((episode) => watched.has(episode.id)) &&
             entry.show.episodes.filter((episode) => watched.has(episode.id))
               .length >= total);
-        await tx.userShow.update({
+        const updatedRow = await tx.userShow.update({
           where: { id: userShowId },
           data: {
             status: complete ? "completed" : "watching",
@@ -252,10 +259,14 @@ export async function POST(
             updatedAt: revision,
           },
         });
-        const updated = await tx.userShow.findUniqueOrThrow({
-          where: { id: userShowId },
-          include,
-        });
+        const updated = {
+          ...entry,
+          ...updatedRow,
+          progress: await tx.episodeProgress.findMany({
+            where: { userShowId },
+            orderBy: { episodeId: "asc" },
+          }),
+        };
         const expiresAt = Date.now() + 10 * 60 * 1000;
         const undoToken = signProgressUndo(
           {
@@ -285,7 +296,7 @@ export async function POST(
       },
     );
     return NextResponse.json(response, {
-      headers: { "Cache-Control": "no-store" },
+      headers: timing.headers(),
     });
   } catch (error) {
     if (error instanceof ProgressError)

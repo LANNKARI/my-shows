@@ -69,6 +69,7 @@ async function run() {
     const cors={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,DELETE,PATCH,OPTIONS'};
     if(req.method()==='OPTIONS'){await route.fulfill({status:204,headers:cors});return;}
     const response=await page.request.fetch(base+new URL(req.url()).pathname+new URL(req.url()).search,{method:req.method(),headers,data:req.postData()||undefined,timeout:30000});
+    if(req.method()==='POST'&&response.status()===200&&/^\/api\/user-shows\/\d+(?:\/quick-progress)?$/.test(url.pathname))assert.match(response.headers()['server-timing']||'',/auth;dur=\d+, mutation;dur=\d+, total;dur=\d+/,'authenticated progress exposes phase timings');
     if(dropMarkReply&&url.pathname.endsWith('/quick-progress')&&req.method()==='POST'&&JSON.parse(req.postData()).action==='mark'){dropMarkReply=false;await route.abort('connectionclosed');return;}
     await route.fulfill({response,headers:{...response.headers(),...cors}});
     if(oldRequest){oldResponseStatus=response.status();signalOldDone();}
@@ -96,8 +97,8 @@ async function run() {
   await page.getByRole('button',{name:'Отметить серию',exact:true}).click();
   await markWaiting;
   await page.getByText('1 из 2 серий',{exact:true}).filter({visible:true}).waitFor();
-  await page.getByText('Сохраняем отметку…',{exact:true}).filter({visible:true}).waitFor();
-  assert.equal(await page.getByRole('button',{name:'Отметить серию',exact:true}).getAttribute('aria-disabled'),'true');
+  await page.getByText('Сохраняем отметки…',{exact:true}).filter({visible:true}).waitFor();
+  assert.notEqual(await page.getByRole('button',{name:'Отметить серию',exact:true}).getAttribute('aria-disabled'),'true','next episode stays interactive while the current one saves');
   assert.equal(await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}}),0,'preview responds before a delayed server request');
   holdMark=false;releaseMark();
   await page.getByText('Серия отмечена',{exact:true}).filter({visible:true}).waitFor();
@@ -134,8 +135,16 @@ async function run() {
   assert.equal(await episodeTwo().getAttribute('aria-checked'),'true');
   assert.equal(await episodeOne().getAttribute('aria-checked'),'false');
   assert.equal(await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}}),0);
+  assert.notEqual(await episodeOne().getAttribute('aria-disabled'),'true');
+  await episodeOne().click();
+  await page.getByRole('checkbox',{name:'Сезон 1 · серия 1',exact:true,checked:true}).waitFor();
+  await episodeOne().click();
+  await page.getByRole('checkbox',{name:'Сезон 1 · серия 1',exact:true,checked:false}).waitFor();
+  await page.getByRole('button',{name:'Назад',exact:true}).click();
+  await page.getByRole('button',{name:`Открыть ${show.name}`,exact:true}).click();
+  await page.getByRole('checkbox',{name:'Сезон 1 · серия 2',exact:true,checked:true}).waitFor();
   holdEpisode=false;releaseEpisode();
-  await page.getByText('Серия отмечена',{exact:true}).filter({visible:true}).waitFor();
+  await page.getByText('Отметка снята',{exact:true}).filter({visible:true}).waitFor();
   const savedTwo=await prisma.episodeProgress.findFirstOrThrow({where:{userShowId:entry.id,watched:true}});
   assert.equal(savedTwo.episodeId,show.episodes.find(e=>e.episode===2).id);
   await episodeOne().click();

@@ -1,6 +1,6 @@
 {
   "name": "episyhub-mobile",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/metro-runtime": "~58.0.17",
