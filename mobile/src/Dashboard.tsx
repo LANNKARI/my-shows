@@ -4,7 +4,14 @@ import {
   useLocalSearchParams,
   useFocusEffect,
 } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useMemo,
+} from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -17,23 +24,23 @@ import {
   View,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { ApiError, request, Session } from "./api";
+import { ApiError, Session } from "./api";
+import { useDataCache, useProgressQueue } from "./data-context";
 import { Button, Cover, LibraryRow, ProgressBar } from "./components";
-import { canMark, LibraryItem, progress, statuses } from "./domain";
+import {
+  canMark,
+  LibraryItem,
+  progress,
+  statuses,
+  applyProgressPatch,
+  previewMark,
+  ProgressPatch,
+} from "./domain";
 import { colors, styles as s } from "./theme";
 
-type Tab = "home" | "search" | "library" | "calendar" | "profile";
-const tabs: {
-  id: Tab;
-  label: string;
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-}[] = [
-  { id: "home", label: "Главная", icon: "home-outline" },
-  { id: "search", label: "Поиск", icon: "search-outline" },
-  { id: "library", label: "Библиотека", icon: "library-outline" },
-  { id: "calendar", label: "Календарь", icon: "calendar-outline" },
-  { id: "profile", label: "Профиль", icon: "person-outline" },
-];
+import { BottomNavigation, tabs, Tab } from "./navigation";
+const libraryPath = "/api/user-shows?status=library";
+const emptyLibrary: LibraryItem[] = [];
 type Undo = { token: string; expiresAt: number; id: number };
 type CalendarData = {
   events: {
@@ -52,12 +59,9 @@ const message = (error: unknown) =>
   error instanceof Error ? error.message : "Не удалось выполнить действие";
 
 export default function Dashboard({
-  session,
-  onLogout,
   onExpired,
 }: {
   session: Session;
-  onLogout: () => Promise<void>;
   onExpired: () => Promise<void>;
 }) {
   const pathname = usePathname();
@@ -70,32 +74,40 @@ export default function Dashboard({
     selected !== null
       ? tabs.find((t) => t.id === params.from)?.id || "library"
       : tabs.find((t) => `/${t.id}` === pathname)?.id || "home";
-  function setTab(value: Tab) {
-    router.replace(value === "home" ? "/" : `/${value}`);
-  }
   function back() {
     if (router.canGoBack()) router.back();
     else router.replace("/library");
   }
-  const [items, setItems] = useState<LibraryItem[]>([]);
+  const cache = useDataCache();
+  const queue = useProgressQueue();
+  useSyncExternalStore(cache.subscribe, cache.getVersion);
+  const items = cache.get<LibraryItem[]>(libraryPath) || emptyLibrary;
+  const setItems = (change: (items: LibraryItem[]) => LibraryItem[]) =>
+    cache.set(
+      libraryPath,
+      change(cache.get<LibraryItem[]>(libraryPath) || emptyLibrary),
+    );
   const [status, setStatus] = useState("watching");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(!cache.get(libraryPath));
+  const loaded = cache.get(libraryPath) !== null;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const lock = useRef(false);
+  const [pendingId, setPendingId] = useState<number | null>(null);
+  const needsRefresh = cache.libraryWrite.needsRefresh;
+  const lock = cache.libraryWrite;
   const mounted = useRef(true);
   const loadId = useRef(0);
-  const [undo, setUndo] = useState<Undo | null>(null);
-  const [notice, setNotice] = useState("");
+  const [movieUndo, setUndo] = useState<Undo | null>(null);
+  const undo = movieUndo || queue.undo;
+  const [localNotice, setNotice] = useState("");
+  const notice = queue.notice || localNotice;
   const [calendar, setCalendar] = useState<CalendarData | null>(null);
   const [calendarError, setCalendarError] = useState("");
   const [calendarLoading, setCalendarLoading] = useState(false);
   const api = useCallback(
-    <T,>(path: string, init?: RequestInit) =>
-      request<T>(path, session.token, init),
-    [session.token],
+    <T,>(path: string, init?: RequestInit) => cache.request<T>(path, init),
+    [cache],
   );
   const handleError = useCallback(
     async (e: unknown) => {
@@ -113,15 +125,27 @@ export default function Dashboard({
     [onExpired],
   );
   const reload = useCallback(
-    async (clearError = true) => {
+    async (clearError = true, reconcile = false, force = true) => {
+      if (cache.libraryWrite.busy && !reconcile) return;
       const version = ++loadId.current;
-      setLoading(true);
-      if (clearError) setError("");
+      const fresh = !force && cache.fresh(libraryPath);
+      setLoading(!fresh);
+      if (clearError) {
+        setError("");
+        queue.error = null;
+      }
       try {
-        const data = await api<LibraryItem[]>("/api/user-shows?status=library");
-        if (mounted.current && version === loadId.current) {
-          setItems(data);
-          setLoaded(true);
+        const data = await cache.load<LibraryItem[]>(
+          libraryPath,
+          force || cache.libraryWrite.needsRefresh,
+        );
+        if (
+          version === loadId.current &&
+          cache.get(libraryPath) === data &&
+          cache.fresh(libraryPath)
+        ) {
+          cache.libraryWrite.needsRefresh = false;
+          cache.notify();
         }
       } catch (e) {
         if (version === loadId.current) await handleError(e);
@@ -129,62 +153,111 @@ export default function Dashboard({
         if (mounted.current && version === loadId.current) setLoading(false);
       }
     },
-    [api, handleError],
+    [cache, handleError, queue],
   );
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useFocusEffect(
     useCallback(() => {
-      mounted.current = true;
-      void reload();
+      void reload(true, false, false);
       const listener = AppState.addEventListener("change", (state) => {
         if (state === "active") void reload();
       });
       return () => {
-        mounted.current = false;
         listener.remove();
       };
     }, [reload]),
   );
   useEffect(() => {
+    if (queue.error) void handleError(queue.error);
+  }, [queue.error, handleError]);
+  useEffect(() => {
     if (!undo) return;
     const timer = setTimeout(
-      () => setUndo(null),
+      () => {
+        setUndo(null);
+        queue.undo = null;
+        cache.notify();
+      },
       Math.max(0, undo.expiresAt - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [undo]);
-  const loadCalendar = useCallback(async () => {
-    setCalendarLoading(true);
-    setCalendarError("");
-    const now = new Date();
-    const localDay = (date: Date) =>
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    const end = new Date(now);
-    end.setDate(end.getDate() + 30);
-    try {
-      const data = await api<CalendarData>(
-        `/api/calendar?from=${localDay(now)}&to=${localDay(end)}&status=all`,
-      );
-      if (mounted.current) setCalendar(data);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) await handleError(e);
-      else if (mounted.current) setCalendarError(message(e));
-    } finally {
-      if (mounted.current) setCalendarLoading(false);
-    }
-  }, [api, handleError]);
-  useEffect(() => {
-    if (tab === "calendar") void loadCalendar();
-  }, [tab, loadCalendar]);
+  }, [undo, queue, cache]);
+  const loadCalendar = useCallback(
+    async (force = true) => {
+      setCalendarLoading(true);
+      setCalendarError("");
+      const now = new Date();
+      const localDay = (date: Date) =>
+        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      const end = new Date(now);
+      end.setDate(end.getDate() + 30);
+      try {
+        const path = `/api/calendar?from=${localDay(now)}&to=${localDay(end)}&status=all`;
+        const cached = cache.get<CalendarData>(path);
+        if (cached && mounted.current) setCalendar(cached);
+        const data = await cache.load<CalendarData>(path, force);
+        if (mounted.current) setCalendar(data);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) await handleError(e);
+        else if (mounted.current) setCalendarError(message(e));
+      } finally {
+        if (mounted.current) setCalendarLoading(false);
+      }
+    },
+    [cache, handleError],
+  );
+  useFocusEffect(
+    useCallback(() => {
+      if (tab !== "calendar" || selected !== null) return;
+      void loadCalendar(false);
+      const listener = AppState.addEventListener("change", (state) => {
+        if (state === "active") void loadCalendar();
+      });
+      return () => listener.remove();
+    }, [tab, selected, loadCalendar]),
+  );
   async function mutate(item: LibraryItem, action: "mark" | "undo") {
-    if (lock.current) return;
-    lock.current = true;
+    if (action === "mark" && item.kind !== "movie") {
+      const latest =
+        cache
+          .get<LibraryItem[]>(libraryPath)
+          ?.find((value) => value.userShowId === item.userShowId) || item;
+      const next = progress(latest).next;
+      if (next && !needsRefresh) {
+        setError("");
+        setUndo(null);
+        setNotice("");
+        loadId.current++;
+        queue.enqueue(latest, next.id, true, true);
+      }
+      return;
+    }
+    queue.notice = "";
+    queue.undo = null;
+    if (lock.busy || needsRefresh) return;
+    lock.busy = true;
     setBusy(true);
+    setPendingId(item.userShowId);
     setError("");
-    setNotice("");
-    // Ignore library reads started before the mutation; always read its final state.
+    setNotice(action === "mark" ? "Сохраняем отметку…" : "Отменяем отметку…");
+    const undoToken = undo?.token;
+    setUndo(null);
     loadId.current++;
+    setLoading(false);
+    if (action === "mark")
+      setItems((current) =>
+        current.map((value) =>
+          value.userShowId === item.userShowId ? previewMark(value) : value,
+        ),
+      );
     try {
       const data = await api<{
+        item: ProgressPatch;
         undoToken?: string;
         undoExpiresAt?: number;
         message: string;
@@ -192,7 +265,7 @@ export default function Dashboard({
         method: "POST",
         body: JSON.stringify(
           action === "undo"
-            ? { action, token: undo?.token }
+            ? { action, token: undoToken }
             : {
                 action,
                 expectedUpdatedAt: item.updatedAt,
@@ -200,6 +273,8 @@ export default function Dashboard({
               },
         ),
       });
+      // The mutation already returns authoritative progress: no second full-library GET.
+      setItems((current) => applyProgressPatch(current, data.item));
       if (!mounted.current) return;
       setNotice(data.message);
       setUndo(
@@ -212,31 +287,57 @@ export default function Dashboard({
           : null,
       );
     } catch (e) {
+      setItems((current) =>
+        current.map((value) =>
+          value.userShowId === item.userShowId ? item : value,
+        ),
+      );
+      cache.libraryWrite.needsRefresh = true;
+      cache.invalidate((path) => path === libraryPath);
+      if (mounted.current) setNotice("");
       await handleError(e);
+      // A lost response may mean the server committed. Reconcile before another mark.
+      if (!(e instanceof ApiError && e.status === 401))
+        await reload(false, true);
     } finally {
+      lock.busy = false;
+      cache.notify();
       if (mounted.current) {
-        await reload(false);
         setBusy(false);
+        setPendingId(null);
       }
-      lock.current = false;
     }
   }
-  async function logout() {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(true);
+  function toggleEpisode(item: LibraryItem, episodeId: number) {
+    if (needsRefresh || busy) return;
+    const latest =
+      cache
+        .get<LibraryItem[]>(libraryPath)
+        ?.find((value) => value.userShowId === item.userShowId) || item;
+    const watched = !latest.progress.some(
+      (p) => p.episodeId === episodeId && p.watched,
+    );
     setError("");
-    try {
-      await api("/api/mobile/session", { method: "DELETE" });
-      await onLogout();
-    } catch (e) {
-      await handleError(e);
-    } finally {
-      lock.current = false;
-      if (mounted.current) setBusy(false);
-    }
+    setUndo(null);
+    setNotice("");
+    loadId.current++;
+    queue.enqueue(latest, episodeId, watched);
   }
   const current = items.find((item) => item.userShowId === selected);
+  const episodes = useMemo(
+    () =>
+      [...(current?.show.episodes || [])].sort(
+        (a, b) => a.season - b.season || a.episode - b.episode,
+      ),
+    [current?.show.episodes],
+  );
+  const watchedIds = useMemo(
+    () =>
+      new Set(
+        current?.progress.filter((p) => p.watched).map((p) => p.episodeId),
+      ),
+    [current?.progress],
+  );
   const watching = items.filter((item) => item.status === "watching");
   const filtered = items.filter((item) =>
     tab === "search"
@@ -282,10 +383,13 @@ export default function Dashboard({
       )}
       {!!notice && (
         <View style={{ paddingHorizontal: 20, paddingVertical: 8, gap: 8 }}>
-          <Text accessibilityLiveRegion="polite" style={s.badge}>
+          <Text
+            accessibilityLiveRegion="polite"
+            style={pendingId === null && !lock.busy ? s.badge : s.muted}
+          >
             {notice}
           </Text>
-          {undoItem && (
+          {undoItem && !lock.busy && (
             <Button
               title="Отменить отметку"
               secondary
@@ -296,71 +400,97 @@ export default function Dashboard({
         </View>
       )}
       {selected !== null ? (
-        <ScrollView contentContainerStyle={s.content} refreshControl={refresh}>
-          <Button title="Назад" secondary onPress={back} />
-          {loading && !loaded ? (
-            <ActivityIndicator color={colors.accent} />
-          ) : current ? (
-            <>
-              <Cover url={current.posterUrl} title={current.title} />
-              <View>
-                <Text style={s.title}>{current.title}</Text>
-                <Text style={s.muted}>
-                  {current.kind === "movie" ? "Фильм" : "Сериал"}
-                  {current.year ? ` · ${current.year}` : ""}
-                </Text>
-                <Text style={s.badge}>
-                  {statuses.find((v) => v.value === current.status)?.label}
-                </Text>
-              </View>
-              <View style={s.panel}>
-                <Text style={s.heading}>Твой прогресс</Text>
-                <ProgressBar item={current} />
-                {canMark(current) && (
-                  <Button
-                    title={
-                      current.kind === "movie"
-                        ? "Отметить фильм"
-                        : "Отметить следующую серию"
-                    }
-                    busy={busy}
-                    disabled={loading}
-                    onPress={() => void mutate(current, "mark")}
-                  />
-                )}
-              </View>
-              <Text style={s.heading}>Серии</Text>
-              {[...current.show.episodes]
-                .sort((a, b) => a.season - b.season || a.episode - b.episode)
-                .map((episode) => (
-                  <View key={episode.id} style={[s.between, s.divider]}>
-                    <Text style={s.text}>
-                      Сезон {episode.season} · серия {episode.episode}
+        <FlatList
+          data={current?.kind === "movie" ? [] : episodes}
+          keyExtractor={(episode) => String(episode.id)}
+          contentContainerStyle={s.content}
+          refreshControl={refresh}
+          initialNumToRender={12}
+          maxToRenderPerBatch={12}
+          windowSize={7}
+          ListHeaderComponent={
+            <View style={{ gap: 20 }}>
+              <Button title="Назад" secondary onPress={back} />
+              {loading && !loaded ? (
+                <ActivityIndicator color={colors.accent} />
+              ) : current ? (
+                <View style={{ gap: 20 }}>
+                  <Cover url={current.posterUrl} title={current.title} />
+                  <View>
+                    <Text style={s.title}>{current.title}</Text>
+                    <Text style={s.muted}>
+                      {current.kind === "movie" ? "Фильм" : "Сериал"}
+                      {current.year ? ` · ${current.year}` : ""}
                     </Text>
-                    <Ionicons
-                      name={
-                        current.progress.some(
-                          (p) => p.episodeId === episode.id && p.watched,
-                        )
-                          ? "checkmark-circle"
-                          : "ellipse-outline"
-                      }
-                      size={22}
-                      color={colors.accent}
-                    />
+                    <Text style={s.badge}>
+                      {statuses.find((v) => v.value === current.status)?.label}
+                    </Text>
                   </View>
-                ))}
-              {!current.show.episodes.length && (
-                <Text style={s.muted}>Список серий пока не загружен.</Text>
+                  <View style={s.panel}>
+                    <Text style={s.heading}>Твой прогресс</Text>
+                    <ProgressBar item={current} />
+                    {(canMark(current) || pendingId === current.userShowId) && (
+                      <Button
+                        title={
+                          current.kind === "movie"
+                            ? "Отметить фильм"
+                            : "Отметить следующую серию"
+                        }
+                        busy={current.kind === "movie" && busy}
+                        disabled={
+                          (!loaded && loading) ||
+                          needsRefresh ||
+                          (current.kind === "movie" && lock.busy)
+                        }
+                        onPress={() => void mutate(current, "mark")}
+                      />
+                    )}
+                  </View>
+                  {current.kind !== "movie" && (
+                    <Text style={s.heading}>Серии</Text>
+                  )}
+                </View>
+              ) : (
+                <Text style={s.muted}>
+                  Запись больше не найдена в библиотеке. Обнови список.
+                </Text>
               )}
-            </>
-          ) : (
-            <Text style={s.muted}>
-              Запись больше не найдена в библиотеке. Вернись к списку и обнови
-              его.
-            </Text>
-          )}
-        </ScrollView>
+            </View>
+          }
+          renderItem={({ item: episode }) => {
+            const watched = watchedIds.has(episode.id);
+            const label = `Сезон ${episode.season} · серия ${episode.episode}`;
+            return (
+              <Pressable
+                aria-checked={watched}
+                accessibilityRole="checkbox"
+                accessibilityLabel={label}
+                accessibilityState={{
+                  checked: watched,
+                  busy: queue.pending(current?.userShowId || 0, episode.id),
+                  disabled: busy || needsRefresh,
+                }}
+                disabled={busy || needsRefresh}
+                onPress={() =>
+                  current && void toggleEpisode(current, episode.id)
+                }
+                style={[s.between, s.divider, { minHeight: 52 }]}
+              >
+                <Text style={s.text}>{label}</Text>
+                <Ionicons
+                  name={watched ? "checkmark-circle" : "ellipse-outline"}
+                  size={24}
+                  color={colors.accent}
+                />
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
+            current?.kind !== "movie" && !loading ? (
+              <Text style={s.muted}>Список серий пока не загружен.</Text>
+            ) : undefined
+          }
+        />
       ) : tab === "library" || tab === "search" ? (
         <FlatList
           data={loaded ? filtered : []}
@@ -430,31 +560,6 @@ export default function Dashboard({
             )
           }
         />
-      ) : tab === "profile" ? (
-        <ScrollView contentContainerStyle={s.content}>
-          <Text style={s.title}>Профиль</Text>
-          <View style={s.panel}>
-            <Text style={s.heading}>
-              {session.user.name || session.user.username}
-            </Text>
-            <Text style={s.muted}>@{session.user.username}</Text>
-            <Text style={s.text}>
-              Один аккаунт с EpisyHub. Библиотека и прогресс сохраняются на
-              сервере сайта.
-            </Text>
-            <Text style={s.muted}>
-              Сессия действует до{" "}
-              {new Date(session.expiresAt).toLocaleDateString("ru-RU")}. После
-              истечения потребуется повторный вход.
-            </Text>
-          </View>
-          <Button
-            title="Выйти из аккаунта"
-            secondary
-            busy={busy}
-            onPress={() => void logout()}
-          />
-        </ScrollView>
       ) : tab === "calendar" ? (
         <ScrollView
           contentContainerStyle={s.content}
@@ -521,9 +626,28 @@ export default function Dashboard({
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={s.content} refreshControl={refresh}>
-          <Text style={[s.heading, { fontSize: 25 }]}>
-            Episy<Text style={{ color: colors.accent }}>Hub</Text>
-          </Text>
+          <View style={s.between}>
+            <Text style={[s.heading, { fontSize: 25 }]}>
+              Episy<Text style={{ color: colors.accent }}>Hub</Text>
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Открыть уведомления"
+              onPress={() => router.push("/notifications")}
+              style={{
+                minHeight: 44,
+                minWidth: 44,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={24}
+                color={colors.accent}
+              />
+            </Pressable>
+          </View>
           <View style={{ gap: 7 }}>
             <Text style={s.title}>Что посмотрим?</Text>
             <Text style={s.muted}>Твои сериалы и фильмы в одном месте</Text>
@@ -546,15 +670,20 @@ export default function Dashboard({
                   : "Смотрю"}
               </Text>
               <ProgressBar item={watching[0]} />
-              {canMark(watching[0]) && (
+              {(canMark(watching[0]) ||
+                pendingId === watching[0].userShowId) && (
                 <Button
                   title={
                     watching[0].kind === "movie"
                       ? "Отметить фильм"
                       : "Отметить серию"
                   }
-                  busy={busy}
-                  disabled={loading}
+                  busy={watching[0].kind === "movie" && busy}
+                  disabled={
+                    (!loaded && loading) ||
+                    needsRefresh ||
+                    (watching[0].kind === "movie" && lock.busy)
+                  }
                   onPress={() => void mutate(watching[0], "mark")}
                 />
               )}
@@ -580,51 +709,7 @@ export default function Dashboard({
           )}
         </ScrollView>
       )}
-      {selected === null && (
-        <View
-          accessibilityRole="tablist"
-          style={{
-            flexDirection: "row",
-            borderTopWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: "#101127",
-          }}
-        >
-          {tabs.map((t) => (
-            <Pressable
-              key={t.id}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: tab === t.id }}
-              accessibilityLabel={t.label}
-              onPress={() => {
-                setTab(t.id);
-                setError("");
-              }}
-              style={{
-                flex: 1,
-                minHeight: 66,
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 5,
-              }}
-            >
-              <Ionicons
-                name={t.icon}
-                size={23}
-                color={tab === t.id ? colors.accent : colors.muted}
-              />
-              <Text
-                style={{
-                  fontSize: 10,
-                  color: tab === t.id ? colors.accent : colors.muted,
-                }}
-              >
-                {t.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
+      {selected === null && <BottomNavigation active={tab} />}
     </View>
   );
 }

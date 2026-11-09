@@ -18,7 +18,13 @@ export const statuses = [
   { value: "completed", label: "Просмотрено" },
   { value: "dropped", label: "Брошено" },
 ];
+const summaries = new WeakMap<
+  LibraryItem,
+  { watched: number; total: number; next: Episode | undefined; percent: number }
+>();
 export function progress(item: LibraryItem) {
+  const cached = summaries.get(item);
+  if (cached) return cached;
   const episodes = [...item.show.episodes].sort(
     (a, b) => a.season - b.season || a.episode - b.episode || a.id - b.id,
   );
@@ -30,12 +36,23 @@ export function progress(item: LibraryItem) {
   );
   const total =
     item.kind === "movie" ? 1 : Math.max(item.totalEpisodes, episodes.length);
-  return {
-    watched: item.kind === "movie" ? Math.min(watched.size, 1) : watched.size,
+  const movieWatched =
+    item.kind === "movie" && item.status === "completed"
+      ? 1
+      : Math.min(watched.size, 1);
+  const summary = {
+    watched: item.kind === "movie" ? movieWatched : watched.size,
     total,
     next: episodes.find((e) => !watched.has(e.id)),
-    percent: total ? Math.min(100, (watched.size / total) * 100) : 0,
+    percent: total
+      ? Math.min(
+          100,
+          ((item.kind === "movie" ? movieWatched : watched.size) / total) * 100,
+        )
+      : 0,
   };
+  summaries.set(item, summary);
+  return summary;
 }
 export function canMark(item: LibraryItem) {
   return (
@@ -43,4 +60,32 @@ export function canMark(item: LibraryItem) {
       (item.kind === "movie" && item.status === "planned")) &&
     (item.kind === "movie" || !!progress(item).next)
   );
+}
+
+export type ProgressPatch = Pick<
+  LibraryItem,
+  "userShowId" | "status" | "updatedAt" | "progress"
+>;
+export function applyProgressPatch(items: LibraryItem[], patch: ProgressPatch) {
+  return items.map((item) =>
+    item.userShowId === patch.userShowId ? { ...item, ...patch } : item,
+  );
+}
+// Preview only the next episode; keep the server revision and status until confirmed.
+export function previewMark(item: LibraryItem): LibraryItem {
+  const next = progress(item).next;
+  const affected =
+    item.kind === "movie" ? item.show.episodes : next ? [next] : [];
+  const ids = new Set(affected.map((episode) => episode.id));
+  return {
+    ...item,
+    progress: [
+      ...item.progress.filter((value) => !ids.has(value.episodeId)),
+      ...affected.map((episode) => ({
+        episodeId: episode.id,
+        watched: true,
+        stoppedAt: null,
+      })),
+    ],
+  };
 }

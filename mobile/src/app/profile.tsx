@@ -1,1 +1,1 @@
-export { default } from "../MobileScreen";
+export { default } from "../social/ProfileScreen";

@@ -43,7 +43,7 @@ export function Button({
   );
 }
 export function Poster({ url, title }: { url?: string | null; title: string }) {
-  const uri = imageUrl(url);
+  const uri = imageUrl(url, "w185");
   return uri ? (
     <Image
       source={{ uri }}

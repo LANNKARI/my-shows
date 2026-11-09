@@ -32,6 +32,15 @@ function validId(id: unknown): asserts id is number {
 const revision = (entry: { updatedAt: Date }) =>
   new Date(Math.max(Date.now(), entry.updatedAt.getTime() + 1));
 async function lockedEntry(tx: Tx, userId: string, showId: number) {
+  // Existing library writes need one indexed owner-scoped lock, not a no-op upsert.
+  const owned = await tx.$queryRaw<
+    { id: number }[]
+  >`SELECT id FROM "UserShow" WHERE "showId" = ${showId} AND "userId" = ${userId} FOR UPDATE`;
+  if (owned.length)
+    return tx.userShow.findUniqueOrThrow({
+      where: { id: owned[0].id },
+      include,
+    });
   let show = await tx.show.findUnique({ where: { id: showId } });
   if (!show) show = await tx.show.findFirst({ where: { tmdbId: showId } });
   if (!show) throw new ProgressError(404, "Тайтл не найден");
@@ -112,20 +121,30 @@ export async function writeWatched(
             reason: `Просмотрена серия: ${entry.show.name}, ${e.season}×${e.episode}`,
           })),
     );
-    await tx.episodeProgress.updateMany({
-      where: { userShowId, episodeId: { in: ids }, watched: false },
-      data: {
-        watched: true,
-        watchedAt: at,
-        stoppedAt: null,
-        statisticsSource: "manual",
-      },
-    });
-    // Clearing old timecodes must not move a previous viewing into today's history.
-    await tx.episodeProgress.updateMany({
-      where: { userShowId, episodeId: { in: ids }, watched: true },
-      data: { stoppedAt: null },
-    });
+    const newIds = ids.filter(
+      (id) => existing.has(id) && !alreadyWatched.has(id),
+    );
+    if (newIds.length)
+      await tx.episodeProgress.updateMany({
+        where: { userShowId, episodeId: { in: newIds } },
+        data: {
+          watched: true,
+          watchedAt: at,
+          stoppedAt: null,
+          statisticsSource: "manual",
+        },
+      });
+    // Preserve previous watch dates, only clearing old timecodes where necessary.
+    const oldIds = ids.filter((id) => alreadyWatched.has(id));
+    if (oldIds.length)
+      await tx.episodeProgress.updateMany({
+        where: {
+          userShowId,
+          episodeId: { in: oldIds },
+          stoppedAt: { not: null },
+        },
+        data: { stoppedAt: null },
+      });
   } else {
     await tx.episodeProgress.updateMany({
       where: { userShowId, episodeId: { in: ids } },
@@ -334,11 +353,21 @@ async function changeProgress(
       create: { userShowId: entry.id, episodeId: episodes[0].id, stoppedAt },
       update: { stoppedAt },
     });
-  const fresh = await tx.userShow.findUniqueOrThrow({
-    where: { id: entry.id },
-    include,
+  // The transaction holds the entry lock and knows the exact watched-state change.
+  // Re-reading show, episodes, progress and ratings here costs five SQL round trips.
+  const affectedIds = new Set(episodes.map((episode) => episode.id));
+  const summary = summarizeProgress({
+    ...entry,
+    progress:
+      typeof watched === "boolean"
+        ? [
+            ...entry.progress.filter(
+              (progress) => !affectedIds.has(progress.episodeId),
+            ),
+            ...episodes.map((episode) => ({ episodeId: episode.id, watched })),
+          ]
+        : entry.progress,
   });
-  const summary = summarizeProgress(fresh);
   const status =
     typeof watched !== "boolean"
       ? entry.status

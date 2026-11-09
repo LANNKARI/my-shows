@@ -10,9 +10,10 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { ApiError, request, Session, storage } from "./src/api";
+import { request, Session, storage } from "./src/api";
 import { colors, styles as s } from "./src/theme";
 import { Button } from "./src/components";
+import { SessionData } from "./src/data-context";
 import { SessionContext } from "./src/session-context";
 import { PropsWithChildren } from "react";
 
@@ -142,18 +143,9 @@ export default function AppShell({ children }: PropsWithChildren) {
           await storage.write(null);
           setNotice("Срок входа истёк. Войди ещё раз.");
         } else {
-          try {
-            const state = await request<Omit<Session, "token">>(
-              "/api/mobile/session",
-              saved.token,
-            );
-            setSession({ ...saved, ...state });
-          } catch (e) {
-            if (e instanceof ApiError && e.status === 401) {
-              await storage.write(null);
-              setNotice("Войди в аккаунт ещё раз.");
-            } else throw e;
-          }
+          // Every data endpoint validates the bearer session. Restore local credentials
+          // immediately instead of serializing a separate auth GET before the first screen.
+          setSession(saved);
         }
       }
       setReady(true);
@@ -201,7 +193,7 @@ export default function AppShell({ children }: PropsWithChildren) {
               onExpired: expireSession,
             }}
           >
-            {children}
+            <SessionData token={session.token}>{children}</SessionData>
           </SessionContext.Provider>
         ) : (
           <Login onLogin={setSession} notice={notice} />
