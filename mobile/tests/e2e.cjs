@@ -1,6 +1,6 @@
 // Browser exercises the real React Native Web UI against isolated Next.js + PostgreSQL.
 // The route bridge models native HTTP (no browser CORS); it does not mock API data.
-const { chromium } = require('../../node_modules/@playwright/test');
+const { chromium, expect } = require('../../node_modules/@playwright/test');
 const { PrismaClient } = require('../../node_modules/@prisma/client');
 const bcrypt = require('../../node_modules/bcryptjs');
 const { randomBytes } = require('node:crypto');
@@ -41,7 +41,7 @@ async function run() {
   await prisma.friendship.create({data:{requesterId:user.id,addresseeId:friend.id,status:'accepted'}});
   await prisma.friendship.create({data:{requesterId:incoming.id,addresseeId:user.id,status:'pending'}});
   await prisma.releaseNotification.createMany({data:show.episodes.map(episode=>({userShowId:entry.id,episodeId:episode.id}))});
-  next = spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--webpack','--hostname','127.0.0.1','--port',new URL(base).port],{cwd:root,detached:true,env:{...process.env,DATABASE_URL:databaseUrl,AUTH_SECRET:randomBytes(32).toString('hex'),TMDB_API_KEY:'',TMDB_READ_ACCESS_TOKEN:'',NEXT_PUBLIC_TMDB_API_KEY:'',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
+  next = spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--webpack','--hostname','127.0.0.1','--port',new URL(base).port],{cwd:root,detached:true,env:{...process.env,DATABASE_URL:databaseUrl,AUTH_SECRET:randomBytes(32).toString('hex'),MOBILE_UI_UPSTREAM_FIXTURES:'1',NODE_OPTIONS:`${process.env.NODE_OPTIONS||''} --require ${path.join(mobile,'tests/upstream-fixtures.cjs')}`,TMDB_API_KEY:'mobile-ui-fixture',CLOUDINARY_CLOUD_NAME:'mobile-ui-fixture',CLOUDINARY_API_KEY:'fixture',CLOUDINARY_API_SECRET:'fixture',TMDB_READ_ACCESS_TOKEN:'',NEXT_PUBLIC_TMDB_API_KEY:'',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Next startup timeout')),45000);const capture=data=>{serverOutput+=data.toString();if(serverOutput.includes('Ready in')){clearTimeout(timer);resolve();}};next.stdout.on('data',capture);next.stderr.on('data',capture);next.once('exit',()=>{clearTimeout(timer);reject(Error('Next exited before ready'));});});
   const mime={'.html':'text/html','.js':'application/javascript','.ttf':'font/ttf','.png':'image/png','.ico':'image/x-icon'};
   web=createServer(async(req,res)=>{try{const pathname=new URL(req.url,'http://localhost').pathname;const file=path.resolve(mobile,'dist','.'+(pathname==='/'?'/index.html':pathname));if(!file.startsWith(path.resolve(mobile,'dist')+path.sep))throw Error('Invalid path');const data=await fs.readFile(file);res.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');res.end(data);}catch{res.statusCode=404;res.end();}});
@@ -53,6 +53,7 @@ async function run() {
   let networkDown=false;let libraryLoads=0;let holdMark=false;let dropMarkReply=false;let markPosts=0;let holdReadAll=false;let releaseReadAll;let signalReadAll;const readAllWaiting=new Promise(resolve=>{signalReadAll=resolve;});let releaseMark;let holdEpisode=false,releaseEpisode,signalEpisode;const episodeWaiting=new Promise(resolve=>{signalEpisode=resolve;});
   let signalMark;const markWaiting=new Promise(resolve=>{signalMark=resolve;});
   let holdOldInbox=false,oldInboxCaptured=false,releaseOldInbox,oldResponseStatus;let signalOldInbox,signalOldDone;const oldInboxWaiting=new Promise(resolve=>{signalOldInbox=resolve;});const oldInboxDone=new Promise(resolve=>{signalOldDone=resolve;});
+  await page.route('https://episyhub.space/uploads/mobile-ui-avatar.png',route=>route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64')}));
   await page.route('https://episyhub.space/api/**',async route=>{
     const req=route.request();const url=new URL(req.url());
     if(req.method()==='GET')getCounts.set(url.pathname+url.search,(getCounts.get(url.pathname+url.search)||0)+1);
@@ -68,7 +69,7 @@ async function run() {
     for(const key of ['authorization','content-type'])if(req.headers()[key])headers[key]=req.headers()[key];
     const cors={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,DELETE,PATCH,OPTIONS'};
     if(req.method()==='OPTIONS'){await route.fulfill({status:204,headers:cors});return;}
-    const response=await page.request.fetch(base+new URL(req.url()).pathname+new URL(req.url()).search,{method:req.method(),headers,data:req.postData()||undefined,timeout:30000});
+    const response=await page.request.fetch(base+new URL(req.url()).pathname+new URL(req.url()).search,{method:req.method(),headers,data:req.postDataBuffer()||undefined,timeout:30000});
     if(req.method()==='POST'&&response.status()===200&&/^\/api\/user-shows\/\d+(?:\/quick-progress)?$/.test(url.pathname))assert.match(response.headers()['server-timing']||'',/auth;dur=\d+, mutation;dur=\d+, total;dur=\d+/,'authenticated progress exposes phase timings');
     if(dropMarkReply&&url.pathname.endsWith('/quick-progress')&&req.method()==='POST'&&JSON.parse(req.postData()).action==='mark'){dropMarkReply=false;await route.abort('connectionclosed');return;}
     await route.fulfill({response,headers:{...response.headers(),...cors}});
@@ -197,12 +198,55 @@ async function run() {
   await page.getByText('Просмотрено',{exact:true}).filter({visible:true}).waitFor();
   assert.equal(await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}}),2,'a lost successful response is reconciled with server state');
   assert.equal(markPosts,postsBeforeLostReply+1,'uncertain writes are not automatically replayed');
+  await page.getByRole('button',{name:'Моя оценка',exact:true}).click();
+  await page.getByRole('button',{name:'Оценка 8',exact:true}).click();
+  await page.getByRole('button',{name:'Моя оценка · 8/10',exact:true}).waitFor();
+  assert.equal((await prisma.rating.findFirstOrThrow({where:{userShowId:entry.id,episodeId:null}})).score,8);
+  await page.getByRole('button',{name:'Свернуть всё',exact:true}).click();
+  assert.equal(await page.getByRole('checkbox',{name:'Сезон 1 · серия 1',exact:true}).count(),0);
+  await page.getByRole('button',{name:'Сезон 1',exact:true}).click();
+  await page.getByRole('button',{name:'Детали серии 1, сезон 1',exact:true}).click();
+  await page.getByRole('button',{name:'Оценить серию 1',exact:true}).click();
+  await page.getByRole('button',{name:'Оценка 9',exact:true}).click();
+  await page.getByRole('button',{name:'Оценить серию 1 · 9/10',exact:true}).waitFor();
+  assert.equal((await prisma.rating.findFirstOrThrow({where:{userShowId:entry.id,episodeId:show.episodes.find(e=>e.episode===1).id}})).score,9);
+  await page.getByRole('button',{name:'Оценить серию 1 · 9/10',exact:true}).click();
+  await page.getByRole('button',{name:'Убрать оценку',exact:true}).click();
+  await page.getByRole('button',{name:'Оценить серию 1',exact:true}).waitFor();
+  assert.equal(await prisma.rating.count({where:{userShowId:entry.id,episodeId:show.episodes.find(e=>e.episode===1).id}}),0);
+  await expect(page.getByRole('button',{name:'Оценить серию 1',exact:true})).toBeEnabled();
+  await prisma.episode.create({data:{showId:show.id,season:2,episode:1}});
+  await prisma.userShow.update({where:{id:entry.id},data:{totalEpisodes:3,status:'watching',isCompleted:false}});
+  const seasonRefresh=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/user-shows'&&r.status()===200);
+  await page.getByRole('button',{name:'Обновить библиотеку',exact:true}).click();
+  await seasonRefresh;
+  await page.getByRole('button',{name:'Сезон 2',exact:true}).click();
+  await page.getByRole('checkbox',{name:'Сезон 2 · серия 1',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Сезон 1',exact:true}).click();
+  assert.equal(await page.getByRole('checkbox',{name:'Сезон 1 · серия 1',exact:true}).count(),0);
+  assert.equal(await page.getByRole('checkbox',{name:'Сезон 2 · серия 1',exact:true}).isVisible(),true);
+  await page.screenshot({path:path.join(root,'test-results/mobile-tracker-seasons.png'),fullPage:true});
   await page.getByRole('button',{name:'Назад',exact:true}).click();
-  await page.getByRole('tab',{name:'Поиск',exact:true}).click();
-  await page.getByLabel('Название в библиотеке').fill('несуществующий тайтл');
-  await page.getByText('Ничего не найдено',{exact:true}).filter({visible:true}).waitFor();
-  await page.getByLabel('Название в библиотеке').fill('Проверка');
-  await page.getByRole('button',{name:`Открыть ${show.name}`,exact:true}).waitFor();
+  await page.getByRole('tab',{name:'Что посмотреть',exact:true}).click();
+  await page.getByText('Выбери фильтры и запусти подбор.',{exact:true}).filter({visible:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:`Открыть ${show.name}`,exact:true}).count(),0,'discovery does not show the library as history');
+  const discoverShow=await prisma.show.create({data:{name:'Фильм из подборки',tmdbId:42424266,kind:'movie'}});
+  await page.getByRole('button',{name:'Фильмы',exact:true}).click();
+  await page.getByRole('button',{name:'Подобрать фильм или сериал',exact:true}).click();
+  await page.getByRole('button',{name:'Открыть карточку: Фильм из подборки',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Открыть карточку: Фильм из подборки',exact:true}).click();
+  await page.getByRole('button',{name:'Закрыть карточку',exact:true}).click();
+  await page.getByRole('button',{name:'В планы: Фильм из подборки',exact:true}).click();
+  await page.getByText('Добавлено в планы',{exact:true}).filter({visible:true}).waitFor();
+  assert.equal((await prisma.userShow.findUniqueOrThrow({where:{userId_showId:{userId:user.id,showId:discoverShow.id}}})).status,'planned');
+  await page.getByRole('button',{name:'Подборка',exact:true}).click();
+  await page.getByRole('button',{name:'Показать подборку',exact:true}).click();
+  await page.getByRole('button',{name:'Открыть карточку: Фильм из подборки',exact:true}).waitFor();
+  await page.screenshot({path:path.join(root,'test-results/mobile-discovery.png'),fullPage:true});
+  await page.getByRole('button',{name:'Фильтры',exact:true}).click();
+  await page.getByRole('button',{name:'9+',exact:true}).click();
+  await page.getByRole('button',{name:'Показать подборку',exact:true}).click();
+  await page.getByText('По этим фильтрам ничего не найдено. Измени параметры и попробуй снова.',{exact:true}).filter({visible:true}).waitFor();
   await page.getByRole('tab',{name:'Календарь',exact:true}).click();
   await page.getByText('Сезон 1 · серия 2',{exact:true}).filter({visible:true}).waitFor();
   const calendarRequests=()=>[...getCounts].filter(([key])=>key.startsWith('/api/calendar'));
@@ -230,6 +274,11 @@ async function run() {
   await page.getByRole('tab',{name:'Профиль',exact:true}).click();
   await page.getByText('Mobile UI',{exact:true}).filter({visible:true}).waitFor();
   await page.screenshot({path:path.join(root,'test-results/mobile-profile-social.png'),fullPage:true});
+  await page.getByRole('button',{name:'Достижения',exact:true}).click();
+  await page.getByRole('button',{name:'Все достижения',exact:true}).waitFor();
+  assert.equal(await page.getByText('Любимые истории',{exact:true}).filter({visible:true}).count(),0);
+  await page.screenshot({path:path.join(root,'test-results/mobile-achievements-tab.png'),fullPage:true});
+  await page.getByRole('button',{name:'Обзор',exact:true}).click();
   // Revisit a fresh profile with the network down: cached data is immediately usable.
   const profileRequests=()=>[...getCounts].filter(([key])=>/^\/api\/(users|friendships|notifications)/.test(key));
   // All counters have arrived once both profile action rows show their counts.
@@ -242,7 +291,47 @@ async function run() {
   assert.deepEqual(profileRequests(),beforeProfileReturn,'fresh profile, friends and unread counters are reused across navigation');
   networkDown=false;
 
-  await page.getByRole('button',{name:'Редактировать профиль',exact:true}).click();
+  await page.getByRole('button',{name:'Настройки профиля',exact:true}).click();
+  const photo=page.waitForEvent('filechooser');
+  await page.getByRole('button',{name:'Изменить аватар',exact:true}).click();
+  await (await photo).setFiles({name:'avatar.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64')});
+  await page.getByText('Аватар обновлён',{exact:true}).filter({visible:true}).waitFor();
+  assert.equal((await prisma.user.findUniqueOrThrow({where:{id:user.id}})).avatarUrl,'https://episyhub.space/uploads/mobile-ui-avatar.png');
+  await page.screenshot({path:path.join(root,'test-results/mobile-account-settings.png'),fullPage:true});
+  const download=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Экспорт библиотеки',exact:true}).click();
+  const exportedFile=await download;
+  const backup=JSON.parse(await fs.readFile(await exportedFile.path(),'utf8'));
+  assert.equal(backup.meta.generator,'EpisyHub');
+  assert.equal('user' in backup,false,'library export does not include the private account profile');
+  assert.equal('friends' in backup,false);
+  assert.ok(backup.userShows.some(value=>value.show.id===show.id));
+  const importOnlyShow=await prisma.show.create({data:{name:'Фильм для импорта',kind:'movie',episodes:{create:{season:1,episode:1}}}});
+  const movieBackup=backup.userShows.find(value=>value.show.kind==='movie');
+  backup.userShows.push({...movieBackup,show:{...movieBackup.show,id:importOnlyShow.id,name:importOnlyShow.name,tmdbId:null},status:'planned',episodes:[],progress:[],ratings:[],settings:{...movieBackup.settings,isCompleted:false,isFavorite:false,isBookmarked:false,totalEpisodes:1,totalSeasons:1}});
+  await page.getByRole('button',{name:'Импорт библиотеки',exact:true}).click();
+  const invalid=page.waitForEvent('filechooser');
+  await page.getByRole('button',{name:'Выбрать файл библиотеки',exact:true}).click();
+  await (await invalid).setFiles({name:'broken.json',mimeType:'application/json',buffer:Buffer.from('not-json')});
+  await page.getByRole('alert').filter({hasText:'Не удалось прочитать файл'}).waitFor();
+  assert.equal(await prisma.libraryImportJob.count({where:{userId:user.id}}),0,'invalid files never reach import preview');
+  const choose=page.waitForEvent('filechooser');
+  await page.getByRole('button',{name:'Выбрать файл библиотеки',exact:true}).click();
+  await (await choose).setFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
+  await page.getByText('Предварительный просмотр',{exact:true}).filter({visible:true}).waitFor();
+  // Existing records are kept: import must never replace the user's current progress.
+  assert.equal(await prisma.libraryImportJob.count({where:{userId:user.id}}),1);
+  for(const name of [show.name,movieShow.name,importOnlyShow.name]){
+    await page.getByRole('button',{name:`Выбрать: ${name}`,exact:true}).click();
+    await page.getByText('Предварительный просмотр',{exact:true}).filter({visible:true}).waitFor();
+  }
+  await page.getByRole('button',{name:'Проверить файл',exact:true}).click();
+  const beforeImport=await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}});
+  await page.getByRole('button',{name:'Подтвердить импорт',exact:true}).click();
+  await page.getByText('Импорт завершён',{exact:true}).filter({visible:true}).waitFor();
+  assert.equal((await prisma.userShow.findUniqueOrThrow({where:{userId_showId:{userId:user.id,showId:importOnlyShow.id}}})).status,'planned');
+  assert.equal(await prisma.episodeProgress.count({where:{userShowId:entry.id,watched:true}}),beforeImport);
+  await page.getByRole('button',{name:'Назад',exact:true}).click();
   await page.getByLabel('Имя профиля',{exact:true}).fill('Обновлённый профиль');
   await page.getByLabel('Описание профиля',{exact:true}).fill('Проверка синхронизации профиля');
   await page.getByRole('button',{name:'Сохранить профиль',exact:true}).click();
@@ -320,12 +409,28 @@ async function run() {
   await page.getByText('Здесь появятся тайтлы со статусом «Смотрю».',{exact:true}).filter({visible:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:`Открыть ${show.name}`,exact:true}).count(),0,'another account cannot see the previous library cache');
   await page.getByRole('tab',{name:'Профиль',exact:true}).click();
+  await page.getByRole('button',{name:'Настройки профиля',exact:true}).click();
+  await page.getByRole('button',{name:'Изменить пароль',exact:true}).click();
+  await page.getByLabel('Текущий пароль',{exact:true}).fill('wrong-password');
+  const replacement=randomBytes(24).toString('hex');
+  await page.getByLabel('Новый пароль',{exact:true}).fill(replacement);
+  await page.getByLabel('Повторите новый пароль',{exact:true}).fill(replacement);
+  await page.getByRole('button',{name:'Изменить пароль',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Текущий пароль неверен'}).waitFor();
+  await page.getByLabel('Текущий пароль',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Изменить пароль',exact:true}).click();
+  await page.getByRole('button',{name:'Войти',exact:true}).waitFor();
+  assert.ok(await bcrypt.compare(replacement,(await prisma.user.findUniqueOrThrow({where:{id:stranger.id}})).passwordHash));
+  assert.equal(await prisma.session.count({where:{userId:user.id}}),0);
+  await page.getByLabel('Почта',{exact:true}).fill(stranger.email);
+  await page.getByLabel('Пароль',{exact:true}).fill(replacement);
+  await page.getByRole('button',{name:'Войти',exact:true}).click();
+  await page.getByText('Что посмотрим?',{exact:true}).filter({visible:true}).waitFor();
+  await page.getByRole('tab',{name:'Профиль',exact:true}).click();
   await page.getByRole('button',{name:'Выйти из аккаунта',exact:true}).click();
   await page.getByRole('button',{name:'Войти',exact:true}).waitFor();
-  assert.equal(await prisma.session.count({where:{userId:user.id}}),0);
-  assert.equal(await prisma.session.count({where:{userId:stranger.id}}),0,'second account logout revokes its session');
   assert.deepEqual(errors,[],'no unhandled browser errors');
-  console.log('PASS: optimistic progress before delayed network, no success reload, rollback/offline/409 recovery; profile edit, friends/search/accept/cancel/remove, inbox pagination/read/settings/snapshot safety, logout → PostgreSQL');
+  console.log('PASS: progress queue/offline/409 recovery; seasons, title/episode ratings, discovery roulette/list/filters/plans, avatar multipart upload, achievements, export, invalid file and mapped import, profile/friends/inbox, password change and new-password login → real Next/PostgreSQL; external TMDB/Cloudinary fixtures');
 }
 run().catch(async error=>{console.error(error);console.error(browserErrors);console.error(serverOutput.slice(-6000));if(page){await fs.mkdir(path.join(root,'test-results'),{recursive:true});await page.screenshot({path:path.join(root,'test-results/mobile-failure.png'),fullPage:true}).catch(()=>{});}process.exitCode=1;}).finally(async()=>{
   await browser?.close();

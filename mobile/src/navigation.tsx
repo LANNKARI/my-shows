@@ -2,14 +2,20 @@ import { router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "./theme";
-export type Tab = "home" | "search" | "library" | "calendar" | "profile";
+export type Tab =
+  | "home"
+  | "search"
+  | "discover"
+  | "library"
+  | "calendar"
+  | "profile";
 export const tabs: {
   id: Tab;
   label: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
 }[] = [
   { id: "home", label: "Главная", icon: "home-outline" },
-  { id: "search", label: "Поиск", icon: "search-outline" },
+  { id: "discover", label: "Что посмотреть", icon: "sparkles-outline" },
   { id: "library", label: "Библиотека", icon: "library-outline" },
   { id: "calendar", label: "Календарь", icon: "calendar-outline" },
   { id: "profile", label: "Профиль", icon: "person-outline" },

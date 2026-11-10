@@ -1,3 +1,4 @@
+import { pickAvatar } from "../account/device-files";
 import { useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { Pressable, Text, View } from "react-native";
@@ -27,6 +28,9 @@ export default function ProfileScreen() {
   );
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [allAchievements, setAllAchievements] = useState(false);
+  const [section, setSection] = useState<"overview" | "achievements">(
+    "overview",
+  );
   const data = profile.data;
   async function relationship(action: "request" | "accept" | "remove") {
     if (!data) return;
@@ -76,23 +80,42 @@ export default function ProfileScreen() {
       }}
       header={
         own ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Открыть уведомления"
-            onPress={() => router.push("/notifications")}
-            style={[s.row, { minHeight: 44, paddingHorizontal: 8 }]}
-          >
-            <Ionicons
-              name="notifications-outline"
-              size={25}
-              color={colors.accent}
-            />
-            {inbox.data && (
-              <Text style={{ color: colors.accent }}>
-                {inbox.data.unreadCount}
-              </Text>
-            )}
-          </Pressable>
+          <View style={s.row}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Открыть уведомления"
+              onPress={() => router.push("/notifications")}
+              style={[s.row, { minHeight: 44, paddingHorizontal: 8 }]}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={25}
+                color={colors.accent}
+              />
+              {inbox.data && (
+                <Text style={{ color: colors.accent }}>
+                  {inbox.data.unreadCount}
+                </Text>
+              )}
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Настройки профиля"
+              onPress={() => router.push("/profile/edit")}
+              style={{
+                minHeight: 44,
+                minWidth: 44,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name="settings-outline"
+                size={25}
+                color={colors.accent}
+              />
+            </Pressable>
+          </View>
         ) : undefined
       }
     >
@@ -105,7 +128,46 @@ export default function ProfileScreen() {
       {data && (
         <>
           <View style={s.row}>
-            <Avatar person={data.user} large />
+            {own ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Изменить аватар профиля"
+                disabled={!!task.busy}
+                onPress={() =>
+                  void task.run("avatar", async () => {
+                    const form = await pickAvatar();
+                    if (!form) return;
+                    const uploaded = await api<{ url: string }>("/api/upload", {
+                      method: "POST",
+                      body: form,
+                    });
+                    await api("/api/users/me", {
+                      method: "PATCH",
+                      body: JSON.stringify({ avatarUrl: uploaded.url }),
+                    });
+                    await profile.refresh();
+                    return "Аватар обновлён";
+                  })
+                }
+              >
+                <Avatar person={data.user} large />
+                <Ionicons
+                  name="pencil"
+                  color={colors.accent}
+                  size={16}
+                  style={{
+                    position: "absolute",
+                    right: -3,
+                    bottom: 0,
+                    backgroundColor: colors.panel,
+                    borderRadius: 12,
+                    padding: 4,
+                  }}
+                />
+              </Pressable>
+            ) : (
+              <Avatar person={data.user} large />
+            )}
             <View style={s.flex}>
               <Text style={s.heading}>
                 {data.user.name || data.user.username}
@@ -117,13 +179,7 @@ export default function ProfileScreen() {
             </View>
           </View>
           <Text style={s.text}>{data.user.bio || "Пока без описания"}</Text>
-          {data.isOwnProfile ? (
-            <Button
-              title="Редактировать профиль"
-              secondary
-              onPress={() => router.push("/profile/edit")}
-            />
-          ) : (
+          {!data.isOwnProfile && (
             <View style={{ gap: 10 }}>
               {data.friendshipStatus === "none" ? (
                 <Button
@@ -173,95 +229,126 @@ export default function ProfileScreen() {
               )}
             </View>
           )}
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {[
-              { label: "Фильмов", value: data.stats.moviesCount },
-              { label: "Сериалов", value: data.stats.seriesCount },
-              { label: "Часов", value: Math.round(data.stats.hoursWatched) },
-            ].map((stat) => (
-              <View
-                key={stat.label}
-                style={[
-                  s.panel,
-                  { flex: 1, padding: 12, alignItems: "center" },
-                ]}
-              >
-                <Text style={s.heading}>{stat.value}</Text>
-                <Text style={s.muted}>{stat.label}</Text>
+          {section === "overview" && (
+            <>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {[
+                  { label: "Фильмов", value: data.stats.moviesCount },
+                  { label: "Сериалов", value: data.stats.seriesCount },
+                  {
+                    label: "Часов",
+                    value: Math.round(data.stats.hoursWatched),
+                  },
+                ].map((stat) => (
+                  <View
+                    key={stat.label}
+                    style={[
+                      s.panel,
+                      { flex: 1, padding: 12, alignItems: "center" },
+                    ]}
+                  >
+                    <Text style={s.heading}>{stat.value}</Text>
+                    <Text style={s.muted}>{stat.label}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
+              {data.isOwnProfile && (
+                <View>
+                  <ActionRow
+                    title="Мои друзья"
+                    count={friends.data?.friends.length}
+                    onPress={() => router.push("/friends")}
+                  />
+                  <ActionRow
+                    title="Уведомления"
+                    count={inbox.data?.unreadCount}
+                    onPress={() => router.push("/notifications")}
+                  />
+                  {!!(friends.error || inbox.error) && (
+                    <Text style={s.muted}>
+                      Счётчики временно недоступны. Разделы можно открыть
+                      отдельно.
+                    </Text>
+                  )}
+                </View>
+              )}
+            </>
+          )}
+          <View accessibilityRole="tablist" style={s.row}>
+            <Button
+              title="Обзор"
+              secondary={section !== "overview"}
+              onPress={() => setSection("overview")}
+            />
+            <Button
+              title="Достижения"
+              secondary={section !== "achievements"}
+              onPress={() => setSection("achievements")}
+            />
           </View>
-          {data.isOwnProfile && (
-            <View>
-              <ActionRow
-                title="Мои друзья"
-                count={friends.data?.friends.length}
-                onPress={() => router.push("/friends")}
-              />
-              <ActionRow
-                title="Уведомления"
-                count={inbox.data?.unreadCount}
-                onPress={() => router.push("/notifications")}
-              />
-              {!!(friends.error || inbox.error) && (
+          {section === "overview" && (
+            <>
+              <Text style={s.heading}>Любимые истории</Text>
+              {!data.favorites.length ? (
                 <Text style={s.muted}>
-                  Счётчики временно недоступны. Разделы можно открыть отдельно.
+                  Любимые фильмы и сериалы пока не выбраны.
+                </Text>
+              ) : (
+                <View style={{ gap: 14 }}>
+                  {data.favorites.map((item) => (
+                    <View key={item.id} style={s.row}>
+                      <Poster title={item.title} url={item.posterUrl} />
+                      <View style={s.flex}>
+                        <Text style={s.text}>{item.title}</Text>
+                        <Text style={s.muted}>
+                          {item.kind === "movie" ? "Фильм" : "Сериал"}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+          {section === "achievements" && (
+            <>
+              <Text style={s.heading}>Достижения</Text>
+              {!achievements.length && (
+                <Text style={s.muted}>
+                  Здесь появятся полученные достижения.
                 </Text>
               )}
-            </View>
-          )}
-          <Text style={s.heading}>Любимые истории</Text>
-          {!data.favorites.length ? (
-            <Text style={s.muted}>
-              Любимые фильмы и сериалы пока не выбраны.
-            </Text>
-          ) : (
-            <View style={{ gap: 14 }}>
-              {data.favorites.map((item) => (
-                <View key={item.id} style={s.row}>
-                  <Poster title={item.title} url={item.posterUrl} />
-                  <View style={s.flex}>
-                    <Text style={s.text}>{item.title}</Text>
+              {achievements.map((achievement) => (
+                <View key={achievement.id} style={s.panel}>
+                  <Text
+                    style={[
+                      s.text,
+                      achievement.unlocked && { color: colors.accent },
+                    ]}
+                  >
+                    {achievement.unlocked ? "✦ " : ""}
+                    {achievement.title}
+                  </Text>
+                  <Text style={s.muted}>{achievement.description}</Text>
+                  {!achievement.unlocked && (
                     <Text style={s.muted}>
-                      {item.kind === "movie" ? "Фильм" : "Сериал"}
+                      {achievement.progress.current} /{" "}
+                      {achievement.progress.target}
                     </Text>
-                  </View>
+                  )}
                 </View>
               ))}
-            </View>
+              <Button
+                title={
+                  allAchievements
+                    ? "Только полученные достижения"
+                    : "Все достижения"
+                }
+                secondary
+                onPress={() => setAllAchievements((value) => !value)}
+              />
+            </>
           )}
-          <Text style={s.heading}>Достижения</Text>
-          {!achievements.length && (
-            <Text style={s.muted}>Здесь появятся полученные достижения.</Text>
-          )}
-          {achievements.map((achievement) => (
-            <View key={achievement.id} style={s.panel}>
-              <Text
-                style={[
-                  s.text,
-                  achievement.unlocked && { color: colors.accent },
-                ]}
-              >
-                {achievement.unlocked ? "✦ " : ""}
-                {achievement.title}
-              </Text>
-              <Text style={s.muted}>{achievement.description}</Text>
-              {!achievement.unlocked && (
-                <Text style={s.muted}>
-                  {achievement.progress.current} / {achievement.progress.target}
-                </Text>
-              )}
-            </View>
-          ))}
-          <Button
-            title={
-              allAchievements
-                ? "Только полученные достижения"
-                : "Все достижения"
-            }
-            secondary
-            onPress={() => setAllAchievements((value) => !value)}
-          />
         </>
       )}
       {own && (

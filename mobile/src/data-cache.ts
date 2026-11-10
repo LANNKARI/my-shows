@@ -71,7 +71,11 @@ export class DataCache {
     if (!init?.method || init.method === "GET")
       return this.fetcher<T>(path, init);
     const affected = (key: string) => {
-      if (path.startsWith("/api/user-shows"))
+      if (
+        path.startsWith("/api/user-shows") ||
+        path.startsWith("/api/wishlist") ||
+        path.startsWith("/api/library-import")
+      )
         return /\/(user-shows|calendar|users|notifications)(\?|\/|$)/.test(key);
       if (path.startsWith("/api/users")) return key.startsWith("/api/users");
       if (

@@ -2618,3 +2618,18 @@ test('mobile bearer sessions: login, shared progress, identity isolation, revoca
   await prisma.user.update({where:{id:mobileUser.id},data:{passwordHash:await bcrypt.hash(randomBytes(20).toString('hex'),10)}});
   assert.equal((await fetch(`${base}/api/user-shows?status=library`,{headers:{authorization:`Bearer ${third.token}`}})).status,401,'password change invalidates mobile sessions');
 });
+
+test('wishlist resolves a TMDB identifier together with its media type', async () => {
+  const tmdbId = 880000000 + Math.floor(Math.random() * 100000);
+  const movie = await prisma.show.create({data:{name:'Wishlist movie identity',kind:'movie',tmdbId}});
+  const series = await prisma.show.create({data:{name:'Wishlist series identity',kind:'series',tmdbId}});
+  const tv = await owner.request('/api/wishlist','POST',{tmdbId,type:'tv'});
+  assert.equal(tv.status,200);
+  assert.equal((await tv.json()).item.showId,series.id,'TV selection must not resolve to a movie sharing its external ID');
+  const film = await owner.request('/api/wishlist','POST',{tmdbId,type:'movie'});
+  assert.equal(film.status,200);
+  assert.equal((await film.json()).item.showId,movie.id);
+  await prisma.userShow.update({where:{userId_showId:{userId:alice.id,showId:series.id}},data:{status:'watching'}});
+  const repeated = await owner.request('/api/wishlist','POST',{tmdbId,type:'tv'});
+  assert.equal((await repeated.json()).item.status,'watching','repeated plan additions preserve current status');
+});

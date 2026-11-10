@@ -42,17 +42,30 @@ export function Button({
     </Pressable>
   );
 }
-export function Poster({ url, title }: { url?: string | null; title: string }) {
-  const uri = imageUrl(url, "w185");
+export function Poster({
+  url,
+  title,
+  large = false,
+}: {
+  url?: string | null;
+  title: string;
+  large?: boolean;
+}) {
+  const uri = imageUrl(url, large ? "w342" : "w185");
   return uri ? (
     <Image
       source={{ uri }}
       accessibilityLabel={`Постер: ${title}`}
-      style={s.poster}
+      resizeMode="contain"
+      style={[s.poster, large && { width: 106, height: 159 }]}
     />
   ) : (
     <View
-      style={[s.poster, { alignItems: "center", justifyContent: "center" }]}
+      style={[
+        s.poster,
+        large && { width: 106, height: 159 },
+        { alignItems: "center", justifyContent: "center" },
+      ]}
     >
       <Ionicons name="film-outline" color={colors.muted} size={24} />
     </View>

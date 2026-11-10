@@ -10,7 +10,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  useMemo,
 } from "react";
 import {
   ActivityIndicator,
@@ -26,7 +25,9 @@ import {
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ApiError, Session } from "./api";
 import { useDataCache, useProgressQueue } from "./data-context";
-import { Button, Cover, LibraryRow, ProgressBar } from "./components";
+import EpisodeList from "./tracker/EpisodeList";
+import { RatingPicker, useRatings } from "./tracker/RatingPicker";
+import { Button, LibraryRow, ProgressBar, Poster } from "./components";
 import {
   canMark,
   LibraryItem,
@@ -222,6 +223,7 @@ export default function Dashboard({
     }, [tab, selected, loadCalendar]),
   );
   async function mutate(item: LibraryItem, action: "mark" | "undo") {
+    if (busy || (lock.busy && !queue.saving)) return;
     if (action === "mark" && item.kind !== "movie") {
       const latest =
         cache
@@ -239,7 +241,7 @@ export default function Dashboard({
     }
     queue.notice = "";
     queue.undo = null;
-    if (lock.busy || needsRefresh) return;
+    if (lock.busy || (lock.busy && !queue.saving) || needsRefresh) return;
     lock.busy = true;
     setBusy(true);
     setPendingId(item.userShowId);
@@ -324,20 +326,8 @@ export default function Dashboard({
     queue.enqueue(latest, episodeId, watched);
   }
   const current = items.find((item) => item.userShowId === selected);
-  const episodes = useMemo(
-    () =>
-      [...(current?.show.episodes || [])].sort(
-        (a, b) => a.season - b.season || a.episode - b.episode,
-      ),
-    [current?.show.episodes],
-  );
-  const watchedIds = useMemo(
-    () =>
-      new Set(
-        current?.progress.filter((p) => p.watched).map((p) => p.episodeId),
-      ),
-    [current?.progress],
-  );
+  const ratings = useRatings(selected);
+  const externalBusy = lock.busy && !queue.saving;
   const watching = items.filter((item) => item.status === "watching");
   const filtered = items.filter((item) =>
     tab === "search"
@@ -400,22 +390,18 @@ export default function Dashboard({
         </View>
       )}
       {selected !== null ? (
-        <FlatList
-          data={current?.kind === "movie" ? [] : episodes}
-          keyExtractor={(episode) => String(episode.id)}
-          contentContainerStyle={s.content}
-          refreshControl={refresh}
-          initialNumToRender={12}
-          maxToRenderPerBatch={12}
-          windowSize={7}
-          ListHeaderComponent={
+        <EpisodeList
+          key={selected}
+          item={current}
+          ratings={ratings.data || []}
+          refreshRatings={ratings.refresh}
+          header={
             <View style={{ gap: 20 }}>
               <Button title="Назад" secondary onPress={back} />
               {loading && !loaded ? (
                 <ActivityIndicator color={colors.accent} />
               ) : current ? (
                 <View style={{ gap: 20 }}>
-                  <Cover url={current.posterUrl} title={current.title} />
                   <View>
                     <Text style={s.title}>{current.title}</Text>
                     <Text style={s.muted}>
@@ -439,6 +425,7 @@ export default function Dashboard({
                         busy={current.kind === "movie" && busy}
                         disabled={
                           (!loaded && loading) ||
+                          externalBusy ||
                           needsRefresh ||
                           (current.kind === "movie" && lock.busy)
                         }
@@ -446,8 +433,13 @@ export default function Dashboard({
                       />
                     )}
                   </View>
-                  {current.kind !== "movie" && (
-                    <Text style={s.heading}>Серии</Text>
+                  <RatingPicker
+                    item={current}
+                    ratings={ratings.data || []}
+                    refresh={ratings.refresh}
+                  />
+                  {!!ratings.error && (
+                    <Text style={s.error}>{ratings.error}</Text>
                   )}
                 </View>
               ) : (
@@ -457,39 +449,9 @@ export default function Dashboard({
               )}
             </View>
           }
-          renderItem={({ item: episode }) => {
-            const watched = watchedIds.has(episode.id);
-            const label = `Сезон ${episode.season} · серия ${episode.episode}`;
-            return (
-              <Pressable
-                aria-checked={watched}
-                accessibilityRole="checkbox"
-                accessibilityLabel={label}
-                accessibilityState={{
-                  checked: watched,
-                  busy: queue.pending(current?.userShowId || 0, episode.id),
-                  disabled: busy || needsRefresh,
-                }}
-                disabled={busy || needsRefresh}
-                onPress={() =>
-                  current && void toggleEpisode(current, episode.id)
-                }
-                style={[s.between, s.divider, { minHeight: 52 }]}
-              >
-                <Text style={s.text}>{label}</Text>
-                <Ionicons
-                  name={watched ? "checkmark-circle" : "ellipse-outline"}
-                  size={24}
-                  color={colors.accent}
-                />
-              </Pressable>
-            );
-          }}
-          ListEmptyComponent={
-            current?.kind !== "movie" && !loading ? (
-              <Text style={s.muted}>Список серий пока не загружен.</Text>
-            ) : undefined
-          }
+          refreshControl={refresh}
+          busy={busy || externalBusy || needsRefresh}
+          onToggle={(episodeId) => current && toggleEpisode(current, episodeId)}
         />
       ) : tab === "library" || tab === "search" ? (
         <FlatList
@@ -662,7 +624,32 @@ export default function Dashboard({
                 accessibilityLabel={`Открыть ${watching[0].title}`}
                 onPress={() => open(watching[0])}
               >
-                <Cover url={watching[0].posterUrl} title={watching[0].title} />
+                <View style={[s.row, { alignItems: "flex-start" }]}>
+                  <View
+                    style={{
+                      width: 106,
+                      height: 159,
+                      borderRadius: 12,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <Poster
+                      url={watching[0].posterUrl}
+                      title={watching[0].title}
+                      large
+                    />
+                  </View>
+                  <View style={[s.flex, { gap: 10, paddingTop: 6 }]}>
+                    <Text style={s.heading}>{watching[0].title}</Text>
+                    <Text style={s.muted}>
+                      {watching[0].kind === "movie" ? "Фильм" : "Сериал"}
+                      {watching[0].year ? ` · ${watching[0].year}` : ""}
+                    </Text>
+                    <Text style={{ color: colors.accent }}>
+                      Открыть трекер ›
+                    </Text>
+                  </View>
+                </View>
               </Pressable>
               <Text style={s.muted}>
                 {progress(watching[0]).next
@@ -681,6 +668,7 @@ export default function Dashboard({
                   busy={watching[0].kind === "movie" && busy}
                   disabled={
                     (!loaded && loading) ||
+                    externalBusy ||
                     needsRefresh ||
                     (watching[0].kind === "movie" && lock.busy)
                   }

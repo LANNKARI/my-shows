@@ -20,6 +20,9 @@ export class ProgressQueue {
   error: unknown = null;
   undo: ProgressUndo | null = null;
   constructor(private cache: DataCache) {}
+  get saving() {
+    return this.active > 0;
+  }
   pending(id: number, episodeId?: number) {
     const title = this.titles.get(id);
     return episodeId === undefined ? !!title : !!title?.desired.has(episodeId);

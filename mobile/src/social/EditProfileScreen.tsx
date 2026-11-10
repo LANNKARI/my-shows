@@ -1,17 +1,55 @@
-import { useState } from "react";
+import { useDataCache } from "../data-context";
+import { router } from "expo-router";
+import { useState, useSyncExternalStore } from "react";
 import { Text, TextInput, View } from "react-native";
 import { Button } from "../components";
 import { colors, styles as s } from "../theme";
-import { Feedback, goBack, Loading, Screen } from "./components";
+import { pickAvatar, saveBackup } from "../account/device-files";
+import {
+  Avatar,
+  ActionRow,
+  Feedback,
+  goBack,
+  Loading,
+  Screen,
+} from "./components";
 import { useResource, useSocialApi, useTask } from "./hooks";
 import { MyProfile } from "./types";
 function Form({ user }: { user: MyProfile }) {
   const api = useSocialApi();
+  const cache = useDataCache();
+  useSyncExternalStore(cache.subscribe, cache.getVersion);
   const task = useTask();
   const [name, setName] = useState(user.name || "");
+  const [avatar, setAvatar] = useState(user.avatarUrl);
   const [bio, setBio] = useState(user.bio || "");
   return (
     <View style={{ gap: 15 }}>
+      <View style={[s.row, { justifyContent: "center" }]}>
+        <Avatar person={{ ...user, avatarUrl: avatar }} large />
+        <Button
+          title="Изменить аватар"
+          secondary
+          disabled={!!task.busy}
+          busy={task.busy === "avatar"}
+          onPress={() =>
+            void task.run("avatar", async () => {
+              const form = await pickAvatar();
+              if (!form) return;
+              const upload = await api<{ url: string }>("/api/upload", {
+                method: "POST",
+                body: form,
+              });
+              await api("/api/users/me", {
+                method: "PATCH",
+                body: JSON.stringify({ avatarUrl: upload.url }),
+              });
+              setAvatar(upload.url);
+              return "Аватар обновлён";
+            })
+          }
+        />
+      </View>
       <Text style={s.text}>Имя</Text>
       <TextInput
         accessibilityLabel="Имя профиля"
@@ -37,7 +75,7 @@ function Form({ user }: { user: MyProfile }) {
         placeholderTextColor={colors.muted}
       />
       <Text style={s.muted}>{bio.length} / 300</Text>
-      <Feedback error={task.error} />
+      <Feedback error={task.error} notice={task.notice} />
       <Button
         title="Сохранить профиль"
         busy={task.busy === "save"}
@@ -51,13 +89,53 @@ function Form({ user }: { user: MyProfile }) {
           })
         }
       />
+      <Text style={s.heading}>Библиотека</Text>
+      {cache.libraryWrite.busy && (
+        <Text style={s.muted}>
+          Дождитесь сохранения отметок перед экспортом, импортом или сменой
+          пароля.
+        </Text>
+      )}
+      <ActionRow
+        title="Импорт библиотеки"
+        disabled={!!task.busy || cache.libraryWrite.busy}
+        onPress={() => router.push("/profile/import")}
+      />
+      <ActionRow
+        title="Экспорт библиотеки"
+        disabled={!!task.busy || cache.libraryWrite.busy}
+        onPress={() =>
+          void task.run("export", async () => {
+            const backup = await api<{
+              meta: unknown;
+              userShows: unknown[];
+              collections: unknown[];
+            }>("/api/export");
+            await saveBackup({
+              meta: backup.meta,
+              userShows: backup.userShows,
+              collections: backup.collections,
+            });
+            return "Файл библиотеки подготовлен";
+          })
+        }
+      />
+      {task.busy === "export" && (
+        <Text style={s.muted}>Подготавливаем файл…</Text>
+      )}
+      <Text style={s.heading}>Безопасность</Text>
+      <ActionRow
+        title="Изменить пароль"
+        disabled={!!task.busy || cache.libraryWrite.busy}
+        onPress={() => router.push("/profile/password")}
+      />
     </View>
   );
 }
 export default function EditProfileScreen() {
   const profile = useResource<MyProfile>("/api/users/me");
   return (
-    <Screen title="Редактировать профиль" back>
+    <Screen title="Настройки профиля" back>
       <Feedback error={profile.error} retry={() => void profile.refresh()} />
       {profile.loading && !profile.data && <Loading />}
       {profile.data && <Form key={profile.data.id} user={profile.data} />}

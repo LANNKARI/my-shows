@@ -2,7 +2,7 @@
   "expo": {
     "name": "EpisyHub",
     "slug": "episyhub",
-    "version": "0.2.2",
+    "version": "0.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -24,7 +24,16 @@
     "plugins": [
       "expo-secure-store",
       "expo-font",
-      "expo-router"
+      "expo-router",
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Разрешить EpisyHub выбрать фотографию для аватара.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "scheme": "episyhub",
     "extra": {

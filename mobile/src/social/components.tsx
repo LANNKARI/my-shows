@@ -180,17 +180,21 @@ export function ActionRow({
   title,
   count,
   onPress,
+  disabled = false,
 }: {
   title: string;
   count?: number;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
+      disabled={disabled}
+      accessibilityState={{ disabled }}
       onPress={onPress}
-      style={[s.between, s.divider]}
+      style={[s.between, s.divider, disabled && { opacity: 0.5 }]}
     >
       <Text style={s.text}>{title}</Text>
       <View style={s.row}>
