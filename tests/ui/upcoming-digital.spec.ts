@@ -15,7 +15,7 @@ async function setup(page:Page,options:{fail?:boolean;empty?:boolean}={}){
 }
 for(const width of [320,390,1440])test(`digital rail fits ${width}px with 4:3 cards and no page overflow`,async({page},testInfo)=>{
  await page.setViewportSize({width,height:1000});await setup(page);await page.goto('/');
- const section=page.getByRole('region',{name:'Скоро выходит в цифре',exact:true});await expect(section.locator('.digital-card')).toHaveCount(10);
+ const section=page.getByRole('region',{name:'Скоро онлайн',exact:true});await expect(section.locator('.digital-card')).toHaveCount(10);
  const card=await section.locator('.digital-card').first().boundingBox();expect(Math.abs(card!.width/card!.height-4/3)).toBeLessThan(.01);
  await expect(section.locator('time').first()).toHaveAttribute('datetime','2026-11-05');
  await expect(section.getByRole('link').first()).toHaveAttribute('href','/show/1?source=tmdb&type=movie');
@@ -38,7 +38,7 @@ test('touch swipes scroll the rail naturally',async({page})=>{
  await expect.poll(()=>rail.evaluate(el=>el.scrollLeft)).toBeGreaterThan(50);await expect(page).toHaveURL('/');
 });
 test('failed TMDB loading offers retry and empty confirmed data is a distinct state',async({page})=>{
- await setup(page,{fail:true});await page.goto('/');const section=page.getByRole('region',{name:'Скоро выходит в цифре',exact:true});await expect(section.getByRole('alert')).toContainText('Не удалось');await section.getByRole('button',{name:'Повторить загрузку'}).click();await expect(section.locator('.digital-card')).toHaveCount(10);
+ await setup(page,{fail:true});await page.goto('/');const section=page.getByRole('region',{name:'Скоро онлайн',exact:true});await expect(section.getByRole('alert')).toContainText('Не удалось');await section.getByRole('button',{name:'Повторить загрузку'}).click();await expect(section.locator('.digital-card')).toHaveCount(10);
 });
 test('empty confirmed data and expired cached titles are not displayed as upcoming',async({page})=>{
  await setup(page,{empty:true});await page.goto('/');await expect(page.getByText(/Подтверждённых цифровых премьер/)).toBeVisible();

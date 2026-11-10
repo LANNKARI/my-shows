@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {firstDigitalRelease,streamingSeries,upcomingDigital} from '../src/lib/upcoming-digital';
+import {excludedDigitalMovie,firstDigitalRelease,streamingSeries,upcomingDigital} from '../src/lib/upcoming-digital';
 const today='2026-11-04',until='2027-02-02';
 test('only the earliest global digital release counts, not later streaming or theatrical dates',()=>{
  assert.equal(firstDigitalRelease([{iso_3166_1:'US',release_dates:[{type:4,release_date:'2026-06-30T00:00:00Z'},{type:4,release_date:'2026-11-09T00:00:00Z'}]}],today,until),null);
@@ -22,15 +22,15 @@ test('TMDB discovery is verified, deduplicated across pages and sorted by actual
   const url=new URL(String(input));urls.push(url);const path=url.pathname;
   if(path.endsWith('/discover/movie'))return response({results:[{id:1,title:'Позже',backdrop_path:'/a.jpg'},{id:2,title:'Уже вышел',backdrop_path:'/b.jpg'},{id:3,title:'Раньше',backdrop_path:'/c.jpg'}]});
   if(path.endsWith('/discover/tv'))return response({results:[{id:4,name:'Стриминг',backdrop_path:'/d.jpg'},{id:5,name:'Эфир',backdrop_path:'/e.jpg'}]});
-  if(path.endsWith('/movie/1/release_dates'))return response({results:[{iso_3166_1:'US',release_dates:[{type:4,release_date:'2026-12-07T00:00:00Z'}]}]});
-  if(path.endsWith('/movie/2/release_dates'))return response({results:[{iso_3166_1:'US',release_dates:[{type:4,release_date:'2026-01-01T00:00:00Z'},{type:4,release_date:'2026-11-09T00:00:00Z'}]}]});
-  if(path.endsWith('/movie/3/release_dates'))return response({results:[{iso_3166_1:'GB',release_dates:[{type:4,release_date:'2026-11-09T00:00:00Z'}]}]});
+  if(path.endsWith('/movie/1'))return response({production_countries:[{iso_3166_1:"US"}],release_dates:{results:[{iso_3166_1:'US',release_dates:[{type:4,release_date:'2026-12-07T00:00:00Z'}]}]}});
+  if(path.endsWith('/movie/2'))return response({production_countries:[{iso_3166_1:"US"}],release_dates:{results:[{iso_3166_1:'US',release_dates:[{type:4,release_date:'2026-01-01T00:00:00Z'},{type:4,release_date:'2026-11-09T00:00:00Z'}]}]}});
+  if(path.endsWith('/movie/3'))return response({production_countries:[{iso_3166_1:"US"}],release_dates:{results:[{iso_3166_1:'GB',release_dates:[{type:4,release_date:'2026-11-09T00:00:00Z'}]}]}});
   if(path.endsWith('/tv/4'))return response({id:4,name:'Стриминг',first_air_date:'2026-11-20',networks:[{name:'Netflix'}],backdrop_path:'/d.jpg'});
   if(path.endsWith('/tv/5'))return response({id:5,name:'Эфир',first_air_date:'2026-11-07',networks:[{name:'FOX'}]});
   throw Error('Unexpected request');
  };
  const result=await upcomingDigital({apiKey:'test-key',fetcher,now:new Date(today+'T12:00:00Z')});
- assert.deepEqual(result.items.map(i=>i.id),[3,4,1]);assert.equal(urls.filter(u=>u.pathname.endsWith('/movie/1/release_dates')).length,1);
+ assert.deepEqual(result.items.map(i=>i.id),[3,4,1]);assert.equal(urls.filter(u=>u.pathname.endsWith('/movie/1')).length,1);
  assert.equal(urls.find(u=>u.pathname.endsWith('/discover/movie'))!.searchParams.get('with_release_type'),'4');
  assert.equal(result.items[0].country,'GB');assert.equal(result.items[1].platform,'Netflix');
 });
@@ -39,4 +39,19 @@ test('an upstream outage is not reported as a legitimate empty calendar',async()
  await assert.rejects(upcomingDigital({apiKey:'test-key',fetcher:unavailable}));
  const empty:typeof fetch=async()=>new Response(JSON.stringify({results:[]}));
  assert.deepEqual((await upcomingDigital({apiKey:'test-key',fetcher:empty})).items,[]);
+});
+
+test('movie origin exclusions include co-productions and animation, never the release market',async()=>{
+ for(const country of ['IN','CN','JP','KR','KP']){
+  assert.equal(excludedDigitalMovie({id:1,production_countries:[{iso_3166_1:'US'},{iso_3166_1:country}]}),true);
+  assert.equal(excludedDigitalMovie({id:1,origin_country:[country]}),true);
+ }
+ assert.equal(excludedDigitalMovie({id:1,production_countries:[{iso_3166_1:'US'}]}),false);
+ const fetcher:typeof fetch=async input=>{
+  const path=new URL(String(input)).pathname;
+  const data=path.endsWith('/discover/movie')?{results:[1,2,3,4,5,6].map(id=>({id,title:'Фильм '+id,backdrop_path:'/a.jpg'}))}:path.endsWith('/discover/tv')?{results:[]}:{id:Number(path.split('/').pop()),production_countries:[{iso_3166_1:['IN','CN','JP','KR','KP','US'][Number(path.split('/').pop())-1]}],genres:[{id:16,name:'Animation'}],release_dates:{results:[{iso_3166_1:'JP',release_dates:[{type:4,release_date:'2026-11-09T00:00:00Z'}]}]}};
+  return new Response(JSON.stringify(data));
+ };
+ const result=await upcomingDigital({apiKey:'test',fetcher,now:new Date(today+'T12:00:00Z')});
+ assert.deepEqual(result.items.map(item=>item.id),[6]);assert.equal(result.items[0].country,'JP');
 });

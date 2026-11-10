@@ -1,6 +1,11 @@
 export type DigitalPremiere = { id: number; kind: "movie" | "series"; title: string; date: string; country: string | null; platform: string | null; imageUrl: string };
 type ReleaseCountry = { iso_3166_1?: string; release_dates?: { type?: number; release_date?: string }[] };
 type Movie = { id: number; title?: string; name?: string; adult?: boolean; backdrop_path?: string | null; poster_path?: string | null };
+type MovieDetails = Movie & { origin_country?: string[]; production_countries?: { iso_3166_1?: string }[]; release_dates?: { results?: ReleaseCountry[] } };
+const excludedMovieCountries = new Set(["IN", "CN", "JP", "KR", "KP"]);
+export function excludedDigitalMovie(details: MovieDetails) {
+  return [...(details.origin_country || []), ...(details.production_countries || []).map(country => country.iso_3166_1 || "")].some(country => excludedMovieCountries.has(country.toUpperCase()));
+}
 type SeriesDetails = Movie & { first_air_date?: string; networks?: { name?: string }[] };
 export function validReleaseDay(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
@@ -59,10 +64,12 @@ export async function upcomingDigital(options: { apiKey?: string; fetcher?: type
     while (index < candidates.length && !budget.aborted) {
       const { item, kind } = candidates[index++];
       if (kind === "movie") {
-        const dates = await request<{ results?: ReleaseCountry[] }>(`movie/${item.id}/release_dates`);
-        if (!dates || !Array.isArray(dates.results)) continue;
+        const details = await request<MovieDetails>(`movie/${item.id}`, { append_to_response: "release_dates" });
+        if (!details) continue;
         verified++;
-        const release = firstDigitalRelease(dates.results, today, until);
+        // Production origin is independent of the country where the digital release happens.
+        if (details.adult || excludedDigitalMovie(details) || !Array.isArray(details.release_dates?.results)) continue;
+        const release = firstDigitalRelease(details.release_dates.results, today, until);
         if (release) items.push({ id: item.id, kind, title: item.title || item.name || "Без названия", ...release, platform: null, imageUrl: image(item)! });
       } else {
         const details = await request<SeriesDetails>(`tv/${item.id}`);
