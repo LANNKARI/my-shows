@@ -51,7 +51,10 @@ export async function saveBackup(data: unknown) {
     throw Error(
       "Сохранение файлов через меню «Поделиться» недоступно на устройстве.",
     );
-  const file = new File(Paths.cache, "episyhub-library.json");
+  const file = new File(
+    Paths.cache,
+    `episyhub-library-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+  );
   await file.write(JSON.stringify(data, null, 2));
   await Sharing.shareAsync(file.uri, {
     mimeType: "application/json",
