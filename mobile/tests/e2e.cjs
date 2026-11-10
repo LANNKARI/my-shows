@@ -231,6 +231,7 @@ async function run() {
   await page.getByText('Выбери фильтры и запусти подбор.',{exact:true}).filter({visible:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:`Открыть ${show.name}`,exact:true}).count(),0,'discovery does not show the library as history');
   const discoverShow=await prisma.show.create({data:{name:'Фильм из подборки',tmdbId:42424266,kind:'movie'}});
+  const discoverSeries=await prisma.show.create({data:{name:'Сериал из подборки',tmdbId:42424266,kind:'series'}});
   await page.getByRole('button',{name:'Фильмы',exact:true}).click();
   await page.getByRole('button',{name:'Подобрать фильм или сериал',exact:true}).click();
   await page.getByRole('button',{name:'Открыть карточку: Фильм из подборки',exact:true}).waitFor();
@@ -247,6 +248,13 @@ async function run() {
   await page.getByRole('button',{name:'9+',exact:true}).click();
   await page.getByRole('button',{name:'Показать подборку',exact:true}).click();
   await page.getByText('По этим фильтрам ничего не найдено. Измени параметры и попробуй снова.',{exact:true}).filter({visible:true}).waitFor();
+  await page.getByRole('button',{name:'7+',exact:true}).click();
+  await page.getByRole('button',{name:'Сериалы',exact:true}).click();
+  await page.getByRole('button',{name:'Рулетка',exact:true}).click();
+  await page.getByRole('button',{name:'Подобрать фильм или сериал',exact:true}).click();
+  await page.getByRole('button',{name:'В планы: Сериал из подборки',exact:true}).click();
+  await page.getByText('Добавлено в планы',{exact:true}).filter({visible:true}).waitFor();
+  assert.equal((await prisma.userShow.findUniqueOrThrow({where:{userId_showId:{userId:user.id,showId:discoverSeries.id}}})).kind,'series','same TMDB ID does not confuse a TV series with the earlier movie');
   await page.getByRole('tab',{name:'Календарь',exact:true}).click();
   await page.getByText('Сезон 1 · серия 2',{exact:true}).filter({visible:true}).waitFor();
   const calendarRequests=()=>[...getCounts].filter(([key])=>key.startsWith('/api/calendar'));

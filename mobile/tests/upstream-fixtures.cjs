@@ -6,7 +6,7 @@ if(process.env.MOBILE_UI_UPSTREAM_FIXTURES==='1'){
   if(url.hostname!=='api.themoviedb.org')return original(input,init);
   if(!url.pathname.startsWith('/3/discover/'))return Response.json({error:'Unexpected fixture endpoint'},{status:404});
   const empty=Number(url.searchParams.get('vote_average.gte'))>8.5||Number((url.searchParams.get('primary_release_date.gte')||url.searchParams.get('first_air_date.gte')||'0').slice(0,4))>2014;
-  return Response.json({page:1,total_pages:1,total_results:empty?0:1,results:empty?[]:[{id:42424266,title:'Фильм из подборки',name:'Фильм из подборки',release_date:'2014-11-06',first_air_date:'2014-11-06',vote_average:8.5,vote_count:500,genre_ids:[878],overview:'Описание тестового варианта.',popularity:100,poster_path:null}]});
+  return Response.json({page:1,total_pages:1,total_results:empty?0:1,results:empty?[]:[{id:42424266,title:url.pathname.endsWith('/tv')?undefined:'Фильм из подборки',name:url.pathname.endsWith('/tv')?'Сериал из подборки':'Фильм из подборки',release_date:'2014-11-06',first_air_date:'2014-11-06',vote_average:8.5,vote_count:500,genre_ids:[878],overview:'Описание тестового варианта.',popularity:100,poster_path:null}]});
  };
  const {PassThrough,Readable}=require('node:stream');
  const https=require('node:https');const request=https.request;
