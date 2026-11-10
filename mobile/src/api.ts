@@ -42,7 +42,9 @@ export async function request<T>(
       cache: "no-store",
       redirect: "error",
       headers: {
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(init.body && !(init.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
@@ -102,7 +104,7 @@ export const storage = {
     else await SecureStore.deleteItemAsync(key);
   },
 };
-export function imageUrl(value?: string | null, size?: "w185") {
+export function imageUrl(value?: string | null, size?: "w185" | "w342") {
   if (!value) return undefined;
   try {
     const url = new URL(value, apiUrl);

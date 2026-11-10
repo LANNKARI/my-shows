@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       : null;
 
     if (!show && numTmdbId && !isNaN(numTmdbId)) {
-      show = await prisma.show.findFirst({ where: { tmdbId: numTmdbId } });
+      show = await prisma.show.findFirst({ where: { tmdbId: numTmdbId, kind: body.type === 'tv' ? 'series' : 'movie' } });
     }
 
     if (!show && numTmdbId && !isNaN(numTmdbId)) {

@@ -7,6 +7,8 @@ export type LibraryItem = {
   status: string;
   posterUrl: string | null;
   year?: string;
+  userRating?: number | null;
+  tmdbRating?: number | null;
   totalEpisodes: number;
   updatedAt: string;
   show: { episodes: Episode[] };
