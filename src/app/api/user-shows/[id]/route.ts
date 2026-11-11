@@ -1,3 +1,4 @@
+import { validDay } from "@/lib/calendar-dates";
 import { progressTiming } from "@/lib/progress-timing";
 import { releaseDefaults } from "@/lib/release-defaults";
 import { NextRequest, NextResponse } from "next/server";
@@ -13,6 +14,8 @@ import {
   formatPosterUrl,
   safeJson,
 } from "@/lib/current-user";
+
+export const maxDuration = 30;
 
 export async function GET(
   request: NextRequest,
@@ -238,6 +241,61 @@ export async function GET(
       });
     }
 
+    let scheduleError = false;
+    // Lazy, season-specific metadata: read-only and cached, never rewrites progress.
+    const seasonDates = new Map<
+      number,
+      { airDate: string | null; name: string | null }
+    >();
+    if (
+      request.nextUrl.searchParams.get("schedule") === "1" &&
+      targetShow.kind === "series"
+    ) {
+      const season = Number(request.nextUrl.searchParams.get("season"));
+      if (
+        !Number.isSafeInteger(season) ||
+        season < 1 ||
+        !targetShow.episodes.some((ep) => ep.season === season)
+      ) {
+        return NextResponse.json(
+          { error: "Некорректный сезон" },
+          { status: 400 },
+        );
+      }
+      if (targetShow.tmdbId && apiKey) {
+        try {
+          const url = new URL(
+            `https://api.themoviedb.org/3/tv/${targetShow.tmdbId}/season/${season}`,
+          );
+          url.searchParams.set("language", "ru-RU");
+          if (!apiKey.startsWith("eyJ"))
+            url.searchParams.set("api_key", apiKey);
+          const response = await fetch(url, {
+            headers: apiKey.startsWith("eyJ")
+              ? { Authorization: `Bearer ${apiKey}` }
+              : {},
+            next: { revalidate: 21600 },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (!response.ok) throw Error("Schedule unavailable");
+          const data = await response.json();
+          if (!Array.isArray(data.episodes)) throw Error("Invalid schedule");
+          for (const ep of data.episodes)
+            if (
+              Number.isSafeInteger(ep.episode_number) &&
+              ep.episode_number > 0
+            )
+              seasonDates.set(ep.episode_number, {
+                airDate: validDay(ep.air_date) ? ep.air_date : null,
+                name:
+                  typeof ep.name === "string" ? ep.name.slice(0, 500) : null,
+              });
+        } catch {
+          scheduleError = true;
+        }
+      }
+    }
+
     // Synchronization can change totals and the revision used by quick-progress.
     userShow = await prisma.userShow.findUniqueOrThrow({
       where: { id: userShow.id },
@@ -291,6 +349,18 @@ export async function GET(
               episode: e.episode,
               watched: prog ? prog.watched : false,
               stoppedAt: prog?.stoppedAt || null,
+              airDate:
+                e.season ===
+                  Number(request.nextUrl.searchParams.get("season")) &&
+                seasonDates.has(e.episode)
+                  ? seasonDates.get(e.episode)!.airDate
+                  : e.airDate?.toISOString().slice(0, 10) || null,
+              name:
+                e.season ===
+                  Number(request.nextUrl.searchParams.get("season")) &&
+                seasonDates.has(e.episode)
+                  ? seasonDates.get(e.episode)!.name
+                  : e.name,
             };
           }),
         };
@@ -298,6 +368,7 @@ export async function GET(
 
     return NextResponse.json(
       safeJson({
+        scheduleError,
         userShow: {
           id: userShow.id,
           updatedAt: userShow.updatedAt,

@@ -2618,3 +2618,17 @@ test('mobile bearer sessions: login, shared progress, identity isolation, revoca
   await prisma.user.update({where:{id:mobileUser.id},data:{passwordHash:await bcrypt.hash(randomBytes(20).toString('hex'),10)}});
   assert.equal((await fetch(`${base}/api/user-shows?status=library`,{headers:{authorization:`Bearer ${third.token}`}})).status,401,'password change invalidates mobile sessions');
 });
+
+test('tracker calendar: exposes stored dates and titles without changing personal progress',async()=>{
+ const {record,client}=await featureAccount();
+ const show=await prisma.show.create({data:{name:'Calendar fixture',kind:'series'}});
+ const ep=await prisma.episode.create({data:{showId:show.id,season:1,episode:1,name:'Начало',airDate:new Date('2026-11-12T00:00:00Z')}});
+ const entry=await prisma.userShow.create({data:{userId:record.id,showId:show.id,status:'watching',totalEpisodes:1,totalSeasons:1}});
+ const progress=await prisma.episodeProgress.create({data:{userShowId:entry.id,episodeId:ep.id,watched:true,stoppedAt:'12:34',watchedAt:new Date('2026-11-01T12:00:00Z')}});
+ for(const query of ['','?schedule=1&season=1']){
+  const response=await client.request(`/api/user-shows/${show.id}${query}`);assert.equal(response.status,200);
+  const data=await response.json();assert.equal(data.seasons[0].episodes[0].airDate,'2026-11-12');assert.equal(data.seasons[0].episodes[0].name,'Начало');assert.equal(data.seasons[0].episodes[0].watched,true);assert.equal(data.seasons[0].episodes[0].stoppedAt,'12:34');
+ }
+ assert.equal((await guest.request(`/api/user-shows/${show.id}?schedule=1`)).status,401);
+ const after=await prisma.episodeProgress.findUniqueOrThrow({where:{id:progress.id}});assert.equal(after.watchedAt?.toISOString(),progress.watchedAt?.toISOString());assert.equal(after.stoppedAt,'12:34');
+});

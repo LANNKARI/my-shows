@@ -36,6 +36,8 @@ function tracker() {
         season,
         episode: index + 1,
         watched: season === 1 && index < 3,
+        airDate: index === 7 ? null : `${season === 1 ? "2025-01" : "2026-11"}-${String(index + 12).padStart(2,"0")}`,
+        name: index === 7 ? null : `Название серии ${index+1}`,
         stoppedAt:
           season === 1 && index === 3 ? "18:42" : (null as string | null),
       })),
@@ -791,4 +793,37 @@ test('episode list edits its own timestamp in place and keeps failed edits avail
   await input.fill('01:02:03');await input.press('Enter');
   await expect(main(page).getByRole('alert')).toBeVisible();await expect(input).toHaveValue('01:02:03');
   await page.getByRole('button',{name:'Отменить изменение времени'}).click();await expect(row).toBeFocused();
+});
+
+for(const width of [390,1440]) test(`tracker episode calendar shows dates and switches seasons at ${width}px`,async({page},testInfo)=>{
+ await page.clock.setFixedTime(new Date('2026-11-11T12:00:00Z'));
+ await page.setViewportSize({width,height:1000});await setup(page);await page.goto('/library/10');
+ await expect(page.getByRole('navigation',{name:'Навигация трекера'})).toHaveCount(0);
+ const calendar=page.getByRole('region',{name:'Календарь серий',exact:true});
+ await calendar.getByRole('button',{name:/Календарь серий/}).click();
+ await expect(calendar.getByRole('group',{name:'Сезон календаря'}).getByRole('button',{name:'Сезон 2',exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(calendar.locator('time').first()).toHaveAttribute('datetime','2026-11-12');
+ await expect(calendar.getByText('Завтра',{exact:true})).toBeVisible();
+ await expect(calendar.getByText('Уточняется',{exact:true})).toBeVisible();
+ await calendar.getByRole('button',{name:'Сезон 1',exact:true}).click();
+ await expect(calendar.locator('time').first()).toHaveAttribute('datetime','2025-01-12');
+ await expect(calendar.getByText('Вышла',{exact:true}).first()).toBeVisible();
+ await expect(calendar.getByText('Название серии 1',{exact:true})).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await calendar.screenshot({path:testInfo.outputPath(`tracker-calendar-${width}.png`)});
+ await calendar.getByRole('button',{name:/Календарь серий/}).click();
+ await expect(calendar.getByRole('list')).toBeHidden();
+});
+
+test('tracker calendar keeps saved dates on a failed refresh and retries without changing progress',async({page})=>{
+ await page.clock.setFixedTime(new Date('2026-11-11T12:00:00Z'));
+ const calls=await setup(page);let fail=true;
+ await page.route('**/api/user-shows/10?*',route=>fail?route.fulfill({status:503,json:{error:'Расписание временно недоступно'}}):route.fallback());
+ await page.goto('/library/10');const calendar=page.getByRole('region',{name:'Календарь серий',exact:true});
+ await calendar.getByRole('button',{name:/Календарь серий/}).click();
+ await expect(calendar.getByRole('alert')).toContainText('Расписание временно недоступно');
+ await expect(calendar.locator('time').first()).toHaveAttribute('datetime','2026-11-12');
+ fail=false;await calendar.getByRole('button',{name:'Повторить',exact:true}).click();
+ await expect(calendar.getByRole('alert')).toHaveCount(0);expect(calls).toHaveLength(0);
+ await expect(current(page).getByText('Сезон 1 · Серия 4',{exact:true})).toBeVisible();
 });

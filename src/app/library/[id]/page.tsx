@@ -2,6 +2,7 @@
 
 import { tmdbImageUrl } from "@/lib/tmdb-image";
 import { use, useEffect, useRef, useState } from "react";
+import TrackerCalendar from "@/components/TrackerCalendar";
 import PersonalNoteEditor from "@/components/PersonalNoteEditor";
 import ReleaseFollowButton from "@/components/ReleaseFollowButton";
 import "@/components/releases.css";
@@ -10,7 +11,6 @@ import { useSession } from "next-auth/react";
 import {
   PersonalNotes,
   TitleControls,
-  TitleLibraryLinks,
   PosterFavorite,
   LovedTitleButton,
   TitleRatings,
@@ -28,6 +28,8 @@ type Episode = {
   episode: number;
   watched: boolean;
   stoppedAt: string | null;
+  airDate?: string | null;
+  name?: string | null;
 };
 type Season = {
   seasonNumber: number;
@@ -409,12 +411,6 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
     );
   return (
     <div className="title-detail">
-      <nav className="td-breadcrumb" aria-label="Навигация трекера">
-        <Link href="/watching">Библиотека</Link>
-        <span aria-hidden="true">/</span>
-        <span>Трекер</span>
-      </nav>
-      <TitleLibraryLinks />
       <div className="td-tracker">
         <aside className="td-tracker-side">
           <div className="td-poster-wrap">
@@ -567,6 +563,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
               </button>
             </div>
           )}
+          {show.kind === "series" && <TrackerCalendar key={show.id} showId={show.id} seasons={seasons} />}
           <PersonalNoteEditor showId={show.id} />
           <div className="lg:hidden">
             <PersonalNotes
