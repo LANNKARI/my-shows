@@ -55,10 +55,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user, trigger }) {
-      if (user || trigger === "update") {
-        if (user) token.id = user.id;
-        // Достаём username и avatar
+    async jwt({ token, user }) {
+      if (user) token.id = user.id;
+      if (typeof token.id === "string") {
+        // Refresh display metadata before returning a session, including its first load.
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
           select: { username: true, avatarUrl: true, avatarFrame: true },

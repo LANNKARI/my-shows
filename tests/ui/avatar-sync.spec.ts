@@ -1,11 +1,11 @@
 import {test,expect,type Page} from '@playwright/test';
 const picture=(color:string)=>'data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="${color}"/></svg>`);
 const oldPhoto=picture('#514a76'),newPhoto=picture('#39a463');
-async function setup(page:Page){
+async function setup(page:Page, freshSession=false){
  const state={photo:oldPhoto as string|null,failSave:false,saves:0};
  const user=()=>({id:'avatar-user',username:'avatar_user',name:'Киноман',email:'avatar@example.test',bio:'',avatarUrl:state.photo,avatarFrame:'frame-gold-light',profileStyle:'profile-standard',popcorn:10});
  await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;
-  if(path==='/api/auth/session')return route.fulfill({json:{user:{...user(),image:oldPhoto},expires:'2099-01-01'}});
+  if(path==='/api/auth/session')return route.fulfill({json:{user:{...user(),image:freshSession?state.photo:oldPhoto},expires:'2099-01-01'}});
   if(path==='/api/account')return route.fulfill({json:{owner:false,premium:{active:false},badges:[]}});
   if(path==='/api/account-badges')return route.fulfill({json:{badges:{'avatar-user':[]},frames:{'avatar-user':'frame-gold-light'},avatars:{'avatar-user':state.photo}}});
   if(path==='/api/users/me'){
@@ -39,4 +39,19 @@ test('avatar upload previews locally, updates the header only after saving, and 
  state.failSave=false;await page.getByRole('button',{name:'Сохранить',exact:true}).click();
  await expect(header).toHaveAttribute('src',newPhoto);await expect(page.getByText('✓ Сохранено',{exact:true})).toBeVisible();
  await page.goto('/u/avatar_user');await expect(page.getByRole('button',{name:'Меню профиля'}).locator('img')).toHaveAttribute('src',newPhoto);
+});
+
+test('first header photo is current even while appearance data is still loading',async({page})=>{
+ const state=await setup(page,true);state.photo=newPhoto;
+ let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve});
+ await page.route('**/api/account-badges?*',async route=>{await gate;await route.fallback()});
+ await page.addInitScript(()=>{
+  (window as unknown as {seenAvatarSources:string[]}).seenAvatarSources=[];
+  const observe=()=>{const img=document.querySelector('[aria-label="Меню профиля"] .cosmetic-avatar img');const src=img?.getAttribute('src');if(src)(window as unknown as {seenAvatarSources:string[]}).seenAvatarSources.push(src)};
+  new MutationObserver(observe).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
+ });
+ await page.goto('/u/avatar_user');
+ await expect(page.getByRole('button',{name:'Меню профиля'}).locator('img')).toHaveAttribute('src',newPhoto);
+ expect(await page.evaluate(()=>(window as unknown as {seenAvatarSources:string[]}).seenAvatarSources)).not.toContain(oldPhoto);
+ release();await expect(page.getByRole('button',{name:'Меню профиля'}).locator('img')).toHaveAttribute('src',newPhoto);
 });

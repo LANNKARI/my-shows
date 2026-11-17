@@ -2632,3 +2632,13 @@ test('tracker calendar: exposes stored dates and titles without changing persona
  assert.equal((await guest.request(`/api/user-shows/${show.id}?schedule=1`)).status,401);
  const after=await prisma.episodeProgress.findUniqueOrThrow({where:{id:progress.id}});assert.equal(after.watchedAt?.toISOString(),progress.watchedAt?.toISOString());assert.equal(after.stoppedAt,'12:34');
 });
+
+test('avatar session: old cookies return the current photo on the first session read',async()=>{
+ const {record,client}=await featureAccount();const oldCookies=new Map(client.cookies);
+ const image='https://example.test/current-avatar.webp';
+ await prisma.user.update({where:{id:record.id},data:{avatarUrl:image,avatarFrame:'frame-gold-light'}});
+ client.cookies=new Map(oldCookies);
+ const response=await client.request('/api/auth/session');assert.equal(response.status,200);const data=await response.json();assert.equal(data.user.id,record.id);assert.equal(data.user.image,image);assert.equal(data.user.avatarFrame,'frame-gold-light');
+ await prisma.user.update({where:{id:record.id},data:{avatarUrl:null}});
+ client.cookies=new Map(oldCookies);const removed=await(await client.request('/api/auth/session')).json();assert.equal(removed.user.image,null);assert.equal(removed.user.id,record.id);
+});
