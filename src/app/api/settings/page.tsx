@@ -7,7 +7,7 @@ import { useSession } from "next-auth/react";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { status, data: session } = useSession();
+  const { status, data: session, update } = useSession();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -75,6 +75,8 @@ export default function SettingsPage() {
       return;
     }
 
+    window.dispatchEvent(new Event("account-updated"));
+    void update().catch(() => undefined);
     setSaved(true);
     setSaving(false);
     router.refresh();
@@ -91,7 +93,7 @@ export default function SettingsPage() {
         <div className="card p-5">
           <label className="label">Аватарка</label>
           <div className="flex items-center gap-4 mt-2">
-            <CosmeticAvatar userId={session?.user?.id} name={name || username || "?"} src={avatarUrl} size={80} />
+            <CosmeticAvatar syncPhoto={false} userId={session?.user?.id} name={name || username || "?"} src={avatarUrl} size={80} />
             <div className="flex-1">
               <input
                 type="file"

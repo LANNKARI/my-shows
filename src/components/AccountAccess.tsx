@@ -40,8 +40,9 @@ const Context = createContext<{
 const BadgeContext = createContext<{
   badges: Record<string, AccountBadge[]>;
   frames: Record<string, string | null>;
+  avatars: Record<string, string | null>;
   request: (id: string) => void;
-}>({ badges: {}, frames: {}, request: () => {} });
+}>({ badges: {}, frames: {}, avatars: {}, request: () => {} });
 export const useAccount = () => useContext(Context);
 export default function AccountAccessProvider({
   children,
@@ -100,12 +101,15 @@ export default function AccountAccessProvider({
   }, [refresh]);
   const [badges, setBadges] = useState<Record<string, AccountBadge[]>>({});
   const [frames, setFrames] = useState<Record<string, string | null>>({});
+  const [avatars, setAvatars] = useState<Record<string, string | null>>({});
+  const appearanceVersion = useRef(0);
   const pending = useRef(new Set<string>()),
     loaded = useRef(new Set<string>()),
     timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [badgeEpoch, setBadgeEpoch] = useState(0);
   useEffect(() => {
     const update = () => {
+      appearanceVersion.current++;
       loaded.current.clear();
       setBadgeEpoch((v) => v + 1);
     };
@@ -133,6 +137,7 @@ export default function AccountAccessProvider({
         for (let i = 0; i < ids.length; i += 50) {
           const batch = ids.slice(i, i + 50);
           try {
+            const generation = appearanceVersion.current;
             const r = await fetch(
               "/api/account-badges?ids=" +
                 encodeURIComponent(batch.join(",")) +
@@ -141,11 +146,14 @@ export default function AccountAccessProvider({
             );
             if (!r.ok) continue;
             const next = await r.json();
+            if (generation !== appearanceVersion.current) continue;
             batch.forEach((x) => loaded.current.add(x));
             setBadges((previous) => ({
               ...previous,
               ...(next.badges || next),
             }));
+            if (next.avatars)
+              setAvatars((previous) => ({ ...previous, ...next.avatars }));
             if (next.frames)
               setFrames((previous) => ({ ...previous, ...next.frames }));
           } catch {
@@ -172,7 +180,7 @@ export default function AccountAccessProvider({
         refresh,
       }}
     >
-      <BadgeContext.Provider value={{ badges, frames, request }}>
+      <BadgeContext.Provider value={{ badges, frames, avatars, request }}>
         {children}
       </BadgeContext.Provider>
     </Context.Provider>
@@ -232,4 +240,12 @@ export function useAccountFrame(userId?: string) {
     if (userId) request(userId);
   }, [userId, request]);
   return userId ? frames[userId] : undefined;
+}
+
+export function useAccountAvatarUrl(userId?: string) {
+  const { avatars, request } = useContext(BadgeContext);
+  useEffect(() => {
+    if (userId) request(userId);
+  }, [userId, request]);
+  return userId ? avatars[userId] : undefined;
 }

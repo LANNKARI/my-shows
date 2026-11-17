@@ -2549,13 +2549,13 @@ test('animated frames: golden light is charged once, persists without Premium, a
 
 test('avatar appearance: public batch returns current frames, preserves badge API and bounds input',async()=>{
  const {record}=await featureAccount();
- await prisma.user.update({where:{id:record.id},data:{avatarFrame:'frame-gold-light'}});
+ await prisma.user.update({where:{id:record.id},data:{avatarFrame:'frame-gold-light',avatarUrl:'https://example.test/new-avatar.webp'}});
  const path='/api/account-badges?ids='+record.id;
  const original=await(await guest.request(path)).json();assert.ok(Array.isArray(original[record.id]));assert.equal(original.frames,undefined);
  const response=await guest.request(path+'&appearance=1');assert.equal(response.status,200);
- const data=await response.json();assert.equal(data.frames[record.id],'frame-gold-light');assert.ok(Array.isArray(data.badges[record.id]));assert.deepEqual(Object.keys(data).sort(),['badges','frames']);
- await prisma.user.update({where:{id:record.id},data:{avatarFrame:'frame-stars'}});
- assert.equal((await(await guest.request(path+'&appearance=1')).json()).frames[record.id],'frame-stars');
+ const data=await response.json();assert.equal(data.frames[record.id],'frame-gold-light');assert.ok(Array.isArray(data.badges[record.id]));assert.equal(data.avatars[record.id],'https://example.test/new-avatar.webp');assert.deepEqual(Object.keys(data).sort(),['avatars','badges','frames']);
+ await prisma.user.update({where:{id:record.id},data:{avatarFrame:'frame-stars',avatarUrl:null}});
+ const changed=await(await guest.request(path+'&appearance=1')).json();assert.equal(changed.frames[record.id],'frame-stars');assert.equal(changed.avatars[record.id],null);
  assert.equal((await guest.request('/api/account-badges?appearance=1&ids='+Array.from({length:51},(_,i)=>'u'+i).join(','))).status,400);
  assert.equal((await guest.request('/api/account-badges?appearance=1&ids=%3Cscript%3E')).status,400);
 });

@@ -1,5 +1,9 @@
 "use client";
-import { useAccountBadges, useAccountFrame } from "./AccountAccess";
+import {
+  useAccountBadges,
+  useAccountFrame,
+  useAccountAvatarUrl,
+} from "./AccountAccess";
 /* eslint-disable @next/next/no-img-element -- Reuses existing uploaded or remote profile photos. */
 import { frameId } from "@/lib/cosmetics";
 import "./cosmetics.css";
@@ -9,15 +13,19 @@ export default function CosmeticAvatar({
   frame,
   size = 48,
   userId,
+  syncPhoto = true,
 }: {
   name: string;
   userId?: string;
+  syncPhoto?: boolean;
   src?: string | null;
   frame?: string | null;
   size?: number;
 }) {
   const badges = useAccountBadges(userId);
   const currentFrame = useAccountFrame(userId);
+  const currentPhoto = useAccountAvatarUrl(syncPhoto ? userId : undefined);
+  src = currentPhoto === undefined ? src : currentPhoto;
   frame = currentFrame === undefined ? frame : currentFrame;
   const allowedFrame =
     userId &&

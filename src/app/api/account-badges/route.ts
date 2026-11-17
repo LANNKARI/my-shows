@@ -20,10 +20,13 @@ export async function GET(req: NextRequest) {
       return privateJson(badges);
     const users = await prisma.user.findMany({
       where: { id: { in: ids } },
-      select: { id: true, avatarFrame: true },
+      select: { id: true, avatarFrame: true, avatarUrl: true },
     });
     return privateJson({
       badges,
+      avatars: Object.fromEntries(
+        users.map((user) => [user.id, user.avatarUrl]),
+      ),
       frames: Object.fromEntries(
         users.map((user) => [user.id, user.avatarFrame]),
       ),
