@@ -2642,3 +2642,11 @@ test('avatar session: old cookies return the current photo on the first session 
  await prisma.user.update({where:{id:record.id},data:{avatarUrl:null}});
  client.cookies=new Map(oldCookies);const removed=await(await client.request('/api/auth/session')).json();assert.equal(removed.user.image,null);assert.equal(removed.user.id,record.id);
 });
+
+test('title images: public metadata is bounded to a valid catalogue title and never returns private data',async()=>{
+ const show=await prisma.show.create({data:{name:'No remote images',kind:'movie'}});
+ const response=await guest.request(`/api/shows/${show.id}/images`);assert.equal(response.status,200);assert.deepEqual(await response.json(),{images:[]});
+ assert.equal((await guest.request('/api/shows/not-an-id/images')).status,400);
+ assert.equal((await guest.request('/api/shows/0/images')).status,400);
+ assert.equal((await guest.request('/api/shows/99999999/images')).status,404);
+});

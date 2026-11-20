@@ -72,6 +72,7 @@ async function setup(
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
       path = new URL(request.url()).pathname;
+    if (path.endsWith("/images")) return route.fulfill({json:{images:[]}});
     if (path.endsWith("/note"))
       return route.fulfill({ json: { text: "", updatedAt: null } });
     if (path === "/api/auth/session")

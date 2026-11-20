@@ -5,6 +5,7 @@ import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import TitleImages, { PosterImage } from "@/components/TitleImages";
 import CastList from "@/components/CastList";
 import ShowDetails from "@/components/ShowDetails";
 import CommentSection, {
@@ -206,7 +207,7 @@ function ShowContent({
         </button>
       </div>
     );
-  const title = show.name || show.title;
+  const title = show.name || show.title || "Без названия";
   const original = show.originalName || show.originalTitle;
   const movie = show.kind === "movie";
   const disabled = busy || authStatus === "loading";
@@ -230,11 +231,7 @@ function ShowContent({
         <div className="td-poster-column">
           <div className="td-poster-wrap">
             {show.posterUrl /* eslint-disable-next-line @next/next/no-img-element */ ? (
-              <img
-                className="td-poster"
-                src={tmdbImageUrl(show.posterUrl)}
-                alt={`Постер: ${title}`}
-              />
+              <PosterImage src={show.posterUrl} title={title} />
             ) : (
               <div className="td-poster td-poster-empty">Нет постера</div>
             )}
@@ -331,6 +328,7 @@ function ShowContent({
           {show.description || "Описание пока не добавлено."}
         </p>
         <ShowDetails show={show} />
+        <TitleImages key={show.id} showId={show.id} title={title} />
       </section>
       <section
         id="title-section-cast"

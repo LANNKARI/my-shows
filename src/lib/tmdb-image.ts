@@ -10,3 +10,7 @@ export function tmdbImageUrl<T extends string | null | undefined>(source: T): T 
   if (!source || !TMDB_IMAGE.test(source)) return source;
   return `https://res.cloudinary.com/${CLOUD_NAME}/image/fetch/f_auto,q_auto/${source}` as T;
 }
+
+export function originalImageUrl(source: string) {
+  return /^https:\/\/image\.tmdb\.org\/t\/p\/(?:w\d+|h\d+|original)\/[a-zA-Z0-9_-]+\.(?:jpg|jpeg|png|webp)$/.test(source) ? source.replace(/\/t\/p\/[^/]+\//,"/t/p/original/") : source;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { tmdbImageUrl } from "@/lib/tmdb-image";
+import { PosterImage } from "@/components/TitleImages";
 import { use, useEffect, useRef, useState } from "react";
 import TrackerCalendar from "@/components/TrackerCalendar";
 import PersonalNoteEditor from "@/components/PersonalNoteEditor";
@@ -401,11 +401,7 @@ function TrackerContent({ id, userId }: { id: string; userId: string }) {
   }
   const poster =
     show.posterUrl /* eslint-disable-next-line @next/next/no-img-element */ ? (
-      <img
-        className="td-poster"
-        src={tmdbImageUrl(show.posterUrl)}
-        alt={`Постер: ${show.title}`}
-      />
+      <PosterImage src={show.posterUrl} title={show.title} />
     ) : (
       <div className="td-poster td-poster-empty">Нет постера</div>
     );
